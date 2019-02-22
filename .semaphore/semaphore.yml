@@ -10,17 +10,13 @@ blocks:
       prologue:
         commands:
           - sem-version python 3.7
+          - sudo apt-get install -y firejail git 
+          - checkout
+          - sudo pip install .
       env_vars:
         - name: APP_ENV
           value: prod
       jobs:
-      - name: Install system dependencies
-        commands:
-          - sudo apt-get install -y firejail git 
-      - name: Install python prereq.
-        commands:
-          - checkout
-          - sudo pip install .
       - name: Execute python tests
         commands:
           - pytest
