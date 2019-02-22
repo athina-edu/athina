@@ -1,8 +1,10 @@
 # ATHINA - Automated Testing Homework Interface for N Assignments
 
-A formative assessment microservice for programming assignments.
+A formative assessment microservice for programming assignments. It is expected to run as a cron job.
 
-The program is expected to run as a cron job.
+Supported e-learning platforms: Canvas
+Supported VCS: git (github, gitlab etc.)
+Supported plagiarism check software: Moss
 
 # Here is what it does:
 1. You build your tests like you would regularly using any scripting language of preference (bash, python etc.)

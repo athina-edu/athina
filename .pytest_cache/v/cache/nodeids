@@ -1,7 +1,0 @@
-[
-  "tests/test_athina.py::TestFunctions::test_create_user_object",
-  "tests/test_athina.py::TestFunctions::test_git_tester",
-  "tests/test_athina.py::TestFunctions::test_tester_plagiarism",
-  "tests/test_canvas.py::TestFunctions::test_canvas",
-  "tests/test_moss.py::TestFunctions::test_moss"
-]
