@@ -18,8 +18,8 @@ class Configuration:
     moss_lang = "Python"
     moss_pattern = "*.py"
     check_plagiarism_hour = 1
-    git_username = "test"
-    git_password = "test"
+    git_username = ""
+    git_password = ""
     same_url_limit = 1
     submit_results_as_file = True
     max_file_size = 1024
@@ -27,6 +27,6 @@ class Configuration:
     no_repo = False
     pass_extra_params = False
     grade_update_frequency = 23
-    git_url = 'gitlab.cs.wwu.edu'
+    git_url = 'github.com'
     processes = 1
     due_date = datetime(2100, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
