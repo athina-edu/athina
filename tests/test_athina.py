@@ -37,26 +37,26 @@ class TestFunctions(unittest.TestCase):
 
         # Normal student
         user_data.db[1] = user_data.User(user_id=1)
-        user_data.db[1].repository_url = "https://gitlab.cs.wwu.edu/athina/athina"
+        user_data.db[1].repository_url = "https://github.com/athina-edu/testing.git"
         user_data.db[1].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
         user_data.db[1].new_url = True
         user_data.db[1].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
 
         # Student with wrong url
         user_data.db[2] = user_data.User(user_id=2)
-        user_data.db[2].repository_url = "https://gitlab.cs.wwu.edu/athina/athin"
+        user_data.db[2].repository_url = "https://github.com/athina-edu/testin"
         user_data.db[2].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
         user_data.db[2].new_url = True
         user_data.db[2].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
 
         # Students 3 and 4 with same url (note this is different from user 1 by a backslash)
         user_data.db[3] = user_data.User(user_id=3)
-        user_data.db[3].repository_url = "https://gitlab.cs.wwu.edu/athina/athina/"
+        user_data.db[3].repository_url = "https://github.com/athina-edu/testing.git/"
         user_data.db[3].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
         user_data.db[3].new_url = True
         user_data.db[3].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
         user_data.db[4] = user_data.User(user_id=4)
-        user_data.db[4].repository_url = "https://gitlab.cs.wwu.edu/athina/athina/"
+        user_data.db[4].repository_url = "https://github.com/athina-edu/testing.git/"
         user_data.db[4].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
         user_data.db[4].new_url = True
         user_data.db[4].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
