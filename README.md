@@ -11,15 +11,15 @@ The program is expected to run as a cron job.
 inside the directory where your cfg file is.
 4. You set Athina as a cron job. 
 5. Students submit on Canvas their repo urls.
-6. Athina, clones, looks for changes, checks for some safety, sandboxes code and then uses your tests.
-7. Then submits the score given to it along with all text printed from the test back to the students Canvas
-submission page (as a comment or file attachments containing the text).
+6. Athina, clones, looks for changes, runs some safety checks, sandboxes the code and then uses your tests.
+7. Then, it submits the score given to it by tests along with all text printed from the test back to the students Canvas
+submission page (as a comment or file attachment containing the text).
 
 # Security Features
 * All tests are sandboxed (using firejail) so that student scripts cannot do damage to the OS or access existing files
 * Only 1 student can submit the same git url, but can also permit more (for group projects)
 * Moss implementation that also notifies student of the average similarity scores and the max for each student (planned to restrict this to instructor only)
-* Git authentication only happens if git url is gitlab.cs.wwu.edu
+* Git authentication only happens under the specified domain url (e.g., github.com)
 * Git credentials and configuration cannot be obtained through student code execution
 * Tests are forcefully timed out after a certain period of time (in case of infinite loops)
 
@@ -40,7 +40,7 @@ These are optional depending on your test scripts:
 ### Dependencies (Ubuntu):
 `sudo apt install python3 git timeout firejail`
 ### Cloning and Installing
-`git clone https://gitlab.cs.wwu.edu/athina/athina.git`
+`git clone https://github.com/athina-edu/athina.git`
 
 `pip install .`
 
@@ -52,13 +52,13 @@ or
 1. Build your tests as you would normally. Print as many things that you want students to see and make sure the last 
 item(line) you print is their grade from 0-100. Decimals are accepted. The current student (being tested) files are 
 always at `/tmp/athina` so change the current working directory for your scripts.
-![test-script](https://gitlab.cs.wwu.edu/athina/athina/raw/master/docs/img/test-script.png "Test-Script")
-![test-script-result](https://gitlab.cs.wwu.edu/athina/athina/raw/master/docs/img/test-script-result.png "Test-Script-Result")
+![test-script](https://github.com/athina-edu/athina/raw/master/docs/img/test-script.png "Test-Script")
+![test-script-result](https://github.com/athina-edu/athina/raw/master/docs/img/test-script-result.png "Test-Script-Result")
 
 2. Copy the config-example folder and setup the configuration file for athina with your settings. Canvas' access token
 can be retrieved from your canvas' personal settings.
-![config](https://gitlab.cs.wwu.edu/athina/athina/raw/master/docs/img/config.png "Config")
-![canvas-access](https://gitlab.cs.wwu.edu/athina/athina/raw/master/docs/img/canvas-access.png "Canvas-Access")
+![config](https://github.com/athina-edu/athina/raw/master/docs/img/config.png "Config")
+![canvas-access](https://github.com/athina-edu/athina/raw/master/docs/img/canvas-access.png "Canvas-Access")
 
 3. Copy your tests inside your new folder's tests directory.
 
