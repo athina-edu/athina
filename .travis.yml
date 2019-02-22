@@ -1,12 +1,7 @@
 dist: xenial
 language: python
 python:
-  - "3.3"
-  - "3.4"
-  - "3.5"
-  - "3.6"
   - "3.7"
-  - "3.8-dev"
 before_install:
   - sudo apt-get install -y firejail git 
 # command to install dependencies
