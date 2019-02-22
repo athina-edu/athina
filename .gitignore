@@ -1,3 +1,4 @@
+.pytest*
 athina/adata*/
 athina/__pycache__
 athina/assignment_*
