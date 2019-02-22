@@ -1,5 +1,5 @@
 version: v1.0
-name: First pipeline example
+name: Athina Testing
 agent:
   machine:
     type: e1-standard-2
@@ -7,50 +7,21 @@ agent:
 blocks:
   - name: "Build"
     task:
+      prologue:
+        commands:
+          - sem-version python 3.7
       env_vars:
         - name: APP_ENV
           value: prod
       jobs:
-      - name: Docker build
+      - name: Install system dependencies
+        commands:
+          - sudo apt-get install -y firejail git 
+      - name: Install python prereq.
         commands:
           - checkout
-          - ls -1
-          - echo $APP_ENV
-          - echo "Docker build..."
-          - echo "done"
-  - name: "Smoke tests"
-    task:
-      jobs:
-      - name: Smoke
+          - sudo pip install .
+      - name: Execute python tests
         commands:
-          - checkout
-          - echo "make smoke"
-  - name: "Unit tests"
-    task:
-      jobs:
-      - name: RSpec
-        commands:
-          - checkout
-          - echo "make rspec"
-      - name: Lint code
-        commands:
-          - checkout
-          - echo "make lint"
-      - name: Check security
-        commands:
-          - checkout
-          - echo "make security"
-  - name: "Integration tests"
-    task:
-      jobs:
-      - name: Cucumber
-        commands:
-          - checkout
-          - echo "make cucumber"
-  - name: "Push Image"
-    task:
-      jobs:
-      - name: Push
-        commands:
-          - checkout
-          - echo "make docker.push"
+          - pytest
+
