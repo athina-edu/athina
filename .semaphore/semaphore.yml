@@ -12,7 +12,9 @@ blocks:
           - sem-version python 3.7
           - sudo apt-get install -y firejail git 
           - checkout
-          - pip install --user --cache-dir .pip_cache .
+          - pip install --upgrade pip
+          - pip install .
+          - pip install requests
       env_vars:
         - name: APP_ENV
           value: prod
