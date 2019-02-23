@@ -103,7 +103,7 @@ class TestFunctions(unittest.TestCase):
         results.append(repository.check_repository_changes(6))
         self.assertEqual(results, [True, False, True, True, False, False])
 
-        tester = Tester(user_data, logger, configuration, e_learning)
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
 
         # First time assignment evaluation
         user_object = tester.process_student_assignment(1)
@@ -220,7 +220,7 @@ class TestFunctions(unittest.TestCase):
         repository.check_repository_changes(5)
         repository.check_repository_changes(6)
 
-        tester = Tester(user_data, logger, configuration, e_learning)
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
 
         # First time assignment evaluation
         tester.process_student_assignment(1)

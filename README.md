@@ -3,7 +3,9 @@
 A formative assessment microservice for programming assignments. It is expected to run as a cron job.
 
 Supported e-learning platforms: Canvas
+
 Supported VCS: git (github, gitlab etc.)
+
 Supported plagiarism check software: Moss
 
 # Here is what it does:

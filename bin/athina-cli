@@ -206,7 +206,7 @@ if __name__ == "__main__":
         REPOSITORY = Repository(USER_DATA, LOGGER, CONFIGURATION, E_LEARNING)
 
         # Build Tester Object
-        TESTER = Tester(USER_DATA, LOGGER, CONFIGURATION, E_LEARNING)
+        TESTER = Tester(USER_DATA, LOGGER, CONFIGURATION, E_LEARNING, REPOSITORY)
 
         if ARGS.forced_testing is not None:
             # Test specific user
