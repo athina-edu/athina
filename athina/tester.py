@@ -181,7 +181,6 @@ class Tester:
                 user_list = [(user_id, user_object)]
             else:
                 # Get group members whose repository url is the same (for group assignments)
-                print(type(self.user_data.db))
                 for current_user_id, current_user_object in self.user_data.db.items():
                     if current_user_object.repository_url == user_object.repository_url:
                         pass
