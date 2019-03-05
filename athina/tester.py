@@ -40,7 +40,6 @@ class Tester:
         else:
             return out
 
-    # TODO: the git part of this function needs to be called by a dedicated git repository module
     def update_user_db(self, user_id):
         self.user_data.db[user_id].plagiarism_to_grade = True
         self.user_data.db[user_id].last_graded = datetime.now(timezone.utc)
