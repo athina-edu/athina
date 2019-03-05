@@ -3,7 +3,7 @@ from datetime import timedelta, datetime, timezone
 import subprocess
 import glob
 import time
-import dateutil.parser
+import shutil
 import np
 
 # Modifiable loading
@@ -15,12 +15,14 @@ class Tester:
     logger = None
     configuration = None
     e_learning = None
+    repository = None
 
-    def __init__(self, user_data, logger, configuration, e_learning):
+    def __init__(self, user_data, logger, configuration, e_learning, repository):
         self.user_data = user_data
         self.logger = logger
         self.configuration = configuration
         self.e_learning = e_learning
+        self.repository = repository
 
     def check_error(self, err):
         if err != b'':
@@ -38,22 +40,16 @@ class Tester:
         else:
             return out
 
-    # TODO: the git part of this function needs to be called by a dedicated git repository module
     def update_user_db(self, user_id):
         self.user_data.db[user_id].plagiarism_to_grade = True
         self.user_data.db[user_id].last_graded = datetime.now(timezone.utc)
 
         # Update commit date on record
         if self.configuration.no_repo is False:
-            process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
-                                       cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                                   self.configuration.assignment_id, user_id),
-                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, err = process.communicate()
-
-            if not self.check_error(err):
+            last_commit_date = self.repository.retrieve_last_commit_date(user_id)
+            if last_commit_date is not None:
                 self.user_data.db[user_id].new_url = False
-                self.user_data.db[user_id].commit_date = dateutil.parser.parse(out)
+                self.user_data.db[user_id].commit_date = last_commit_date
             else:
                 self.user_data.db[user_id].new_url = False
 
@@ -101,23 +97,23 @@ class Tester:
                     athina_student_code_dir = "/tmp/athina%s" % time.time()
                     athina_test_tmp_dir = "/tmp/athina-test%s" % time.time()
 
-                # TODO: these copy and deletes need to be converted in proper python functions (shutils)
-                #  (as opposed to terminal cmds)
-
                 # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-                subprocess.run("rm -rf '%s'" % athina_student_code_dir, shell=True)
-                subprocess.run("mkdir -p '%s'" % athina_student_code_dir, shell=True)
+                shutil.rmtree(athina_student_code_dir, ignore_errors=True)
                 if self.configuration.no_repo is False:
-                    subprocess.run("cp -rf '%s/repodata%s/u%s/'* '%s/'" % (
-                        self.configuration.config_dir, self.configuration.assignment_id,
-                        user_id, athina_student_code_dir),
-                                   shell=True)
-
+                    try:
+                        shutil.copytree('%s/repodata%s/u%s' % (self.configuration.config_dir,
+                                                               self.configuration.assignment_id,
+                                                               user_id),
+                                        '%s' % athina_student_code_dir)
+                    except FileNotFoundError:
+                        self.logger.vprint("Could not copy student directory at %s/repodata%s/u%s/*" %
+                                           (self.configuration.config_dir, self.configuration.assignment_id, user_id))
                 # Copy tests in tmp folder
-                subprocess.run("rm -rf '%s'" % athina_test_tmp_dir, shell=True)
-                subprocess.run("mkdir -p '%s'" % athina_test_tmp_dir, shell=True)
-                subprocess.run("cp -rf '%s/tests/'* '%s/'" % (self.configuration.config_dir,
-                                                              athina_test_tmp_dir), shell=True)
+                shutil.rmtree(athina_test_tmp_dir, ignore_errors=True)
+                try:
+                    shutil.copytree('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
+                except FileNotFoundError:
+                    self.logger.vprint("Could not copy test directory at %s/tests" % self.configuration.config_dir)
 
                 if self.configuration.pass_extra_params is True:
                     extra_params = [user_object.secondary_id, self.configuration.due_date.isoformat()]
@@ -185,7 +181,6 @@ class Tester:
                 user_list = [(user_id, user_object)]
             else:
                 # Get group members whose repository url is the same (for group assignments)
-                print(type(self.user_data.db))
                 for current_user_id, current_user_object in self.user_data.db.items():
                     if current_user_object.repository_url == user_object.repository_url:
                         pass

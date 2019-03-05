@@ -44,10 +44,17 @@ class Repository:
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                 self.configuration.assignment_id, user_id)])
 
-        # TODO: ssh support, (postponed since GITLAB supports http password auth tokens).
-        # Postponed since http auth tokens can be used.
-        # export GIT_SSH_COMMAND="ssh -i ~/.ssh/gitlab"
-        # git clone git@gitlab.cs.wwu.edu:athina/athina.git
+    def retrieve_last_commit_date(self, user_id):
+        process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
+                                   cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
+                                                               self.configuration.assignment_id, user_id),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate()
+
+        if not self.check_error(err):
+            return dateutil.parser.parse(out)
+        else:
+            return None
 
     def check_repository_changes(self, user_id):
         user_values = self.user_data.db[user_id]

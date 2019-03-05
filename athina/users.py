@@ -26,7 +26,6 @@ class Users:
         Load stored dataset for users and submission URLs (if exists)
         """
         # TODO: Detect incompatible or older version of pkl and reset
-        # TODO: vprint needs to be in its own logger module
         try:
             pkl_file = open(file_location, 'rb')
             user_list = pickle.load(pkl_file)
