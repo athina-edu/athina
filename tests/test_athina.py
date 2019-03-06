@@ -9,6 +9,7 @@ from athina.tester import *
 from athina.canvas import *
 import os
 import shutil
+import multiprocessing
 
 
 class TestFunctions(unittest.TestCase):
@@ -281,7 +282,21 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object[0].new_url, False)
         self.assertGreater(user_object[0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
         self.assertEqual(user_object[0].last_grade, 80)
-        last_graded = user_object[0].last_graded
+
+        # Parallel process
+        configuration.processes = 2
+        compute_pool = multiprocessing.Pool(processes=configuration.processes)
+        user_object_results = compute_pool.map(tester.process_student_assignment, [1, 2, 3, 4, 5])
+        self.assertEqual(user_object_results[0][0].new_url, False)
+        self.assertGreater(user_object_results[0][0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object_results[0][0].last_grade, 80)
+        self.assertEqual(user_object_results[1][0].plagiarism_to_grade, False)
+        self.assertEqual(user_object_results[1][0].commit_date, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        # Group assignment
+        self.assertGreater(user_object_results[2][0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object_results[2][0].last_grade, 80)
+        self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object_results[2][1].last_grade, 80)
 
 
 if __name__ == '__main__':

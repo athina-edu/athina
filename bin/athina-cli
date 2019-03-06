@@ -11,7 +11,6 @@ import configparser
 import argparse
 import filelock
 import multiprocessing
-import shutil
 from athina.users import *
 from athina.logger import *
 from athina.tester import *
@@ -67,7 +66,8 @@ def find_cfg(directory):
 
 def check_dependencies():
     # Verify requirements are available on OS
-    software_dependencies = ["firejail", "timeout", "git"]
+    # TODO: docker is optional so technically unless an assignment has the flag raised it should not be needed
+    software_dependencies = ["firejail", "timeout", "git", "docker"]
     for software in software_dependencies:
         if shutil.which(software) is None:
             raise FileNotFoundError("%s is not available on the host system." % software)
