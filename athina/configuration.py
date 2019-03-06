@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 class Configuration:
     logger = None
     config_dir = "/tmp"
-    config_filename = None
+    config_filename = "test_assignment"
     simulate = True
     auth_token = None
     course_id = 1
@@ -30,3 +30,4 @@ class Configuration:
     git_url = 'github.com'
     processes = 1
     due_date = datetime(2100, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+    use_docker = False

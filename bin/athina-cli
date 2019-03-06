@@ -178,6 +178,10 @@ if __name__ == "__main__":
             CONFIGURATION.processes = CONFIG.getint('main', 'processes')
         except configparser.NoOptionError:
             CONFIGURATION.processes = 1
+        try:
+            CONFIGURATION.use_docker = CONFIG.getboolean('main', 'use_docker')
+        except configparser.NoOptionError:
+            CONFIGURATION.use_docker = False
 
         # Starting statement
         LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))

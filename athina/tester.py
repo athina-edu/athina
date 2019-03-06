@@ -5,6 +5,7 @@ import glob
 import time
 import shutil
 import np
+import hashlib
 
 # Modifiable loading
 from athina.moss import Plagiarism
@@ -98,7 +99,13 @@ class Tester:
                     athina_test_tmp_dir = "/tmp/athina-test%s" % time.time()
 
                 # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-                shutil.rmtree(athina_student_code_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(athina_student_code_dir)
+                except PermissionError:
+                    self.logger.vprint("Cannot delete %s. Likely permissions error." % athina_student_code_dir)
+                    raise PermissionError(athina_student_code_dir)
+                except FileNotFoundError:
+                    pass
                 if self.configuration.no_repo is False:
                     try:
                         shutil.copytree('%s/repodata%s/u%s' % (self.configuration.config_dir,
@@ -109,7 +116,13 @@ class Tester:
                         self.logger.vprint("Could not copy student directory at %s/repodata%s/u%s/*" %
                                            (self.configuration.config_dir, self.configuration.assignment_id, user_id))
                 # Copy tests in tmp folder
-                shutil.rmtree(athina_test_tmp_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(athina_test_tmp_dir)
+                except PermissionError:
+                    self.logger.vprint("Cannot delete %s. Likely permissions error." % athina_test_tmp_dir)
+                    raise PermissionError(athina_test_tmp_dir)
+                except FileNotFoundError:
+                    pass
                 try:
                     shutil.copytree('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
                 except FileNotFoundError:
@@ -120,22 +133,16 @@ class Tester:
                 else:
                     extra_params = [athina_student_code_dir, athina_test_tmp_dir]
 
-                # Custom firejail profile that allows to sandbox suid processes (so that athina wont run as root)
-                generate_firejail_profile("%s/server.profile" % athina_test_tmp_dir)
+                # Execute using docker or firejail (depending on what the settings are)
+                if self.configuration.use_docker is True \
+                        and os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
+                    out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
+                                                        extra_params, test_script)
+                else:
+                    out, err = self.execute_with_firejail(athina_student_code_dir, athina_test_tmp_dir,
+                                                          extra_params, test_script)
 
-                # Run the test
-                test_timeout = ["timeout", "--kill-after=1", str(self.configuration.test_timeout)]
-                test_command = test_timeout + ["firejail", "--quiet", "--private", "--profile=server.profile",
-                                               "--whitelist=%s/" % athina_student_code_dir,
-                                               "--whitelist=%s/" % athina_test_tmp_dir] + test_script.split(
-                    " ") + extra_params
-                self.logger.vprint(" ".join(test_command), debug=True)
-                process = subprocess.Popen(test_command,
-                                           cwd="%s/" % athina_test_tmp_dir,
-                                           stdout=subprocess.PIPE,
-                                           stderr=subprocess.PIPE)
-                out, err = process.communicate()
-
+                # TODO: convert these to cmmands using shutils and os
                 # Clear temp directories
                 subprocess.run("rm -rf '%s'" % athina_test_tmp_dir, shell=True)
                 subprocess.run("rm -rf '%s'" % athina_student_code_dir, shell=True)
@@ -161,8 +168,11 @@ class Tester:
                     out = self.trim_test_output(out)
                     test_reports.append(out)
                     test_reports.append(
-                        "Tests failed:\n Test likely timed out, e.g., infinite loop, non legible script grade".encode(
-                            "utf-8"))
+                        """Tests failed:
+                        Test likely timed out.
+                        This can happen if you have an infinite loop or non terminating loop,
+                        A missing library that the system doesn't have (contact the instructor)
+                        Non legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))
                 else:
                     # scaling between 0 and 1
                     test_grades.append(score / 100 * self.configuration.test_weights[x])
@@ -211,6 +221,60 @@ class Tester:
             self.logger.vprint(">> No changes or past due date", debug=True)
             user_object.changed_state = False
             return [user_object]  # return list of the current object
+
+    def execute_with_firejail(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
+        # Custom firejail profile that allows to sandbox suid processes (so that athina wont run as root)
+        generate_firejail_profile("%s/server.profile" % athina_test_tmp_dir)
+
+        # Run the test
+        test_timeout = ["timeout", "--kill-after=1", str(self.configuration.test_timeout)]
+        test_command = test_timeout + ["firejail", "--quiet", "--private", "--profile=server.profile",
+                                       "--whitelist=%s/" % athina_student_code_dir,
+                                       "--whitelist=%s/" % athina_test_tmp_dir] + test_script.split(
+            " ") + extra_params
+        self.logger.vprint(" ".join(test_command), debug=True)
+        process = subprocess.Popen(test_command,
+                                   cwd="%s/" % athina_test_tmp_dir,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        out, err = process.communicate()
+        return out, err
+
+    # TODO: there are special params for no repo testing. this needs to be supported as well
+    def execute_with_docker(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
+        hashed_name = hashlib.md5(self.configuration.config_filename.encode("ascii")).hexdigest()
+
+        # Build with empty context
+        os.makedirs("/tmp/athina_empty", exist_ok=True)
+
+        build_statement = ["docker", "build", "/tmp/athina_empty", "-t",
+                           "%s" % hashed_name,
+                           "-f", "Dockerfile"]
+        run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
+                         "--stop-timeout", "%d" % self.configuration.test_timeout,
+                         "-e", "STUDENT_DIR=%s" % athina_student_code_dir,
+                         "-e", "TEST_DIR=%s" % athina_test_tmp_dir,
+                         "-v", "%s:%s" % (athina_student_code_dir, athina_student_code_dir),
+                         "-v", "%s:%s" % (athina_test_tmp_dir, athina_test_tmp_dir),
+                         "%s" % hashed_name]
+
+        # Building the image. This is built once and then things are much faster but the check needs to happen
+        self.logger.vprint(" ".join(build_statement), debug=True)
+        process = subprocess.Popen(build_statement, cwd="%s/" % self.configuration.config_dir, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        out, err = process.communicate()
+
+        # If build was successful, run the image
+        if not self.check_error(err):
+            self.logger.vprint(" ".join(run_statement), debug=True)
+            process = subprocess.Popen(run_statement, cwd="%s/" % self.configuration.config_dir,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
+            run_out, run_err = process.communicate()
+            out += run_out
+            err += run_err
+
+        return out, err
 
     def plagiarism_checks_on_users(self):
         """

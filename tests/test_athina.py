@@ -241,6 +241,48 @@ class TestFunctions(unittest.TestCase):
         results = tester.plagiarism_checks_on_users()
         self.assertEqual(len(results), 3)
 
+    def test_tester_docker(self):
+        results = []
+        configuration = Configuration()
+
+        configuration.use_docker = True
+        # Create fake directories
+        shutil.rmtree("/tmp/tests", ignore_errors=True)
+        os.makedirs("/tmp/tests", exist_ok=True)
+        f = open("/tmp/tests/test", 'w')
+        f.write("#!/bin/bash\necho 80\n")
+        f.close()
+        f = open("/tmp/Dockerfile", 'w')
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
+        f.close()
+
+        logger = Logger()
+        logger.verbose = True
+        logger.print_debug_messages = True
+        e_learning = Canvas(configuration.auth_token,
+                            configuration.course_id,
+                            configuration.assignment_id,
+                            logger,
+                            configuration.submit_results_as_file)
+        user_data = self.create_fake_user_db()
+        repository = Repository(user_data, logger, configuration, e_learning)
+        results.append(repository.check_repository_changes(1))
+        results.append(repository.check_repository_changes(2))
+        results.append(repository.check_repository_changes(3))
+        results.append(repository.check_repository_changes(4))
+        results.append(repository.check_repository_changes(5))
+        results.append(repository.check_repository_changes(6))
+        self.assertEqual(results, [True, False, True, True, False, False])
+
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
+
+        # First time assignment evaluation
+        user_object = tester.process_student_assignment(1)
+        self.assertEqual(user_object[0].new_url, False)
+        self.assertGreater(user_object[0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object[0].last_grade, 80)
+        last_graded = user_object[0].last_graded
+
 
 if __name__ == '__main__':
     unittest.main()
