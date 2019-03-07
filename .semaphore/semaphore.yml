@@ -21,4 +21,5 @@ blocks:
       - name: Execute python tests
         commands:
           - pytest
+          - bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git
 
