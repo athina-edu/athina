@@ -9,6 +9,7 @@ Need plug-and-play assignments, tests and test configuration for your course? Ch
 ## Supported programming languages:
 
 ![C, C++, Bash, Java, Python, Ruby, ... (virtually any)](docs/img/languages.png)
+
 *Also, anything you can write or wrap in Bash*
 
 ## Supported e-learning platforms:
@@ -17,9 +18,9 @@ Need plug-and-play assignments, tests and test configuration for your course? Ch
 
 ## Supported VCS (anything Git):
 
-![git (github, gitlab etc.)](docs/img/git.png)
+![git (github, gitlab etc.)](docs/img/git.jpg)
 
-##Supported plagiarism check software:
+## Supported plagiarism check software:
 
 Moss
 
@@ -61,7 +62,7 @@ or
 `pip install -e .` # Easier for live updating using git pull
 
 # Usage (10 second tutorial)
-The following runs the [example configuration](config-examples) (your tests) against a test repo (e.g., student code) that contains a simple python file. 
+The following runs the [example configuration](config-examples) (your tests) against a [test repo](https://github.com/athina-edu/testing.git) (e.g., student code) that contains a simple python file. 
 Tests use pylint3 and output a grade for the student.
 
 `bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git`
