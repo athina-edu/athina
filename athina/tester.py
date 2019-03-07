@@ -6,6 +6,7 @@ import time
 import shutil
 import np
 import hashlib
+import multiprocessing
 
 # Modifiable loading
 from athina.moss import Plagiarism
@@ -240,7 +241,6 @@ class Tester:
         out, err = process.communicate()
         return out, err
 
-    # TODO: there are special params for no repo testing. this needs to be supported as well
     def execute_with_docker(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
         hashed_name = hashlib.md5(self.configuration.config_filename.encode("ascii")).hexdigest()
 
@@ -344,3 +344,40 @@ class Tester:
                 user_object.plagiarism_to_grade = False
 
         return results
+
+    def start_testing_db(self):
+        self.logger.vprint("Pre-fetching all user repositories")
+        # Pre-fetching is important for group assignments where grade is submitted to multiple members and all
+        # user dbs need to be updated later on
+        reverse_repository_index = dict()
+        for key, value in self.user_data.db.items():
+            if self.configuration.no_repo is not True:
+                if value.repository_url is not None:
+                    self.repository.check_repository_changes(key)
+                    # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
+                    # Process group assignment will test once and then it identifies and submits a grade for both
+                    # groups
+                    reverse_repository_index[value.repository_url] = key
+            else:
+                # When no repo is involved it is 1 to 1 check for assignments
+                reverse_repository_index[key] = key
+        processing_list = [[key, value] for key, value in self.user_data.db.items() if
+                           key in reverse_repository_index.values()]
+        del reverse_repository_index
+
+        # Whether we should run processes in parallel or not
+        user_object_results = []
+        if self.configuration.processes < 2:
+            for key, value in processing_list:
+                user_objects = self.process_student_assignment(key)  # because what is returned is a list
+                user_object_results.append(user_objects)
+        else:
+            compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
+            user_object_results = compute_pool.map(self.process_student_assignment,
+                                                   [key for key, value in processing_list])
+
+        # Process results from object to user database (important for parallel runs)
+        for users_object in user_object_results:
+            for user_object in users_object:
+                self.user_data.db[user_object.user_id] = user_object
+        return user_object_results  # This is not necessary but for sake of testing is left here

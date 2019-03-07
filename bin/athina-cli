@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 
-# TODO: need to set defaults for some options
-# TODO: Delete old comments
-# TODO: switch norepo to repo
-
 # Required modules
 import sys
-import json
-import configparser
 import argparse
 import filelock
-import multiprocessing
 from athina.users import *
 from athina.logger import *
 from athina.tester import *
@@ -55,34 +48,9 @@ def parse_command_line():
     return args
 
 
-def find_cfg(directory):
-    if os.path.isdir(directory):
-        # Find a cfg file in the directory
-        try:
-            cfg_file = glob.glob('%s*.cfg' % directory)[0]
-        except IndexError:
-            cfg_file = directory  # this will fail later on but we have done all that we can
-    else:
-        cfg_file = directory
-    return cfg_file
-
-
-def check_dependencies():
-    # Verify requirements are available on OS
-    # TODO: docker is optional so technically unless an assignment has the flag raised it should not be needed
-    software_dependencies = ["firejail", "timeout", "git", "docker"]
-    for software in software_dependencies:
-        if shutil.which(software) is None:
-            raise FileNotFoundError("%s is not available on the host system." % software)
-    return True
-
-
 if __name__ == "__main__":
     # Athina's directory
     DIR_PATH = os.path.dirname(os.path.realpath(__file__))
-
-    # Verify software dependencies
-    check_dependencies()
 
     # Get command line parameters
     ARGS = parse_command_line()
@@ -108,15 +76,10 @@ if __name__ == "__main__":
     # Iterate through each assignment
     for RUN_RECORD in RUN_LIST:
         # Build configuration object
-        CONFIGURATION = Configuration()
-
-        # Load Configuration
-        CONFIG = configparser.ConfigParser()
-        CONFIG.read(find_cfg(RUN_RECORD['directory']))
-
-        # Read Configuration file
-        CONFIGURATION.config_dir = os.path.dirname(RUN_RECORD['directory'])
-        CONFIGURATION.config_filename = os.path.split(find_cfg(RUN_RECORD['directory']))[1]  # cfg filename or dir name
+        CONFIGURATION = Configuration(logger=LOGGER)
+        if CONFIGURATION.load_configuration(RUN_RECORD['directory']) is False:
+            # Unable to read configuration file (or find it)
+            continue  # skip to next item in RUN_LIST
 
         # Obtain simulation parameters and specify log file
         assert type(RUN_RECORD['simulate']) is bool, \
@@ -124,73 +87,6 @@ if __name__ == "__main__":
             "Either the parameter was passed wrong or the code needs fixing."
         CONFIGURATION.simulate = RUN_RECORD['simulate']
         LOGGER.log_file = "%s/%s.log" % (CONFIGURATION.config_dir, CONFIGURATION.config_filename)
-
-        # Load arguments from config
-        try:
-            LOGGER.print_debug_messages = CONFIG.getboolean('main', 'print_debug_msgs')
-        except configparser.NoOptionError:
-            LOGGER.print_debug_messages = False
-        LOGGER.vprint("Loading configuration", debug=True)
-        LOGGER.vprint("Reading %s in %s" % (CONFIGURATION.config_filename, CONFIGURATION.config_dir), debug=True)
-        try:
-            CONFIGURATION.auth_token = CONFIG.get('main', 'auth_token')
-        except configparser.NoSectionError:
-            LOGGER.vprint("Unable to read config file!")
-            continue  # skip to next item in RUN_LIST
-        try:
-            CONFIGURATION.course_id = CONFIG.getint('main', 'course_id')
-        except ValueError:
-            CONFIGURATION.course_id = 0
-        try:
-            CONFIGURATION.assignment_id = CONFIG.getint('main', 'assignment_id')
-        except ValueError:
-            CONFIGURATION.assignment_id = 0
-
-        CONFIGURATION.total_points = CONFIG.getint('main', 'total_points')
-        CONFIGURATION.enforce_due_date = CONFIG.getboolean('main', 'enforce_due_date')
-        CONFIGURATION.test_scripts = json.loads(CONFIG.get('main', 'test_scripts'))
-        CONFIGURATION.test_weights = json.loads(CONFIG.get('main', 'test_weights'))
-        try:
-            CONFIGURATION.moss_id = CONFIG.getint('main', 'moss_id')
-        except ValueError:
-            CONFIGURATION.moss_id = 0
-        CONFIGURATION.moss_lang = CONFIG.get('main', 'moss_lang')
-        CONFIGURATION.moss_pattern = CONFIG.get('main', 'moss_pattern')
-        CONFIGURATION.git_username = CONFIG.get('main', 'git_username')
-        CONFIGURATION.git_password = CONFIG.get('main', 'git_password')
-        CONFIGURATION.same_url_limit = CONFIG.getint('main', 'same_url_limit')
-        CONFIGURATION.check_plagiarism_hour = CONFIG.getint('main', 'check_plagiarism_hour')
-        CONFIGURATION.submit_results_as_file = CONFIG.getboolean('main', 'submit_results_as_file')
-        CONFIGURATION.max_file_size = CONFIG.getint('main', 'max_file_size')
-        CONFIGURATION.max_file_size = CONFIGURATION.max_file_size * 1024  # Convert KB to bytes
-        try:
-            CONFIGURATION.test_timeout = CONFIG.getint('main', 'test_timeout')
-        except configparser.NoOptionError:
-            CONFIGURATION.test_timeout = 120
-        try:
-            CONFIGURATION.no_repo = CONFIG.getboolean('main', 'no_repo')
-        except configparser.NoOptionError:
-            CONFIGURATION.no_repo = False
-        try:
-            CONFIGURATION.pass_extra_params = CONFIG.getboolean('main', 'pass_extra_params')
-        except configparser.NoOptionError:
-            CONFIGURATION.pass_extra_params = False
-        try:
-            CONFIGURATION.grade_update_frequency = CONFIG.getint('main', 'grade_update_frequency') - 1
-        except configparser.NoOptionError:
-            CONFIGURATION.grade_update_frequency = 24 - 1
-        try:
-            CONFIGURATION.git_url = CONFIG.get('main', 'git_url')
-        except configparser.NoOptionError:
-            CONFIGURATION.git_url = 'gitlab.cs.wwu.edu'
-        try:
-            CONFIGURATION.processes = CONFIG.getint('main', 'processes')
-        except configparser.NoOptionError:
-            CONFIGURATION.processes = 1
-        try:
-            CONFIGURATION.use_docker = CONFIG.getboolean('main', 'use_docker')
-        except configparser.NoOptionError:
-            CONFIGURATION.use_docker = False
 
         # Starting statement
         LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
@@ -226,6 +122,7 @@ if __name__ == "__main__":
 
         if ARGS.forced_testing is not None:
             # Test specific user
+            # FIXME: TESTER is returned the changed userdb object
             REPOSITORY.check_repository_changes([value.user_id for key, value in USER_DATA.db.items()
                                                  if value.user_fullname == ARGS.forced_testing][0])
             TESTER.process_student_assignment([value.user_id for key, value in USER_DATA.db.items()
@@ -243,40 +140,10 @@ if __name__ == "__main__":
             REPOSITORY.check_repository_changes(1)
             TESTER.process_student_assignment(1)
             LOGGER.vprint("Repo testing complete!")
-            exit(0)
+            exit(0)  # This is used for testing so no further processing is necessary
         else:
             # Start testing changed records (new or updated) if any exist
-            LOGGER.vprint("Prefetching all user repositories")
-            # Prefetching is important for group assignments where grade is submitted to multiple members and all
-            # user dbs need to be updated later on
-            reverse_repository_index = dict()
-            for key, value in USER_DATA.db.items():
-                if CONFIGURATION.no_repo is not True:
-                    if value.repository_url is not None:
-                        REPOSITORY.check_repository_changes(key)
-                        # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
-                        # Process group assignment will test once and then it identifies and submits a grade for both
-                        # groups
-                        reverse_repository_index[value.repository_url] = key
-                else:
-                    # When no repo is involved it is 1 to 1 check for assignments
-                    reverse_repository_index[key] = key
-            processing_list = [[key, value] for key, value in USER_DATA.db.items() if
-                               key in reverse_repository_index.values()]
-            del reverse_repository_index
-
-            # Whether we should run processes in parallel or not
-            if CONFIGURATION.processes < 2:
-                for key, value in processing_list:
-                    USER_DATA.db[key] = TESTER.process_student_assignment(key)[0]  # because what is returned is a list
-            else:
-                compute_pool = multiprocessing.Pool(processes=CONFIGURATION.processes)
-                user_object_results = compute_pool.map(TESTER.process_student_assignment,
-                                                       [key for key, value in processing_list])
-                for users_object in user_object_results:
-                    for user_object in users_object:
-                        USER_DATA.db[user_object.user_id] = user_object
-            del processing_list
+            TESTER.start_testing_db()
 
         # Initiate plagiarism checks
         if datetime.now(timezone.utc).hour == CONFIGURATION.check_plagiarism_hour:

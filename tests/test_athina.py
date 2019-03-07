@@ -79,7 +79,8 @@ class TestFunctions(unittest.TestCase):
 
     def test_git_tester(self):
         results = []
-        configuration = Configuration()
+        logger = Logger()
+        configuration = Configuration(logger=logger)
         # Create fake directories
         shutil.rmtree("/tmp/tests", ignore_errors=True)
         os.makedirs("/tmp/tests", exist_ok=True)
@@ -87,7 +88,6 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
-        logger = Logger()
         logger.verbose = True
         e_learning = Canvas(configuration.auth_token,
                             configuration.course_id,
@@ -198,7 +198,8 @@ class TestFunctions(unittest.TestCase):
 
     @unittest.skip("Moss service hangs for too long. Implement timeouts in moss.py")
     def test_tester_plagiarism(self):
-        configuration = Configuration()
+        logger = Logger()
+        configuration = Configuration(logger=logger)
         # Create fake directories
         shutil.rmtree("/tmp/tests", ignore_errors=True)
         os.makedirs("/tmp/tests", exist_ok=True)
@@ -206,7 +207,6 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
-        logger = Logger()
         logger.verbose = True
         e_learning = Canvas(configuration.auth_token,
                             configuration.course_id,
@@ -244,7 +244,8 @@ class TestFunctions(unittest.TestCase):
 
     def test_tester_docker(self):
         results = []
-        configuration = Configuration()
+        logger = Logger()
+        configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
         # Create fake directories
@@ -257,7 +258,6 @@ class TestFunctions(unittest.TestCase):
         f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
         f.close()
 
-        logger = Logger()
         logger.verbose = True
         logger.print_debug_messages = True
         e_learning = Canvas(configuration.auth_token,
@@ -287,6 +287,45 @@ class TestFunctions(unittest.TestCase):
         configuration.processes = 2
         compute_pool = multiprocessing.Pool(processes=configuration.processes)
         user_object_results = compute_pool.map(tester.process_student_assignment, [1, 2, 3, 4, 5])
+        self.assertEqual(user_object_results[0][0].new_url, False)
+        self.assertGreater(user_object_results[0][0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object_results[0][0].last_grade, 80)
+        self.assertEqual(user_object_results[1][0].plagiarism_to_grade, False)
+        self.assertEqual(user_object_results[1][0].commit_date, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        # Group assignment
+        self.assertGreater(user_object_results[2][0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object_results[2][0].last_grade, 80)
+        self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
+        self.assertEqual(user_object_results[2][1].last_grade, 80)
+
+    def test_tester_db_testing(self):
+        results = []
+        logger = Logger()
+        configuration = Configuration(logger=logger)
+
+        configuration.use_docker = True
+        # Create fake directories
+        shutil.rmtree("/tmp/tests", ignore_errors=True)
+        os.makedirs("/tmp/tests", exist_ok=True)
+        f = open("/tmp/tests/test", 'w')
+        f.write("#!/bin/bash\necho 80\n")
+        f.close()
+        f = open("/tmp/Dockerfile", 'w')
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
+        f.close()
+
+        logger.verbose = True
+        logger.print_debug_messages = True
+        e_learning = Canvas(configuration.auth_token,
+                            configuration.course_id,
+                            configuration.assignment_id,
+                            logger,
+                            configuration.submit_results_as_file)
+        user_data = self.create_fake_user_db()
+        repository = Repository(user_data, logger, configuration, e_learning)
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
+        configuration.processes = 2
+        user_object_results = tester.start_testing_db()
         self.assertEqual(user_object_results[0][0].new_url, False)
         self.assertGreater(user_object_results[0][0].last_graded, datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc))
         self.assertEqual(user_object_results[0][0].last_grade, 80)
