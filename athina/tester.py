@@ -254,6 +254,7 @@ class Tester:
                          "--stop-timeout", "%d" % self.configuration.test_timeout,
                          "-e", "STUDENT_DIR=%s" % athina_student_code_dir,
                          "-e", "TEST_DIR=%s" % athina_test_tmp_dir,
+                         "-e", "EXTRA_PARAMS=%s" % extra_params,
                          "-v", "%s:%s" % (athina_student_code_dir, athina_student_code_dir),
                          "-v", "%s:%s" % (athina_test_tmp_dir, athina_test_tmp_dir),
                          "%s" % hashed_name]

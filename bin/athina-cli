@@ -47,6 +47,9 @@ def parse_command_line():
     parser.add_argument(
         '--forced_testing', metavar='f', required=False, help='Force (re)-grading for a student name', type=str)
     parser.add_argument(
+        '--repo_url_testing', metavar='r', required=False,
+        help='Test a git config on a particular repo (this exclusively for testing configuration)', type=str)
+    parser.add_argument(
         '--json', metavar='j', required=False, type=str, help='JSON list of folders with Athina cfg files and tests')
     args = parser.parse_args()
     return args
@@ -134,8 +137,14 @@ if __name__ == "__main__":
         except configparser.NoSectionError:
             LOGGER.vprint("Unable to read config file!")
             continue  # skip to next item in RUN_LIST
-        CONFIGURATION.course_id = CONFIG.getint('main', 'course_id')
-        CONFIGURATION.assignment_id = CONFIG.getint('main', 'assignment_id')
+        try:
+            CONFIGURATION.course_id = CONFIG.getint('main', 'course_id')
+        except ValueError:
+            CONFIGURATION.course_id = 0
+        try:
+            CONFIGURATION.assignment_id = CONFIG.getint('main', 'assignment_id')
+        except ValueError:
+            CONFIGURATION.assignment_id = 0
 
         CONFIGURATION.total_points = CONFIG.getint('main', 'total_points')
         CONFIGURATION.enforce_due_date = CONFIG.getboolean('main', 'enforce_due_date')
@@ -196,15 +205,18 @@ if __name__ == "__main__":
         # Begin gathering data from Canvas
         USER_DATA = Users(logger=LOGGER)
         USER_DATA = USER_DATA.load("%s/%s.pkl" % (CONFIGURATION.config_dir, CONFIGURATION.assignment_id))
-        USER_DATA = E_LEARNING.get_all_submissions(USER_DATA)
-        if len(USER_DATA.db) > 0:
-            USER_DATA = E_LEARNING.get_additional_user_info(USER_DATA)
-            if CONFIGURATION.enforce_due_date:
-                CONFIGURATION.due_date = E_LEARNING.get_assignment_due_date()
-            else:
-                CONFIGURATION.due_date = dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
-            # Check if more than N times the same URL in usrdb
-            USER_DATA.check_duplicate_url(same_url_limit=CONFIGURATION.same_url_limit)
+
+        # No point contacting elearning platform if no auth token is provided
+        if CONFIGURATION.auth_token != "":
+            USER_DATA = E_LEARNING.get_all_submissions(USER_DATA)
+            if len(USER_DATA.db) > 0:
+                USER_DATA = E_LEARNING.get_additional_user_info(USER_DATA)
+                if CONFIGURATION.enforce_due_date:
+                    CONFIGURATION.due_date = E_LEARNING.get_assignment_due_date()
+                else:
+                    CONFIGURATION.due_date = dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
+                # Check if more than N times the same URL in usrdb
+                USER_DATA.check_duplicate_url(same_url_limit=CONFIGURATION.same_url_limit)
 
         # Build Repository Object
         REPOSITORY = Repository(USER_DATA, LOGGER, CONFIGURATION, E_LEARNING)
@@ -218,6 +230,20 @@ if __name__ == "__main__":
                                                  if value.user_fullname == ARGS.forced_testing][0])
             TESTER.process_student_assignment([value.user_id for key, value in USER_DATA.db.items()
                                                if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
+        elif ARGS.repo_url_testing is not None:
+            # Creating tmp user and simulating the test for the provided repository
+            USER_DATA.db[1] = USER_DATA.User(user_id=1)
+            USER_DATA.db[1].repository_url = ARGS.repo_url_testing
+            USER_DATA.db[1].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+            USER_DATA.db[1].new_url = True
+            USER_DATA.db[1].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+            LOGGER.verbose = True
+            LOGGER.print_debug_messages = True
+            CONFIGURATION.simulate = True
+            REPOSITORY.check_repository_changes(1)
+            TESTER.process_student_assignment(1)
+            LOGGER.vprint("Repo testing complete!")
+            exit(0)
         else:
             # Start testing changed records (new or updated) if any exist
             LOGGER.vprint("Prefetching all user repositories")

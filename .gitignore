@@ -18,3 +18,5 @@ venv
 /.gtm/
 tests/user_data.pkl
 .eggs
+config-examples/assignementsample.cfg.log
+config-examples/repodata*
