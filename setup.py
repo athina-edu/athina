@@ -6,7 +6,7 @@ setup(
     packages=find_packages(),
     scripts=['bin/athina-cli'],
     install_requires=['np', 'filelock', 'python-dateutil', 'requests', 'numpy', 'psutil'],
-    url='https://gitlab.cs.wwu.edu/tsikerm/athina.py',
+    url='https://github.com/athina-edu/athina',
     license='MIT',
     author='Michail Tsikerdekis',
     author_email='tsikerdekis@gmail.com',

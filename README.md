@@ -1,48 +1,57 @@
-# ATHINA - Automated Testing Homework Interface for N Assignments
+# ATHINA - An autograder, automated feedback microservice
 
-A formative assessment microservice for programming assignments. It is expected to run as a cron job.
+Athina is a formative assessment microservice for programming assignments.
+It is expected to run as a cron job. There is also an optional associated web interface 
+for managing multiple assignments by multiple instructors on a single machine (see [Athina-Web](https://github.com/athina-edu/athina-web)).
 
-Supported e-learning platforms: Canvas
+Need plug-and-play assignments, tests and test configuration for your course? Check out [Athina Assignments](https://github.com/athina-edu/athina-assignments) repository.
 
-Supported VCS: git (github, gitlab etc.)
+## Supported programming languages:
 
-Supported plagiarism check software: Moss
+![C, C++, Bash, Java, Python, Ruby, ... (virtually any)](docs/img/languages.png)
+
+*Also, anything you can write or wrap in Bash*
+
+## Supported e-learning platforms:
+
+![Canvas](docs/img/canvas-logo-3.jpg)
+
+## Supported VCS (anything Git):
+
+![git (github, gitlab etc.)](docs/img/git.jpg)
+
+## Supported plagiarism check software:
+
+Moss
 
 # Here is what it does:
-1. You build your tests like you would regularly using any scripting language of preference (bash, python etc.)
-2. Your script can print anything you like and the last line is the grade from 0-100
-3. You setup a configuration file (cfg) and place your files (tests and anything else you need) on a directory called tests 
-inside the directory where your cfg file is.
-4. You set Athina as a cron job. 
-5. Students submit on Canvas their repo urls.
-6. Athina, clones, looks for changes, runs some safety checks, sandboxes the code and then uses your tests.
-7. Then, it submits the score given to it by tests along with all text printed from the test back to the students Canvas
+1. Build your tests in your language of choice
+2. Your tests can print anything. The last line is the grade from 0-100
+3. Setup Athina's cfg file and define tests and their weights
+4. Place your files in the tests directory
+5. Set Athina as a cron job. 
+6. Students submit on Canvas their repo urls.
+7. Athina, clones, looks for changes, runs some safety checks, sandboxes the code and then uses your tests.
+8. Then, it submits feedback, grade along with all text printed from the test to the student's Canvas
 submission page (as a comment or file attachment containing the text).
 
 # Security Features
-* All tests are sandboxed (using firejail) so that student scripts cannot do damage to the OS or access existing files
+* All tests are sandboxed (using firejail or docker)
 * Only 1 student can submit the same git url, but can also permit more (for group projects)
-* Moss implementation that also notifies student of the average similarity scores and the max for each student (planned to restrict this to instructor only)
+* Moss implementation notifies student of the average similarity scores for plagiarism
 * Git authentication only happens under the specified domain url (e.g., github.com)
 * Git credentials and configuration cannot be obtained through student code execution
-* Tests are forcefully timed out after a certain period of time (in case of infinite loops)
+* Tests are forcefully timed out after a certain period of time (e.g., in case of infinite loops)
 
 # Requirements:
 * python 3.x
 * git
 * timeout
-* firejail
-
-# Recommended
-These are optional depending on your test scripts:
-* bats (used for testing)
-* bc (for math in bash, used for testing)
-* nc (for quickly looking at network packets, used for testing)
-* pwgen (for quick random string generation in bash, used for testing)
+* firejail OR docker
 
 # Installation
-### Dependencies (Ubuntu):
-`sudo apt install python3 git timeout firejail`
+### Dependencies (Ubuntu 18.04):
+`sudo apt install python3 git timeout firejail docker.io`
 ### Cloning and Installing
 `git clone https://github.com/athina-edu/athina.git`
 
@@ -52,22 +61,30 @@ or
 
 `pip install -e .` # Easier for live updating using git pull
 
+# Usage (10 second tutorial)
+The following runs the [example configuration](config-examples) (your tests) against a [test repo](https://github.com/athina-edu/testing.git) (e.g., student code) that contains a simple python file. 
+Tests use pylint3 and output a grade for the student.
+
+`bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git`
+
+Docker build takes longer the first time it is executed but subsequent runs are virtually instant.
+
 # Usage
 1. Build your tests as you would normally. Print as many things that you want students to see and make sure the last 
-item(line) you print is their grade from 0-100. Decimals are accepted. The current student (being tested) files are 
-always at `/tmp/athina` so change the current working directory for your scripts.
-![test-script](https://github.com/athina-edu/athina/raw/master/docs/img/test-script.png "Test-Script")
-![test-script-result](https://github.com/athina-edu/athina/raw/master/docs/img/test-script-result.png "Test-Script-Result")
+item(line) you print is their grade from 0-100. Decimals are accepted. The directories of the student code and tests 
+are passed as environmental variables to the [Dockerfile](config-examples/Dockerfile).
+![test-script](docs/img/test-script.png "Test-Script")
+![test-script-result](docs/img/test-script-result.png "Test-Script-Result")
 
-2. Copy the config-example folder and setup the configuration file for athina with your settings. Canvas' access token
+2. Setup the [configuration file](config-examples/assignementsample.cfg) for athina with your settings. Canvas' access token
 can be retrieved from your canvas' personal settings.
-![config](https://github.com/athina-edu/athina/raw/master/docs/img/config.png "Config")
-![canvas-access](https://github.com/athina-edu/athina/raw/master/docs/img/canvas-access.png "Canvas-Access")
+![config](docs/img/config.png "Config")
+![canvas-access](docs/img/canvas-access.png "Canvas-Access")
 
-3. Copy your tests inside your new folder's tests directory.
+3. Copy your tests inside your new folder's tests directory (e.g., [tests](config-examples/tests)).
 
 4. Run athina manually or place it into a cron.
-    * Testing your config assignment (this won't save or send anything to canvas): 
+    * Testing your config assignment (this won't save or send anything to Canvas): 
     `athina-cli --config /path/to/config/folder --verbose=True --simulate=True`
     * Testing your config assignment for a specific student:
     `athina-cli --config /path/to/config/folder --verbose=True --simulate=True forced_testing="Michail Tsikerdekis"`
@@ -75,11 +92,8 @@ can be retrieved from your canvas' personal settings.
     `athina-cli --config /path/to/config/folder --verbose=True --simulate=True forced_testing=`
     * Running your config assignment but still receiving the log message on terminal (this will send grades to canvas for assignments that have submitted URLs):
     `athina-cli --config /path/to/config/folder --verbose=True`
-    * Running your config assignment and getting log file inside config directory:
+    * Running your config assignment and getting a log file inside config directory:
     `athina-cli --config /path/to/config/folder`
-    * If you use athina_web to manage numerous assignments:
+    * If you use athinaweb to manage numerous assignments use:
     `athina-cli --json http://yourathinaweburl/assignments/api`
 
-## Additional info
-See `assignmentsample.cfg` for options and other guidelines. An example (`test-script.bats`) that utilizes bats for 
-testing is also provided.

@@ -1,7 +1,7 @@
 #!/bin/bash
-test_dir=$1
-student_dir=$2
-cd $testdir # Default directory where student code is copied for testing
+student_dir=$1
+test_dir=$2
+cd $student_dir # Default directory where student code is copied for testing
 
 touch ~/.pylintrc # Supress pylint warning message, use default config
 IFS=

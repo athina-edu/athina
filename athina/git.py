@@ -25,6 +25,7 @@ class Repository:
             self.logger.vprint("Testing script returned error: %s" % err.decode("utf-8", "backslashreplace"))
             return True
 
+    # TODO: change some of these commands to appropriate module commands, e.g., shutils, os etc.
     def clone_git_repo(self, user_id, user_object):
         subprocess.run(["rm", "-r", "-f", "%s/repodata%s/u%s" % (self.configuration.config_dir,
                                                                  self.configuration.assignment_id, user_id)])

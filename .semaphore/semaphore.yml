@@ -21,4 +21,8 @@ blocks:
       - name: Execute python tests
         commands:
           - pytest
+      - name: Athina test using repo_url_testing parameter
+        commands:
+          - out=$(bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git)
+          - echo $out |grep 3.33 | if [ $(wc -l) > 0 ]; then exit 0; else exit 1; fi
 

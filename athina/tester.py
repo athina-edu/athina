@@ -5,6 +5,8 @@ import glob
 import time
 import shutil
 import np
+import hashlib
+import multiprocessing
 
 # Modifiable loading
 from athina.moss import Plagiarism
@@ -98,7 +100,13 @@ class Tester:
                     athina_test_tmp_dir = "/tmp/athina-test%s" % time.time()
 
                 # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-                shutil.rmtree(athina_student_code_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(athina_student_code_dir)
+                except PermissionError:
+                    self.logger.vprint("Cannot delete %s. Likely permissions error." % athina_student_code_dir)
+                    raise PermissionError(athina_student_code_dir)
+                except FileNotFoundError:
+                    pass
                 if self.configuration.no_repo is False:
                     try:
                         shutil.copytree('%s/repodata%s/u%s' % (self.configuration.config_dir,
@@ -109,7 +117,13 @@ class Tester:
                         self.logger.vprint("Could not copy student directory at %s/repodata%s/u%s/*" %
                                            (self.configuration.config_dir, self.configuration.assignment_id, user_id))
                 # Copy tests in tmp folder
-                shutil.rmtree(athina_test_tmp_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(athina_test_tmp_dir)
+                except PermissionError:
+                    self.logger.vprint("Cannot delete %s. Likely permissions error." % athina_test_tmp_dir)
+                    raise PermissionError(athina_test_tmp_dir)
+                except FileNotFoundError:
+                    pass
                 try:
                     shutil.copytree('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
                 except FileNotFoundError:
@@ -120,22 +134,16 @@ class Tester:
                 else:
                     extra_params = [athina_student_code_dir, athina_test_tmp_dir]
 
-                # Custom firejail profile that allows to sandbox suid processes (so that athina wont run as root)
-                generate_firejail_profile("%s/server.profile" % athina_test_tmp_dir)
+                # Execute using docker or firejail (depending on what the settings are)
+                if self.configuration.use_docker is True \
+                        and os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
+                    out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
+                                                        extra_params, test_script)
+                else:
+                    out, err = self.execute_with_firejail(athina_student_code_dir, athina_test_tmp_dir,
+                                                          extra_params, test_script)
 
-                # Run the test
-                test_timeout = ["timeout", "--kill-after=1", str(self.configuration.test_timeout)]
-                test_command = test_timeout + ["firejail", "--quiet", "--private", "--profile=server.profile",
-                                               "--whitelist=%s/" % athina_student_code_dir,
-                                               "--whitelist=%s/" % athina_test_tmp_dir] + test_script.split(
-                    " ") + extra_params
-                self.logger.vprint(" ".join(test_command), debug=True)
-                process = subprocess.Popen(test_command,
-                                           cwd="%s/" % athina_test_tmp_dir,
-                                           stdout=subprocess.PIPE,
-                                           stderr=subprocess.PIPE)
-                out, err = process.communicate()
-
+                # TODO: convert these to cmmands using shutils and os
                 # Clear temp directories
                 subprocess.run("rm -rf '%s'" % athina_test_tmp_dir, shell=True)
                 subprocess.run("rm -rf '%s'" % athina_student_code_dir, shell=True)
@@ -161,8 +169,11 @@ class Tester:
                     out = self.trim_test_output(out)
                     test_reports.append(out)
                     test_reports.append(
-                        "Tests failed:\n Test likely timed out, e.g., infinite loop, non legible script grade".encode(
-                            "utf-8"))
+                        """Tests failed:
+                        Test likely timed out.
+                        This can happen if you have an infinite loop or non terminating loop,
+                        A missing library that the system doesn't have (contact the instructor)
+                        Non legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))
                 else:
                     # scaling between 0 and 1
                     test_grades.append(score / 100 * self.configuration.test_weights[x])
@@ -211,6 +222,60 @@ class Tester:
             self.logger.vprint(">> No changes or past due date", debug=True)
             user_object.changed_state = False
             return [user_object]  # return list of the current object
+
+    def execute_with_firejail(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
+        # Custom firejail profile that allows to sandbox suid processes (so that athina wont run as root)
+        generate_firejail_profile("%s/server.profile" % athina_test_tmp_dir)
+
+        # Run the test
+        test_timeout = ["timeout", "--kill-after=1", str(self.configuration.test_timeout)]
+        test_command = test_timeout + ["firejail", "--quiet", "--private", "--profile=server.profile",
+                                       "--whitelist=%s/" % athina_student_code_dir,
+                                       "--whitelist=%s/" % athina_test_tmp_dir] + test_script.split(
+            " ") + extra_params
+        self.logger.vprint(" ".join(test_command), debug=True)
+        process = subprocess.Popen(test_command,
+                                   cwd="%s/" % athina_test_tmp_dir,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        out, err = process.communicate()
+        return out, err
+
+    def execute_with_docker(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
+        hashed_name = hashlib.md5(self.configuration.config_filename.encode("ascii")).hexdigest()
+
+        # Build with empty context
+        os.makedirs("/tmp/athina_empty", exist_ok=True)
+
+        build_statement = ["docker", "build", "/tmp/athina_empty", "-t",
+                           "%s" % hashed_name,
+                           "-f", "Dockerfile"]
+        run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
+                         "--stop-timeout", "%d" % self.configuration.test_timeout,
+                         "-e", "STUDENT_DIR=%s" % athina_student_code_dir,
+                         "-e", "TEST_DIR=%s" % athina_test_tmp_dir,
+                         "-e", "EXTRA_PARAMS=%s" % extra_params,
+                         "-v", "%s:%s" % (athina_student_code_dir, athina_student_code_dir),
+                         "-v", "%s:%s" % (athina_test_tmp_dir, athina_test_tmp_dir),
+                         "%s" % hashed_name]
+
+        # Building the image. This is built once and then things are much faster but the check needs to happen
+        self.logger.vprint(" ".join(build_statement), debug=True)
+        process = subprocess.Popen(build_statement, cwd="%s/" % self.configuration.config_dir, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        out, err = process.communicate()
+
+        # If build was successful, run the image
+        if not self.check_error(err):
+            self.logger.vprint(" ".join(run_statement), debug=True)
+            process = subprocess.Popen(run_statement, cwd="%s/" % self.configuration.config_dir,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
+            run_out, run_err = process.communicate()
+            out += run_out
+            err += run_err
+
+        return out, err
 
     def plagiarism_checks_on_users(self):
         """
@@ -279,3 +344,40 @@ class Tester:
                 user_object.plagiarism_to_grade = False
 
         return results
+
+    def start_testing_db(self):
+        self.logger.vprint("Pre-fetching all user repositories")
+        # Pre-fetching is important for group assignments where grade is submitted to multiple members and all
+        # user dbs need to be updated later on
+        reverse_repository_index = dict()
+        for key, value in self.user_data.db.items():
+            if self.configuration.no_repo is not True:
+                if value.repository_url is not None:
+                    self.repository.check_repository_changes(key)
+                    # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
+                    # Process group assignment will test once and then it identifies and submits a grade for both
+                    # groups
+                    reverse_repository_index[value.repository_url] = key
+            else:
+                # When no repo is involved it is 1 to 1 check for assignments
+                reverse_repository_index[key] = key
+        processing_list = [[key, value] for key, value in self.user_data.db.items() if
+                           key in reverse_repository_index.values()]
+        del reverse_repository_index
+
+        # Whether we should run processes in parallel or not
+        user_object_results = []
+        if self.configuration.processes < 2:
+            for key, value in processing_list:
+                user_objects = self.process_student_assignment(key)  # because what is returned is a list
+                user_object_results.append(user_objects)
+        else:
+            compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
+            user_object_results = compute_pool.map(self.process_student_assignment,
+                                                   [key for key, value in processing_list])
+
+        # Process results from object to user database (important for parallel runs)
+        for users_object in user_object_results:
+            for user_object in users_object:
+                self.user_data.db[user_object.user_id] = user_object
+        return user_object_results  # This is not necessary but for sake of testing is left here
