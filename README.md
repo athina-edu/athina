@@ -43,23 +43,20 @@ submission page (as a comment or file attachment containing the text).
 * Git credentials and configuration cannot be obtained through student code execution
 * Tests are forcefully timed out after a certain period of time (e.g., in case of infinite loops)
 
-# Requirements:
-* python 3.x
-* git
-* timeout
-* firejail OR docker
-
 # Installation
-### Dependencies (Ubuntu 18.04):
-`sudo apt install python3 git timeout firejail docker.io`
-### Cloning and Installing
+## via Docker
+`sudo apt install docker.io docker-compose` # *(Ubuntu 18.04 or revise according to your distro)*
+
+`wget https://raw.githubusercontent.com/athina-edu/athina/master/docker-compose.yml`
+
+`docker-compose run athina <command line params>`
+
+## from Source (Ubuntu 18.04)
+`sudo apt install python3 python3-pip git firejail docker.io`
+
 `git clone https://github.com/athina-edu/athina.git`
 
-`pip install .`
-
-or 
-
-`pip install -e .` # Easier for live updating using git pull
+`pip3 install .`
 
 # Usage (10 second tutorial)
 The following runs the [example configuration](config-examples) (your tests) against a [test repo](https://github.com/athina-edu/testing.git) (e.g., student code) that contains a simple python file. 
