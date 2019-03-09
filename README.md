@@ -43,6 +43,19 @@ submission page (as a comment or file attachment containing the text).
 * Tests are forcefully timed out after a certain period of time (e.g., in case of infinite loops)
 
 # Installation
+## One click run/install
+This includes Athina's Web Interface and auto configuration:
+
+`git clone https://github.com/athina-edu/athina-one-click-run`
+
+`cd athina-one-click-run`
+
+`./run.sh`
+
+Navigate to 127.0.0.1:8000 (or your domain) on your browser and add some assignments
+using your newly created root user or signup with another user. Athina will automatically test
+these depending on their configuration file.
+
 ## via Docker
 `sudo apt install docker.io docker-compose` # *(Ubuntu 18.04 or revise according to your distro)*
 
@@ -61,9 +74,16 @@ submission page (as a comment or file attachment containing the text).
 The following runs the [example configuration](config-examples) (your tests) against a [test repo](https://github.com/athina-edu/testing.git) (e.g., student code) that contains a simple python file. 
 Tests use pylint3 and output a grade for the student.
 
+#### docker
+
+`docker-compose run athina --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git`
+
+#### source build
+
+
 `bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git`
 
-Docker build takes longer the first time it is executed but subsequent runs are virtually instant.
+Tests that use docker (instead of firejail) take longer the first time they are executed but subsequent runs are virtually instant.
 
 # Usage
 1. Build your tests as you would normally. Print as many things that you want students to see and make sure the last 
@@ -79,7 +99,7 @@ can be retrieved from your canvas' personal settings.
 
 3. Copy your tests inside your new folder's tests directory (e.g., [tests](config-examples/tests)).
 
-4. Run athina manually or place it into a cron.
+4. Run athina via command line (if you are not using the one-click-run variant).
     * Testing your config assignment (this won't save or send anything to Canvas): 
     `athina-cli --config /path/to/config/folder --verbose --simulate`
     * Testing your config assignment for a specific student:
