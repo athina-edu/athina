@@ -1,7 +1,6 @@
 # ATHINA - An autograder, automated feedback microservice
 
-Athina is a formative assessment microservice for programming assignments.
-It is expected to run as a cron job. There is also an optional associated web interface 
+Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 
 for managing multiple assignments by multiple instructors on a single machine (see [Athina-Web](https://github.com/athina-edu/athina-web)).
 
 Need plug-and-play assignments, tests and test configuration for your course? Check out [Athina Assignments](https://github.com/athina-edu/athina-assignments) repository.
@@ -82,15 +81,16 @@ can be retrieved from your canvas' personal settings.
 
 4. Run athina manually or place it into a cron.
     * Testing your config assignment (this won't save or send anything to Canvas): 
-    `athina-cli --config /path/to/config/folder --verbose=True --simulate=True`
+    `athina-cli --config /path/to/config/folder --verbose --simulate`
     * Testing your config assignment for a specific student:
-    `athina-cli --config /path/to/config/folder --verbose=True --simulate=True forced_testing="Michail Tsikerdekis"`
+    `athina-cli --config /path/to/config/folder --verbose --simulate forced_testing="Michail Tsikerdekis"`
     * Testing your config assignment for the test student on Canvas (it has an empty name):
-    `athina-cli --config /path/to/config/folder --verbose=True --simulate=True forced_testing=`
+    `athina-cli --config /path/to/config/folder --verbose --simulate forced_testing=`
     * Running your config assignment but still receiving the log message on terminal (this will send grades to canvas for assignments that have submitted URLs):
-    `athina-cli --config /path/to/config/folder --verbose=True`
+    `athina-cli --config /path/to/config/folder --verbose`
     * Running your config assignment and getting a log file inside config directory:
     `athina-cli --config /path/to/config/folder`
     * If you use athinaweb to manage numerous assignments use:
     `athina-cli --json http://yourathinaweburl/assignments/api`
-
+    * If you want to run it as a service use:
+    `athina-cli --json http://yourathinaweburl/assignments/api -s`

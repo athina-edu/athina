@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 # Required modules
-import sys
 import argparse
+import time
 import filelock
+import signal
+import sys
 from athina.users import *
 from athina.logger import *
 from athina.tester import *
@@ -31,21 +33,131 @@ def parse_command_line():
     """
     parser = argparse.ArgumentParser(
         description='ATHINA - Automated Testing Homework Interface for N Assignments')
-    parser.add_argument(
-        '--config', metavar='c', required=False, type=str, help='Configuration File')
-    parser.add_argument(
-        '--verbose', metavar='v', required=False, type=bool, help='Verbose mode, default False', default=False)
-    parser.add_argument(
-        '--simulate', metavar='v', required=False, type=bool, help='Simulate but never submit grade', default=False)
-    parser.add_argument(
-        '--forced_testing', metavar='f', required=False, help='Force (re)-grading for a student name', type=str)
-    parser.add_argument(
-        '--repo_url_testing', metavar='r', required=False,
-        help='Test a git config on a particular repo (this exclusively for testing configuration)', type=str)
-    parser.add_argument(
-        '--json', metavar='j', required=False, type=str, help='JSON list of folders with Athina cfg files and tests')
+    parser.add_argument('-c', '--config', metavar='[config file|config dir]',
+                        required=False, type=str, help='Configuration File')
+    parser.add_argument('-v', '--verbose', required=False, help='Verbose mode, default False',
+                        default=False, action='store_true')
+    parser.add_argument('-s', '--service', required=False, help='Run Athina as a service',
+                        default=False, action='store_true')
+    parser.add_argument('-S', '--simulate', required=False, help='Simulate but never submit grade',
+                        action='store_true', default=False)
+    parser.add_argument('-f', '--forced_testing', metavar='[student name]',
+                        required=False, help='Force (re)-grading for a student name', type=str)
+    parser.add_argument('-r', '--repo_url_testing', metavar='[repository url]', required=False,
+                        help='Test a git config on a particular repo (this exclusively for testing configuration)',
+                        type=str)
+    parser.add_argument('-j', '--json', metavar='[json file]', required=False, type=str,
+                        help='JSON list of folders with Athina cfg files and tests')
     args = parser.parse_args()
     return args
+
+
+def signal_handler(sig, frame):
+    print('Ctrl+C detected. Terminating service...')
+    lock.release()
+    sys.exit(0)
+
+
+def main():
+    # Build the list of assignments to check (Athina Web = json format, command line = 1 assignment only)
+    run_list = []
+    if ARGS.json is not None:
+        run_list = request_url(ARGS.json, method="get", return_type="json")
+    elif ARGS.config is not None:
+        run_list.append({'directory': ARGS.config, 'simulate': ARGS.simulate})
+    else:
+        raise SyntaxError("You need to provide either --config or --json.")
+
+    # Iterate through each assignment
+    for run_record in run_list:
+        # Build configuration object
+        configuration = Configuration(logger=LOGGER)
+        if configuration.load_configuration(run_record['directory']) is False:
+            # Unable to read configuration file (or find it)
+            continue  # skip to next item in run_list
+
+        # Obtain simulation parameters and specify log file
+        assert type(run_record['simulate']) is bool, \
+            "Simulate is not properly read. " \
+            "Either the parameter was passed wrong or the code needs fixing."
+        configuration.simulate = run_record['simulate']
+        LOGGER.log_file = "%s/%s.log" % (configuration.config_dir, configuration.config_filename)
+
+        # Starting statement
+        LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
+
+        # Load e-learning platform functions
+        e_learning = Canvas(configuration.auth_token,
+                            configuration.course_id,
+                            configuration.assignment_id,
+                            LOGGER,
+                            configuration.submit_results_as_file)
+
+        # Begin gathering data from Canvas
+        user_data = Users(logger=LOGGER)
+        user_data = user_data.load("%s/%s.pkl" % (configuration.config_dir, configuration.assignment_id))
+
+        # No point contacting elearning platform if no auth token is provided
+        if configuration.auth_token != "":
+            user_data = e_learning.get_all_submissions(user_data)
+            if len(user_data.db) > 0:
+                user_data = e_learning.get_additional_user_info(user_data)
+                if configuration.enforce_due_date:
+                    configuration.due_date = e_learning.get_assignment_due_date()
+                else:
+                    configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
+                # Check if more than N times the same URL in usrdb
+                user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
+
+        # Build Repository Object
+        repository = Repository(user_data, LOGGER, configuration, e_learning)
+
+        # Build Tester Object
+        tester = Tester(user_data, LOGGER, configuration, e_learning, repository)
+
+        if ARGS.forced_testing is not None:
+            # Test specific user
+            # FIXME: tester is returned the changed userdb object
+            repository.check_repository_changes([value.user_id for key, value in user_data.db.items()
+                                                 if value.user_fullname == ARGS.forced_testing][0])
+            tester.process_student_assignment([value.user_id for key, value in user_data.db.items()
+                                               if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
+        elif ARGS.repo_url_testing is not None:
+            # Creating tmp user and simulating the test for the provided repository
+            user_data.db[1] = user_data.User(user_id=1)
+            user_data.db[1].repository_url = ARGS.repo_url_testing
+            user_data.db[1].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+            user_data.db[1].new_url = True
+            user_data.db[1].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+            LOGGER.verbose = True
+            LOGGER.print_debug_messages = True
+            configuration.simulate = True
+            repository.check_repository_changes(1)
+            tester.process_student_assignment(1)
+            LOGGER.vprint("Repo testing complete!")
+            exit(0)  # This is used for testing so no further processing is necessary
+        else:
+            # Start testing changed records (new or updated) if any exist
+            tester.start_testing_db()
+
+        # Initiate plagiarism checks
+        if datetime.now(timezone.utc).hour == configuration.check_plagiarism_hour:
+            tester.plagiarism_checks_on_users()
+
+        # Save database changes
+        if configuration.simulate is False:
+            user_data.save("%s/%s.pkl" % (configuration.config_dir, configuration.assignment_id))
+            os.chmod("%s/%s.pkl" % (configuration.config_dir, configuration.assignment_id), 0o666)
+        if LOGGER.verbose is False:
+            subprocess.run("echo \"$(tail -3000 '%s')\" > '%s'" % (LOGGER.log_file, LOGGER.log_file), shell=True)
+            os.chmod(LOGGER.log_file, 0o666)
+        # In case this script is run as another user the repo needs to be also set to be editable by anyone
+        try:
+            os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o777)
+        except FileNotFoundError:
+            pass
+
+        LOGGER.vprint("###\nFinished - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
 
 
 if __name__ == "__main__":
@@ -64,105 +176,18 @@ if __name__ == "__main__":
     # helper_functions also imports builtins, a way to make global variable
     LOGGER.verbose = ARGS.verbose
 
-    # Build the list of assignments to check (Athina Web = json format, command line = 1 assignment only)
-    RUN_LIST = []
-    if ARGS.json is not None:
-        RUN_LIST = request_url(ARGS.json, method="get", return_type="json")
-    elif ARGS.config is not None:
-        RUN_LIST.append({'directory': ARGS.config, 'simulate': ARGS.simulate})
+    # Capturing and terminating on service or non service interrupt
+    signal.signal(signal.SIGINT, signal_handler)
+    print('Press Ctrl+C at any time to terminate Athina.')
+
+    # Start main process
+    if ARGS.service is True:
+        # Run as a daemon
+        while True:
+            main()
+            time.sleep(60)
     else:
-        raise SyntaxError("You need to provide either --config or --json.")
-
-    # Iterate through each assignment
-    for RUN_RECORD in RUN_LIST:
-        # Build configuration object
-        CONFIGURATION = Configuration(logger=LOGGER)
-        if CONFIGURATION.load_configuration(RUN_RECORD['directory']) is False:
-            # Unable to read configuration file (or find it)
-            continue  # skip to next item in RUN_LIST
-
-        # Obtain simulation parameters and specify log file
-        assert type(RUN_RECORD['simulate']) is bool, \
-            "Simulate is not properly read. " \
-            "Either the parameter was passed wrong or the code needs fixing."
-        CONFIGURATION.simulate = RUN_RECORD['simulate']
-        LOGGER.log_file = "%s/%s.log" % (CONFIGURATION.config_dir, CONFIGURATION.config_filename)
-
-        # Starting statement
-        LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
-
-        # Load e-learning platform functions
-        E_LEARNING = Canvas(CONFIGURATION.auth_token,
-                            CONFIGURATION.course_id,
-                            CONFIGURATION.assignment_id,
-                            LOGGER,
-                            CONFIGURATION.submit_results_as_file)
-
-        # Begin gathering data from Canvas
-        USER_DATA = Users(logger=LOGGER)
-        USER_DATA = USER_DATA.load("%s/%s.pkl" % (CONFIGURATION.config_dir, CONFIGURATION.assignment_id))
-
-        # No point contacting elearning platform if no auth token is provided
-        if CONFIGURATION.auth_token != "":
-            USER_DATA = E_LEARNING.get_all_submissions(USER_DATA)
-            if len(USER_DATA.db) > 0:
-                USER_DATA = E_LEARNING.get_additional_user_info(USER_DATA)
-                if CONFIGURATION.enforce_due_date:
-                    CONFIGURATION.due_date = E_LEARNING.get_assignment_due_date()
-                else:
-                    CONFIGURATION.due_date = dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
-                # Check if more than N times the same URL in usrdb
-                USER_DATA.check_duplicate_url(same_url_limit=CONFIGURATION.same_url_limit)
-
-        # Build Repository Object
-        REPOSITORY = Repository(USER_DATA, LOGGER, CONFIGURATION, E_LEARNING)
-
-        # Build Tester Object
-        TESTER = Tester(USER_DATA, LOGGER, CONFIGURATION, E_LEARNING, REPOSITORY)
-
-        if ARGS.forced_testing is not None:
-            # Test specific user
-            # FIXME: TESTER is returned the changed userdb object
-            REPOSITORY.check_repository_changes([value.user_id for key, value in USER_DATA.db.items()
-                                                 if value.user_fullname == ARGS.forced_testing][0])
-            TESTER.process_student_assignment([value.user_id for key, value in USER_DATA.db.items()
-                                               if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
-        elif ARGS.repo_url_testing is not None:
-            # Creating tmp user and simulating the test for the provided repository
-            USER_DATA.db[1] = USER_DATA.User(user_id=1)
-            USER_DATA.db[1].repository_url = ARGS.repo_url_testing
-            USER_DATA.db[1].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
-            USER_DATA.db[1].new_url = True
-            USER_DATA.db[1].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
-            LOGGER.verbose = True
-            LOGGER.print_debug_messages = True
-            CONFIGURATION.simulate = True
-            REPOSITORY.check_repository_changes(1)
-            TESTER.process_student_assignment(1)
-            LOGGER.vprint("Repo testing complete!")
-            exit(0)  # This is used for testing so no further processing is necessary
-        else:
-            # Start testing changed records (new or updated) if any exist
-            TESTER.start_testing_db()
-
-        # Initiate plagiarism checks
-        if datetime.now(timezone.utc).hour == CONFIGURATION.check_plagiarism_hour:
-            TESTER.plagiarism_checks_on_users()
-
-        # Save database changes
-        if CONFIGURATION.simulate is False:
-            USER_DATA.save("%s/%s.pkl" % (CONFIGURATION.config_dir, CONFIGURATION.assignment_id))
-            os.chmod("%s/%s.pkl" % (CONFIGURATION.config_dir, CONFIGURATION.assignment_id), 0o666)
-        if LOGGER.verbose is False:
-            subprocess.run("echo \"$(tail -3000 '%s')\" > '%s'" % (LOGGER.log_file, LOGGER.log_file), shell=True)
-            os.chmod(LOGGER.log_file, 0o666)
-        # In case this script is run as another user the repo needs to be also set to be editable by anyone
-        try:
-            os.chmod("%s/repodata%s" % (CONFIGURATION.config_dir, CONFIGURATION.assignment_id), 0o777)
-        except FileNotFoundError:
-            pass
-
-        LOGGER.vprint("###\nFinished - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
+        main()
 
     # Closing statement
     lock.release()
