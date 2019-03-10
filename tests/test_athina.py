@@ -89,11 +89,7 @@ class TestFunctions(unittest.TestCase):
         f.close()
 
         logger.verbose = True
-        e_learning = Canvas(configuration.auth_token,
-                            configuration.course_id,
-                            configuration.assignment_id,
-                            logger,
-                            configuration.submit_results_as_file)
+        e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(user_data, logger, configuration, e_learning)
         results.append(repository.check_repository_changes(1))
@@ -208,11 +204,7 @@ class TestFunctions(unittest.TestCase):
         f.close()
 
         logger.verbose = True
-        e_learning = Canvas(configuration.auth_token,
-                            configuration.course_id,
-                            configuration.assignment_id,
-                            logger,
-                            configuration.submit_results_as_file)
+        e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(user_data, logger, configuration, e_learning)
         repository.check_repository_changes(1)
@@ -260,11 +252,7 @@ class TestFunctions(unittest.TestCase):
 
         logger.verbose = True
         logger.print_debug_messages = True
-        e_learning = Canvas(configuration.auth_token,
-                            configuration.course_id,
-                            configuration.assignment_id,
-                            logger,
-                            configuration.submit_results_as_file)
+        e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(user_data, logger, configuration, e_learning)
         results.append(repository.check_repository_changes(1))
@@ -299,7 +287,6 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object_results[2][1].last_grade, 80)
 
     def test_tester_db_testing(self):
-        results = []
         logger = Logger()
         configuration = Configuration(logger=logger)
 
@@ -316,11 +303,7 @@ class TestFunctions(unittest.TestCase):
 
         logger.verbose = True
         logger.print_debug_messages = True
-        e_learning = Canvas(configuration.auth_token,
-                            configuration.course_id,
-                            configuration.assignment_id,
-                            logger,
-                            configuration.submit_results_as_file)
+        e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(user_data, logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)

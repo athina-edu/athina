@@ -52,7 +52,7 @@ def parse_command_line():
     return args
 
 
-def signal_handler(sig, frame):
+def signal_handler():
     print('Ctrl+C detected. Terminating service...')
     lock.release()
     sys.exit(0)
@@ -87,11 +87,7 @@ def main():
         LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
 
         # Load e-learning platform functions
-        e_learning = Canvas(configuration.auth_token,
-                            configuration.course_id,
-                            configuration.assignment_id,
-                            LOGGER,
-                            configuration.submit_results_as_file)
+        e_learning = Canvas(configuration, LOGGER)
 
         # Begin gathering data from Canvas
         user_data = Users(logger=LOGGER)

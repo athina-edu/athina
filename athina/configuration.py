@@ -36,6 +36,7 @@ class Configuration:
     processes = 1
     due_date = datetime(2100, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
     use_docker = False
+    canvas_url = "www.instructure.com"
 
     def __init__(self, logger):
         self.logger = logger
@@ -132,6 +133,10 @@ class Configuration:
             self.processes = config.getint('main', 'processes')
         except configparser.NoOptionError:
             self.processes = 1
+        try:
+            self.canvas_url = config.getint('main', 'canvas_url')
+        except configparser.NoOptionError:
+            self.canvas_url = "www.instructure.com"
 
         try:
             self.use_docker = config.getboolean('main', 'use_docker')
