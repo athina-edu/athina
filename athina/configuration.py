@@ -134,7 +134,7 @@ class Configuration:
         except configparser.NoOptionError:
             self.processes = 1
         try:
-            self.canvas_url = config.getint('main', 'canvas_url')
+            self.canvas_url = config.get('main', 'canvas_url')
         except configparser.NoOptionError:
             self.canvas_url = "www.instructure.com"
 
