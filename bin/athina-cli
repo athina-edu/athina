@@ -90,23 +90,22 @@ def main():
         e_learning = Canvas(configuration, LOGGER)
 
         # Begin gathering data from Canvas
-        user_data = Users(logger=LOGGER)
-        user_data = user_data.load("%s/%s.pkl" % (configuration.config_dir, configuration.assignment_id))
+        user_data = Database("%s/%s.sqlite3" % (configuration.config_dir, configuration.assignment_id), logger=LOGGER)
 
         # No point contacting elearning platform if no auth token is provided
         if configuration.auth_token != "":
-            user_data = e_learning.get_all_submissions(user_data)
-            if len(user_data.db) > 0:
+            e_learning.get_all_submissions()
+            if len(Users.select()) > 0:
                 user_data = e_learning.get_additional_user_info(user_data)
                 if configuration.enforce_due_date:
                     configuration.due_date = e_learning.get_assignment_due_date()
                 else:
-                    configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
+                    configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
                 # Check if more than N times the same URL in usrdb
                 user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
 
         # Build Repository Object
-        repository = Repository(user_data, LOGGER, configuration, e_learning)
+        repository = Repository(LOGGER, configuration, e_learning)
 
         # Build Tester Object
         tester = Tester(user_data, LOGGER, configuration, e_learning, repository)
@@ -120,11 +119,13 @@ def main():
                                                if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
         elif ARGS.repo_url_testing is not None:
             # Creating tmp user and simulating the test for the provided repository
-            user_data.db[1] = user_data.User(user_id=1)
-            user_data.db[1].repository_url = ARGS.repo_url_testing
-            user_data.db[1].url_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
-            user_data.db[1].new_url = True
-            user_data.db[1].commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+            obj = Users[1]
+            obj.delete_instance()
+            Users.create(user_id=1,
+                         repository_url=ARGS.repo_url_testing,
+                         url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
+                         new_url=True,
+                         commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
             LOGGER.verbose = True
             LOGGER.print_debug_messages = True
             configuration.simulate = True
@@ -137,13 +138,10 @@ def main():
             tester.start_testing_db()
 
         # Initiate plagiarism checks
-        if datetime.now(timezone.utc).hour == configuration.check_plagiarism_hour:
+        if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
             tester.plagiarism_checks_on_users()
 
         # Save database changes
-        if configuration.simulate is False:
-            user_data.save("%s/%s.pkl" % (configuration.config_dir, configuration.assignment_id))
-            os.chmod("%s/%s.pkl" % (configuration.config_dir, configuration.assignment_id), 0o666)
         if LOGGER.verbose is False:
             subprocess.run("echo \"$(tail -3000 '%s')\" > '%s'" % (LOGGER.log_file, LOGGER.log_file), shell=True)
             os.chmod(LOGGER.log_file, 0o666)
