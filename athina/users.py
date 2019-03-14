@@ -51,12 +51,14 @@ class Database:
                 if len(indices) > same_url_limit:
                     for i in indices:
                         obj = Users.get(Users.user_id == ids[i])
-                        obj.same_url_flag = True
-                        obj.save()
+                        if obj.same_url_flag is not True:
+                            obj.same_url_flag = True
+                            obj.save()
                 else:
                     obj = Users.get(Users.user_id == val.user_id)
-                    obj.same_url_flag = False
-                    obj.save()
+                    if obj.same_url_flag is not False:
+                        obj.same_url_flag = False
+                        obj.save()
 
 
 class Users(Model):
