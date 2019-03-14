@@ -88,6 +88,7 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
+        configuration.simulate = False
         logger.verbose = True
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()

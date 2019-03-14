@@ -76,7 +76,8 @@ class Repository:
             # Submit grade
             self.logger.vprint("The URL is being used by another student")
             # TODO: Command below has not been verified that it works. Needs to be verified (good for testing dev)
-            self.e_learning.submit_grade(user_id, user_values, 0, 'The URL is being used by another student')
+            if self.configuration.simulate is False:
+                self.e_learning.submit_grade(user_id, user_values, 0, 'The URL is being used by another student')
             user_values.new_url = False
             user_values.commit_date = datetime.now(timezone.utc).replace(tzinfo=None)
             user_values.save()

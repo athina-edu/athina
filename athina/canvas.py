@@ -49,8 +49,8 @@ class Canvas:
                     # Submit grade and comment referencing the file that was just uploaded
                     self.submit_grade_canvas(user_id=user_id, grade=grade, comment_file=upload_result["fileid"])
                 else:
-                    comment_text = "See file:\nhttps://wwu.instructure.com/files/%d/download?download_frd=1" % \
-                                   upload_result["fileid"]
+                    comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
+                                   (self.configuration.canvas_url, upload_result["fileid"])
                     self.submit_grade_canvas(user_id=user_id,
                                              grade=grade,
                                              comment_text=comment_text)
@@ -138,10 +138,8 @@ class Canvas:
             link_url = self.upload_params_for_folder_upload(filename)
             return_url = self.upload(link_url, file_contents)
         # if we get the same error a second time then return 0
-        if return_url.get("message", 0) != 'file size exceeds quota limits':
-            return {'public': public, 'fileid': return_url["id"]}
-        else:
-            return {'public': public, 'fileid': 0}
+        fileid = return_url.get("id", 0)
+        return {'public': public, 'fileid': fileid}
 
     def submit_grade_canvas(self, user_id, grade, comment_text=None, comment_file=None):
         payload = {'submission[posted_grade]': grade}
@@ -166,8 +164,15 @@ class Canvas:
             method="post")
         return link_url
 
-    @staticmethod
-    def upload(link_url, file_contents):
+    def upload(self, link_url, file_contents):
+        # Validate information received
+        try:
+            link_url["upload_params"]
+        except KeyError:
+            self.logger.vprint("Attempted upload failed to return expected output.")
+            self.logger.vprint("This is typically associated with a wrong canvas url or canvas is down.")
+            return {}
+
         payload = dict()
         for param, content in link_url["upload_params"].items():
             payload[param] = content
