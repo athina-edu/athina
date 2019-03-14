@@ -119,8 +119,11 @@ def main():
                                                if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
         elif ARGS.repo_url_testing is not None:
             # Creating tmp user and simulating the test for the provided repository
-            obj = Users[1]
-            obj.delete_instance()
+            try:
+                obj = Users[1]
+                obj.delete_instance()
+            except Users.UsersDoesNotExist:
+                pass
             Users.create(user_id=1,
                          repository_url=ARGS.repo_url_testing,
                          url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
