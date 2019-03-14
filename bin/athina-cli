@@ -122,7 +122,7 @@ def main():
             try:
                 obj = Users[1]
                 obj.delete_instance()
-            except Users.UsersDoesNotExist:
+            except Users.DoesNotExist:
                 pass
             Users.create(user_id=1,
                          repository_url=ARGS.repo_url_testing,
