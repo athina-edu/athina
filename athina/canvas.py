@@ -1,9 +1,10 @@
 # All functions relating to data retrieval and submission in relation to Canvas e-learning platform
 # There are built in a general fashion so that e-learning platforms can be easily switched (as long as func names
 # remain the same)
-from datetime import datetime, timezone
+from datetime import datetime
 import dateutil.parser
 from athina.url import *
+from athina.users import *
 
 
 class Canvas:
@@ -14,7 +15,7 @@ class Canvas:
         self.configuration = configuration
         self.logger = logger
 
-    def get_all_submissions(self, users):
+    def get_all_submissions(self):
         """
         Get all users (except test student)
         """
@@ -23,10 +24,10 @@ class Canvas:
             (self.configuration.canvas_url, self.configuration.course_id, self.configuration.assignment_id),
             {"Authorization": "Bearer %s" % self.configuration.auth_token}, method="get")
         if not self.validate_response(data):
-            return users
+            return False
         for record in data:
-            users = self.parse_canvas_submissions(record, users)
-        return users
+            self.parse_canvas_submissions(record)
+        return True
 
     def submit_comment(self, user_id, comment):
         request_url(
@@ -48,8 +49,8 @@ class Canvas:
                     # Submit grade and comment referencing the file that was just uploaded
                     self.submit_grade_canvas(user_id=user_id, grade=grade, comment_file=upload_result["fileid"])
                 else:
-                    comment_text = "See file:\nhttps://wwu.instructure.com/files/%d/download?download_frd=1" %\
-                                   upload_result["fileid"]
+                    comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
+                                   (self.configuration.canvas_url, upload_result["fileid"])
                     self.submit_grade_canvas(user_id=user_id,
                                              grade=grade,
                                              comment_text=comment_text)
@@ -80,37 +81,42 @@ class Canvas:
             (self.configuration.canvas_url, self.configuration.course_id, self.configuration.assignment_id),
             {"Authorization": "Bearer %s" % self.configuration.auth_token}, method="get")
         if not self.validate_response(data):
-            return dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
+            return dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
         try:
-            due_date = dateutil.parser.parse(data["due_at"])
+            due_date = dateutil.parser.parse(data["due_at"]).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
         except TypeError:
             self.logger.vprint(
                 "Type error for due date (probably not specified on elearning platform), using no due date.",
                 debug=True)
-            return dateutil.parser.parse("2050-01-01 00:00:00 +00:00")  # a day in the future
+            return dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
 
         return due_date
 
     @staticmethod
-    def parse_canvas_submissions(data, user_data):
+    def parse_canvas_submissions(data):
         if data["submitted_at"] is None:
-            submitted_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+            submitted_date = datetime(1, 1, 1, 0, 0)
         else:
-            submitted_date = dateutil.parser.parse(data["submitted_at"])
-        if user_data.db.get(data["user_id"], 0) == 0:
-            user_data.db[data["user_id"]] = user_data.User(user_id=data["user_id"])
-            user_data.db[data["user_id"]].repository_url = data["url"]
-            user_data.db[data["user_id"]].url_date = submitted_date
-            user_data.db[data["user_id"]].new_url = True
-            user_data.db[data["user_id"]].commit_date = submitted_date
+            submitted_date = dateutil.parser.parse(data["submitted_at"]).astimezone(dateutil.tz.UTC). \
+                replace(tzinfo=None)
+        try:
+            obj = Users.get(Users.user_id == data["user_id"])
+        except Users.DoesNotExist:
+            obj = 0
+        if obj == 0:
+            Users.create(user_id=data["user_id"],
+                         repository_url=data["url"],
+                         url_date=submitted_date,
+                         new_url=True,
+                         commit_date=submitted_date)
         else:
             # New submission will always happen on Canvas on a chronological order
-            if user_data.db[data["user_id"]].url_date < submitted_date:
-                user_data.db[data["user_id"]].repository_url = data["url"]
-                user_data.db[data["user_id"]].url_date = submitted_date
-                user_data.db[data["user_id"]].new_url = True
-                user_data.db[data["user_id"]].commit_date = submitted_date
-        return user_data
+            if obj.url_date < submitted_date:
+                obj.repository_url = data["url"]
+                obj.url_date = submitted_date
+                obj.new_url = True
+                obj.commit_date = submitted_date
+                obj.save()
 
     def upload_params_for_comment_upload(self, filename, user_id):
         link_url = request_url(
@@ -132,10 +138,8 @@ class Canvas:
             link_url = self.upload_params_for_folder_upload(filename)
             return_url = self.upload(link_url, file_contents)
         # if we get the same error a second time then return 0
-        if return_url.get("message", 0) != 'file size exceeds quota limits':
-            return {'public': public, 'fileid': return_url["id"]}
-        else:
-            return {'public': public, 'fileid': 0}
+        fileid = return_url.get("id", 0)
+        return {'public': public, 'fileid': fileid}
 
     def submit_grade_canvas(self, user_id, grade, comment_text=None, comment_file=None):
         payload = {'submission[posted_grade]': grade}
@@ -160,8 +164,15 @@ class Canvas:
             method="post")
         return link_url
 
-    @staticmethod
-    def upload(link_url, file_contents):
+    def upload(self, link_url, file_contents):
+        # Validate information received
+        try:
+            link_url["upload_params"]
+        except KeyError:
+            self.logger.vprint("Attempted upload failed to return expected output.")
+            self.logger.vprint("This is typically associated with a wrong canvas url or canvas is down.")
+            return {}
+
         payload = dict()
         for param, content in link_url["upload_params"].items():
             payload[param] = content
@@ -186,8 +197,10 @@ class Canvas:
             return users
         for record in data:
             try:
-                users.db[record["id"]].secondary_id = record["login_id"]
-                users.db[record["id"]].user_fullname = record["name"]
-            except KeyError:
+                obj = Users.get(Users.user_id == record["id"])
+                obj.secondary_id = record["login_id"]
+                obj.user_fullname = record["name"]
+                obj.save()
+            except (KeyError, Users.DoesNotExist):
                 continue
         return users

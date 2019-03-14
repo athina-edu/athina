@@ -6,16 +6,15 @@ import os
 import html
 from datetime import datetime, timezone
 import dateutil.parser
+from athina.users import *
 
 
 class Repository:
-    user_data = None
     logger = None
     configuration = None
     e_learning = None
 
-    def __init__(self, user_data, logger, configuration, e_learning):
-        self.user_data = user_data
+    def __init__(self, logger, configuration, e_learning):
         self.logger = logger
         self.configuration = configuration
         self.e_learning = e_learning
@@ -53,12 +52,13 @@ class Repository:
         out, err = process.communicate()
 
         if not self.check_error(err):
-            return dateutil.parser.parse(out)
+            # Retrieve, convert to utc and remove timezone info (needed for sqlite3 compatibility)
+            return dateutil.parser.parse(out).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
         else:
             return None
 
     def check_repository_changes(self, user_id):
-        user_values = self.user_data.db[user_id]
+        user_values = Users.get(user_id)
 
         # If nothing has been submitted no point in testing
         if user_values.repository_url is None or user_values.repository_url == "":
@@ -66,6 +66,7 @@ class Repository:
 
         # Check for changes
         user_values.changed_state = False
+        user_values.save()
 
         # If a previous commit has surpassed the due date then no future commit will work either (if date is enforced)
         if user_values.commit_date > self.configuration.due_date:
@@ -75,9 +76,11 @@ class Repository:
             # Submit grade
             self.logger.vprint("The URL is being used by another student")
             # TODO: Command below has not been verified that it works. Needs to be verified (good for testing dev)
-            self.e_learning.submit_grade(user_id, user_values, 0, 'The URL is being used by another student')
-            self.user_data.db[user_id].new_url = False
-            self.user_data.db[user_id].commit_date = datetime.now(timezone.utc)
+            if self.configuration.simulate is False:
+                self.e_learning.submit_grade(user_id, user_values, 0, 'The URL is being used by another student')
+            user_values.new_url = False
+            user_values.commit_date = datetime.now(timezone.utc).replace(tzinfo=None)
+            user_values.save()
             return False  # do not process anything for this student
 
         if user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
@@ -87,9 +90,11 @@ class Repository:
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
                                                           self.configuration.assignment_id, user_id)):
                 user_values.changed_state = True  # valid copy cloned successfully, moving on
+                user_values.save()
                 return True
             else:
                 user_values.changed_state = False  # invalid copy, couldn't be cloned.
+                user_values.save()
                 self.logger.vprint(">>> Could not clone the repository.")
                 return False
                 # TODO: make the user aware with solutions on how to get their git accessible
@@ -113,12 +118,13 @@ class Repository:
             if self.check_error(err):  # no repo or commit cannot be obtained
                 commit_date = user_values.commit_date
             else:
-                commit_date = dateutil.parser.parse(out)
+                commit_date = dateutil.parser.parse(out).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
 
             if commit_date > user_values.commit_date:
                 self.logger.vprint(">> New Commit on Repo")
                 user_values.changed_state = True
                 user_values.commit_date = commit_date  # This helps with the test that follows, value is updated later
+                user_values.save()
                 return True
             else:
                 return False

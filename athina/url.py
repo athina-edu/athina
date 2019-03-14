@@ -1,5 +1,6 @@
 import requests
 import time
+import json
 
 
 def request_url(url, headers={}, payload={}, method="get", return_type="json", files={}):
@@ -15,7 +16,10 @@ def request_url(url, headers={}, payload={}, method="get", return_type="json", f
     else:
         return None
     if return_type == "json":
-        return r.json()
+        try:
+            return r.json()
+        except json.decoder.JSONDecodeError:
+            return {}
     elif return_type == "text":
         return r.text
     else:

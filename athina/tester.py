@@ -10,6 +10,7 @@ import multiprocessing
 
 # Modifiable loading
 from athina.moss import Plagiarism
+from athina.users import Database, Users
 
 
 class Tester:
@@ -42,23 +43,26 @@ class Tester:
         else:
             return out
 
-    def update_user_db(self, user_id):
-        self.user_data.db[user_id].plagiarism_to_grade = True
-        self.user_data.db[user_id].last_graded = datetime.now(timezone.utc)
+    def update_user_db(self, user_object):
+        user_object.plagiarism_to_grade = True
+        user_object.last_graded = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Update commit date on record
         if self.configuration.no_repo is False:
-            last_commit_date = self.repository.retrieve_last_commit_date(user_id)
+            last_commit_date = self.repository.retrieve_last_commit_date(user_object.user_id)
             if last_commit_date is not None:
-                self.user_data.db[user_id].new_url = False
-                self.user_data.db[user_id].commit_date = last_commit_date
+                user_object.new_url = False
+                user_object.commit_date = last_commit_date
             else:
-                self.user_data.db[user_id].new_url = False
+                user_object.new_url = False
 
-        return self.user_data.db[user_id]  # returning the user object
+        return user_object  # returning the user object
 
     def process_student_assignment(self, user_id, forced_testing=False):
-        user_object = self.user_data.db[user_id]
+        # In the event of a parallel run, we need to reacquire a connection to the db
+        if self.user_data is None:
+            self.user_data = Database(self.configuration.db_filename)
+        user_object = Users.get(Users.user_id == user_id)
 
         self.logger.vprint("> Checking %s - %d" % (user_object.user_fullname, user_id), debug=True)
 
@@ -77,7 +81,7 @@ class Tester:
         no_repo_mode_conditions = True if (self.configuration.no_repo is True and
                                            user_object.last_graded +
                                            timedelta(hours=self.configuration.grade_update_frequency) <=
-                                           datetime.now(timezone.utc)) else False
+                                           datetime.now(timezone.utc).replace(tzinfo=None)) else False
 
         if repo_mode_conditions or forced_testing or no_repo_mode_conditions:
             self.logger.vprint(">>> Testing")
@@ -192,18 +196,15 @@ class Tester:
                 user_list = [(user_id, user_object)]
             else:
                 # Get group members whose repository url is the same (for group assignments)
-                for current_user_id, current_user_object in self.user_data.db.items():
-                    if current_user_object.repository_url == user_object.repository_url:
-                        pass
-                user_list = [(current_user_id, current_user_object) for current_user_id, current_user_object in
-                             self.user_data.db.items()
+                user_list = [(current_user_object.user_id, current_user_object) for current_user_object
+                             in Users.select()
                              if current_user_object.repository_url == user_object.repository_url]
 
             user_object_list = []  # Return object in case we update multiple user_objects (important for parallel)
             # Submitting grades for as many students that share the repository url (depending on how many are permitted)
             for current_user_id, current_user_object in user_list:
                 # Submit grade
-                if not self.configuration.simulate:
+                if self.configuration.simulate is False:
                     self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
                                                  test_reports=test_reports)
                 else:  # print instead
@@ -212,15 +213,20 @@ class Tester:
                 self.logger.vprint(">>> Submitting new grade for %s: %s" % (current_user_id, grade))
 
                 # Update the user db that grades have been submitted
-                self.update_user_db(user_id=current_user_id)
+                self.update_user_db(current_user_object)
                 current_user_object.changed_state = False
                 current_user_object.last_grade = grade
+                if self.configuration.simulate is False:
+                    current_user_object.save()
                 user_object_list.append(current_user_object)
 
             return user_object_list  # return the list of all updated objects
         else:
             self.logger.vprint(">> No changes or past due date", debug=True)
             user_object.changed_state = False
+
+            if self.configuration.simulate is False:
+                user_object.save()
             return [user_object]  # return list of the current object
 
     def execute_with_firejail(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
@@ -285,7 +291,7 @@ class Tester:
         users_graded = [user_id for user_id, user_object in self.user_data.db.items()
                         if user_object.plagiarism_to_grade is True and
                         user_object.last_plagiarism_check + timedelta(hours=23) <=
-                        datetime.now(timezone.utc)]
+                        datetime.now(timezone.utc).replace(tzinfo=None)]
         self.logger.vprint("Checking for plagiarism...")
         self.logger.vprint(users_graded)
 
@@ -330,7 +336,7 @@ class Tester:
                     user_max_value = 0
                 except IndexError:
                     user_max_value = 0
-                if not self.configuration.simulate:
+                if self.configuration.simulate is False:
                     self.e_learning.submit_comment(user_id,
                                                    """Your highest similarity score with another student: %s
                                                    The mean similarity score is: %s""" %
@@ -338,7 +344,7 @@ class Tester:
                 results.append([user_id, user_max_value, mean_similarity])
                 self.logger.vprint("> Submitted similarity results for %s: %s/%s" % (
                     user_id, user_max_value, mean_similarity))
-                self.user_data.db[user_id].last_plagiarism_check = datetime.now(timezone.utc)
+                self.user_data.db[user_id].last_plagiarism_check = datetime.now(timezone.utc).replace(tzinfo=None)
 
             for user_id, user_object in self.user_data.db.items():
                 user_object.plagiarism_to_grade = False
@@ -350,19 +356,19 @@ class Tester:
         # Pre-fetching is important for group assignments where grade is submitted to multiple members and all
         # user dbs need to be updated later on
         reverse_repository_index = dict()
-        for key, value in self.user_data.db.items():
+        for user in Users.select():
             if self.configuration.no_repo is not True:
-                if value.repository_url is not None:
-                    self.repository.check_repository_changes(key)
+                if user.repository_url is not None:
+                    self.repository.check_repository_changes(user.user_id)
                     # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
                     # Process group assignment will test once and then it identifies and submits a grade for both
                     # groups
-                    reverse_repository_index[value.repository_url] = key
+                    reverse_repository_index[user.repository_url] = user.user_id
             else:
                 # When no repo is involved it is 1 to 1 check for assignments
-                reverse_repository_index[key] = key
-        processing_list = [[key, value] for key, value in self.user_data.db.items() if
-                           key in reverse_repository_index.values()]
+                reverse_repository_index[user.user_id] = user.user_id
+        processing_list = [[user.user_id, user] for user in Users.select() if
+                           user.user_id in reverse_repository_index.values()]
         del reverse_repository_index
 
         # Whether we should run processes in parallel or not
@@ -372,12 +378,22 @@ class Tester:
                 user_objects = self.process_student_assignment(key)  # because what is returned is a list
                 user_object_results.append(user_objects)
         else:
-            compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
-            user_object_results = compute_pool.map(self.process_student_assignment,
-                                                   [key for key, value in processing_list])
+            user_ids = [key for key, value in processing_list]
+            user_object_results = self.parallel_map(user_ids)
 
-        # Process results from object to user database (important for parallel runs)
-        for users_object in user_object_results:
-            for user_object in users_object:
-                self.user_data.db[user_object.user_id] = user_object
         return user_object_results  # This is not necessary but for sake of testing is left here
+
+    def parallel_map(self, user_ids):
+        compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
+
+        # For parallel runs database objects have to be dropped (they cannot be pickled)
+        self.configuration.db_filename = self.user_data.db_filename
+        del self.user_data
+
+        # FIXME: Alternatively process could become a staticmethod but a lot of parameters have to be passed to it then.
+        user_object_results = compute_pool.map(self.process_student_assignment, user_ids)
+
+        # Restoring the objects
+        self.user_data = Database(self.configuration.db_filename)
+
+        return user_object_results

@@ -34,9 +34,12 @@ class Configuration:
     grade_update_frequency = 23
     git_url = 'github.com'
     processes = 1
-    due_date = datetime(2100, 1, 1, 0, 0).replace(tzinfo=timezone.utc)
+    due_date = datetime(2100, 1, 1, 0, 0)
     use_docker = False
     canvas_url = "www.instructure.com"
+
+    # Set on the fly
+    db_filename = ""
 
     def __init__(self, logger):
         self.logger = logger
