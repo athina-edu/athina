@@ -70,7 +70,7 @@ class Users(Model):
     course_id = BigIntegerField(default=0)
     user_fullname = TextField(default="")
     secondary_id = TextField(default="")
-    repository_url = TextField(default="")
+    repository_url = TextField(default="", null=True)
     url_date = DateTimeField(default=datetime(1, 1, 1, 0, 0))  # When a new url was found
     new_url = BooleanField(default=False)  # Switched when new url is discovered on e-learning site
     commit_date = DateTimeField(default=datetime(1, 1, 1, 0, 0))  # Day of the last commit
