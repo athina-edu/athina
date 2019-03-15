@@ -62,7 +62,10 @@ def main():
     # Build the list of assignments to check (Athina Web = json format, command line = 1 assignment only)
     run_list = []
     if ARGS.json is not None:
-        run_list = request_url(ARGS.json, method="get", return_type="json")
+        try:
+            run_list = request_url(ARGS.json, method="get", return_type="json")
+        except requests.exceptions.ConnectionError:
+            pass
     elif ARGS.config is not None:
         run_list.append({'directory': ARGS.config, 'simulate': ARGS.simulate})
     else:
