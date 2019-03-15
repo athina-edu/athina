@@ -76,7 +76,7 @@ class Configuration:
         # Load arguments from config
         try:
             self.logger.print_debug_messages = config.getboolean('main', 'print_debug_msgs')
-        except configparser.NoOptionError:
+        except (configparser.NoOptionError, configparser.NoSectionError):
             self.logger.print_debug_messages = False
         self.logger.vprint("Loading configuration", debug=True)
         self.logger.vprint("Reading %s in %s" % (self.config_filename, self.config_dir), debug=True)
