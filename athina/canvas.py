@@ -42,8 +42,7 @@ class Canvas:
             # Uploading athina.py results as a report file (less spam on comments)
             file_contents = "\n".join([line.decode("utf-8", "backslashreplace") for line in test_reports])
             upload_result = self.upload_file_to_canvas(filename="athina_%s%s.txt" % (user_id, user_values.commit_date),
-                                                       user_id=user_id,
-                                                       file_contents=file_contents)
+                                                       user_id=user_id, file_contents=file_contents)
             if upload_result["fileid"] != 0:
                 if upload_result["public"] is False:
                     # Submit grade and comment referencing the file that was just uploaded
@@ -51,18 +50,14 @@ class Canvas:
                 else:
                     comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
                                    (self.configuration.canvas_url, upload_result["fileid"])
-                    self.submit_grade_canvas(user_id=user_id,
-                                             grade=grade,
-                                             comment_text=comment_text)
+                    self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
             else:
-                self.submit_grade_canvas(user_id=user_id,
-                                         grade=grade,
-                                         comment_text="An error has occurred with uploading comment file to Canvas.\n"
-                                                      "Please contact the instructor.")
+                comment_text = "An error has occurred when uploading comment file to Canvas.\n" \
+                               "Please contact the instructor."
+                self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
         else:
-            self.submit_grade_canvas(user_id=user_id, grade=grade,
-                                     comment_text="\n".join(
-                                         [line.decode("utf-8", "backslashreplace") for line in test_reports]))
+            comment_text = "\n".join([line.decode("utf-8", "backslashreplace") for line in test_reports])
+            self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
 
     def validate_response(self, data):
         if not isinstance(data, list) and isinstance(data, dict) and data.get('status', 0) == 'unauthenticated':

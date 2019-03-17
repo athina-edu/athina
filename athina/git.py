@@ -55,31 +55,27 @@ class Repository:
 
     def check_repository_changes(self, user_id):
         user_values = Users.get(user_id)
+        changed_state = False
 
         # If nothing has been submitted no point in testing
         if user_values.repository_url is None or user_values.repository_url == "":
-            return False
-
-        # Check for changes
-        user_values.changed_state = False
-        user_values.save()
-
-        # If a previous commit has surpassed the due date then no future commit will work either (if date is enforced)
-        if user_values.commit_date > self.configuration.due_date:
-            return False
-
-        if user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
+            # Check for changes
+            user_values.changed_state = False
+            user_values.save()
+            changed_state = False
+        elif user_values.commit_date > self.configuration.due_date:
+            # If a previous commit has surpassed the due date then no future commit will work either
+            changed_state = False
+        elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
             # Submit grade
             self.logger.vprint("The URL is being used by another student")
-            # TODO: Command below has not been verified that it works. Needs to be verified (good for testing dev)
             if self.configuration.simulate is False:
                 self.e_learning.submit_grade(user_id, user_values, 0, 'The URL is being used by another student')
             user_values.new_url = False
             user_values.commit_date = datetime.now(timezone.utc).replace(tzinfo=None)
             user_values.save()
-            return False  # do not process anything for this student
-
-        if user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
+            changed_state = False  # do not process anything for this student
+        elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
             self.logger.vprint(">> New Submission: %s - %d" % (user_values.user_fullname, user_id))
             # Delete dir, create dir and clone repository
             self.clone_git_repo(user_id, user_values)
@@ -87,12 +83,12 @@ class Repository:
                                                           self.configuration.assignment_id, user_id)):
                 user_values.changed_state = True  # valid copy cloned successfully, moving on
                 user_values.save()
-                return True
+                changed_state = True
             else:
                 user_values.changed_state = False  # invalid copy, couldn't be cloned.
                 user_values.save()
                 self.logger.vprint(">>> Could not clone the repository.")
-                return False
+                changed_state = False
                 # TODO: make the user aware with solutions on how to get their git accessible
         else:
             # Pull and see if there is anything that changed,
@@ -116,9 +112,10 @@ class Repository:
                 user_values.changed_state = True
                 user_values.commit_date = commit_date  # This helps with the test that follows, value is updated later
                 user_values.save()
-                return True
+                changed_state = True
             else:
-                return False
+                changed_state = False
+        return changed_state
 
     def retrieve_git_log(self, user_id):
         process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
