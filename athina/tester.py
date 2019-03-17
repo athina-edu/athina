@@ -252,10 +252,7 @@ class Tester:
     def execute_with_docker(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
         hashed_name = hashlib.md5(self.configuration.config_filename.encode("ascii")).hexdigest()
 
-        # Build with empty context
-        os.makedirs("/tmp/athina_empty", exist_ok=True)
-
-        build_statement = ["docker", "build", "/tmp/athina_empty", "-t",
+        build_statement = ["docker", "build", ".", "-t",
                            "%s" % hashed_name,
                            "-f", "Dockerfile"]
         run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
