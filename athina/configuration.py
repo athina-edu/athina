@@ -9,7 +9,7 @@ import shutil
 
 class Configuration:
     logger = None
-    config_dir = "/tmp"
+    config_dir = "/tmp/athina_empty"
     config_filename = "test_assignment"
     simulate = True
     auth_token = None
@@ -43,6 +43,7 @@ class Configuration:
 
     def __init__(self, logger):
         self.logger = logger
+        self.default_dir()
 
     @staticmethod
     def find_cfg(directory):
@@ -55,6 +56,12 @@ class Configuration:
         else:
             cfg_file = directory
         return cfg_file
+
+    @staticmethod
+    def default_dir():
+        # mainly used for testing
+        os.makedirs("/tmp/athina_empty", exist_ok=True)
+        os.chmod("/tmp/athina_empty", 0o777)
 
     @staticmethod
     def in_docker():

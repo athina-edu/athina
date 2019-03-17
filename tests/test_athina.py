@@ -82,9 +82,9 @@ class TestFunctions(unittest.TestCase):
         logger = Logger()
         configuration = Configuration(logger=logger)
         # Create fake directories
-        shutil.rmtree("/tmp/tests", ignore_errors=True)
-        os.makedirs("/tmp/tests", exist_ok=True)
-        f = open("/tmp/tests/test", 'a')
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'a')
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
@@ -206,9 +206,9 @@ class TestFunctions(unittest.TestCase):
         logger = Logger()
         configuration = Configuration(logger=logger)
         # Create fake directories
-        shutil.rmtree("/tmp/tests", ignore_errors=True)
-        os.makedirs("/tmp/tests", exist_ok=True)
-        f = open("/tmp/tests/test", 'a')
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'a')
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
@@ -250,12 +250,12 @@ class TestFunctions(unittest.TestCase):
 
         configuration.use_docker = True
         # Create fake directories
-        shutil.rmtree("/tmp/tests", ignore_errors=True)
-        os.makedirs("/tmp/tests", exist_ok=True)
-        f = open("/tmp/tests/test", 'w')
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'w')
         f.write("#!/bin/bash\necho 80\n")
         f.close()
-        f = open("/tmp/Dockerfile", 'w')
+        f = open("/tmp/athina_empty/Dockerfile", 'w')
         f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
         f.close()
 
@@ -300,12 +300,12 @@ class TestFunctions(unittest.TestCase):
 
         configuration.use_docker = True
         # Create fake directories
-        shutil.rmtree("/tmp/tests", ignore_errors=True)
-        os.makedirs("/tmp/tests", exist_ok=True)
-        f = open("/tmp/tests/test", 'w')
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'w')
         f.write("#!/bin/bash\necho 80\n")
         f.close()
-        f = open("/tmp/Dockerfile", 'w')
+        f = open("/tmp/athina_empty/Dockerfile", 'w')
         f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
         f.close()
 

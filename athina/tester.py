@@ -252,9 +252,9 @@ class Tester:
     def execute_with_docker(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
         hashed_name = hashlib.md5(self.configuration.config_filename.encode("ascii")).hexdigest()
 
-        build_statement = ["docker", "build", ".", "-t",
+        build_statement = ["docker", "build", "-t",
                            "%s" % hashed_name,
-                           "-f", "Dockerfile"]
+                           "-f", "Dockerfile", "."]
         run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
                          "--stop-timeout", "%d" % self.configuration.test_timeout,
                          "-e", "STUDENT_DIR=%s" % athina_student_code_dir,
