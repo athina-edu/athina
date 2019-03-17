@@ -45,11 +45,7 @@ class Repository:
                                                 self.configuration.assignment_id, user_id)])
 
     def retrieve_last_commit_date(self, user_id):
-        process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
-                                   cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                               self.configuration.assignment_id, user_id),
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = process.communicate()
+        out, err = self.retrieve_git_log(user_id)
 
         if not self.check_error(err):
             # Retrieve, convert to utc and remove timezone info (needed for sqlite3 compatibility)
@@ -109,12 +105,7 @@ class Repository:
             if b"unresolved conflict" in err:
                 self.logger.vprint("Cannot pull due to unresolved conflicts...initiating git clone...")
                 self.clone_git_repo(user_id, user_values)
-            process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
-                                       cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                                   self.configuration.assignment_id, user_id),
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            out, err = process.communicate()
+            out, err = self.retrieve_git_log(user_id)
             if self.check_error(err):  # no repo or commit cannot be obtained
                 commit_date = user_values.commit_date
             else:
@@ -128,4 +119,13 @@ class Repository:
                 return True
             else:
                 return False
+
+    def retrieve_git_log(self, user_id):
+        process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
+                                   cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
+                                                               self.configuration.assignment_id, user_id),
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        out, err = process.communicate()
+        return out, err
 

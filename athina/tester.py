@@ -27,11 +27,6 @@ class Tester:
         self.e_learning = e_learning
         self.repository = repository
 
-    def check_error(self, err):
-        if err != b'':
-            self.logger.vprint("Testing script returned error: %s" % err.decode("utf-8", "backslashreplace"))
-            return True
-
     def trim_test_output(self, out):
         if len(out) > self.configuration.max_file_size:
             # Adding the last three lines just in case (the score should be in one of these)
@@ -42,6 +37,15 @@ class Tester:
             return out
         else:
             return out
+
+    def rm_dir(self, folder):
+        try:
+            shutil.rmtree(folder)
+        except PermissionError:
+            self.logger.vprint("Cannot delete %s. Likely permissions error." % folder)
+            raise PermissionError(folder)
+        except FileNotFoundError:
+            pass
 
     def update_user_db(self, user_object):
         user_object.plagiarism_to_grade = True
@@ -59,9 +63,8 @@ class Tester:
         return user_object  # returning the user object
 
     def process_student_assignment(self, user_id, forced_testing=False):
-        # In the event of a parallel run, we need to reacquire a connection to the db
-        if self.user_data is None:
-            self.user_data = Database(self.configuration.db_filename)
+        # Acquire DB connection if missing (e.g., parallel run)
+        self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
         user_object = Users.get(Users.user_id == user_id)
 
         self.logger.vprint("> Checking %s - %d" % (user_object.user_fullname, user_id), debug=True)
@@ -104,13 +107,7 @@ class Tester:
                     athina_test_tmp_dir = "/tmp/athina-test%s" % time.time()
 
                 # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-                try:
-                    shutil.rmtree(athina_student_code_dir)
-                except PermissionError:
-                    self.logger.vprint("Cannot delete %s. Likely permissions error." % athina_student_code_dir)
-                    raise PermissionError(athina_student_code_dir)
-                except FileNotFoundError:
-                    pass
+                self.rm_dir(athina_student_code_dir)
                 if self.configuration.no_repo is False:
                     try:
                         shutil.copytree('%s/repodata%s/u%s' % (self.configuration.config_dir,
@@ -121,13 +118,7 @@ class Tester:
                         self.logger.vprint("Could not copy student directory at %s/repodata%s/u%s/*" %
                                            (self.configuration.config_dir, self.configuration.assignment_id, user_id))
                 # Copy tests in tmp folder
-                try:
-                    shutil.rmtree(athina_test_tmp_dir)
-                except PermissionError:
-                    self.logger.vprint("Cannot delete %s. Likely permissions error." % athina_test_tmp_dir)
-                    raise PermissionError(athina_test_tmp_dir)
-                except FileNotFoundError:
-                    pass
+                self.rm_dir(athina_test_tmp_dir)
                 try:
                     shutil.copytree('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
                 except FileNotFoundError:
@@ -164,7 +155,7 @@ class Tester:
                 except ValueError:  # generated when errors exist in the test script
                     score = None
 
-                if self.check_error(err) and score is None:
+                if self.repository.check_error(err) and score is None:
                     test_grades.append(0.0)
                     out = self.trim_test_output(out)
                     test_reports.append(out)
@@ -271,7 +262,7 @@ class Tester:
         out, err = process.communicate()
 
         # If build was successful, run the image
-        if not self.check_error(err):
+        if not self.repository.check_error(err):
             self.logger.vprint(" ".join(run_statement), debug=True)
             process = subprocess.Popen(run_statement, cwd="%s/" % self.configuration.config_dir,
                                        stdout=subprocess.PIPE,
@@ -283,9 +274,7 @@ class Tester:
         return out, err
 
     def plagiarism_checks_on_users(self):
-        """
-        Report plagiarism to any newly submitted grades (currently uses only MOSS)
-        """
+        # Report plagiarism to any newly submitted grades (currently uses only MOSS)
         results = []
         users_graded = [user_id for user_id, user_object in self.user_data.db.items()
                         if user_object.plagiarism_to_grade is True and
@@ -293,12 +282,6 @@ class Tester:
                         datetime.now(timezone.utc).replace(tzinfo=None)]
         self.logger.vprint("Checking for plagiarism...")
         self.logger.vprint(users_graded)
-
-        # Debugging line
-        # for user_id, user_object in USER_DATA.db.items():
-        #     print([user_id, user_object.plagiarism_to_grade,
-        #            user_object.last_plagiarism_check + datetime.timedelta(hours=23),
-        #            datetime.datetime.now()])
 
         if len(users_graded) != 0:
             plagiarism = Plagiarism(service_type="moss",

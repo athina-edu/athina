@@ -56,18 +56,22 @@ class Plagiarism:
 
             comparisons = dict()
             for item in matches:
-                if comparisons.get(int(item[0]), 0) == 0:
-                    comparisons[int(item[0])] = [int(item[1])]
-                else:
-                    comparisons[int(item[0])].append(int(item[1]))
-                if comparisons.get(int(item[2]), 0) == 0:
-                    comparisons[int(item[2])] = [int(item[3])]
-                else:
-                    comparisons[int(item[2])].append(int(item[3]))
+                self.parse_comparison_time(comparisons, item[0], item[1])
+                self.parse_comparison_time(comparisons, item[2], item[3])
             return comparisons
 
-    def request_url(self, url, headers={}, payload={}, method="get", return_type="json"):
+    @staticmethod
+    def parse_comparison_time(comparisons, item, value):
+        if comparisons.get(int(item), 0) == 0:
+            comparisons[int(item)] = [int(value)]
+        else:
+            comparisons[int(item)].append(int(value))
+
+    @staticmethod
+    def request_url(url, headers=None, payload=None, method="get", return_type="json"):
         time.sleep(1)  # artificial delay in case code attempts to spam with requests
+        headers = {} if headers is None else headers
+        payload = {} if payload is None else payload
         if method == "get":
             r = requests.get(url, headers=headers)
         elif method == "put":
