@@ -139,10 +139,12 @@ class Tester:
                     extra_params = [athina_student_code_dir, athina_test_tmp_dir]
 
                 # Execute using docker or firejail (depending on what the settings are)
-                if self.configuration.use_docker is True \
-                        and os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
-                    out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
-                                                        extra_params, test_script)
+                if self.configuration.use_docker is True:
+                        if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
+                            out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
+                                                                extra_params, test_script)
+                        else:
+                            out, err = b"0", b"Missing Dockerfile (contact instructor)"
                 else:
                     out, err = self.execute_with_firejail(athina_student_code_dir, athina_test_tmp_dir,
                                                           extra_params, test_script)

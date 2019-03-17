@@ -57,6 +57,12 @@ class Configuration:
         return cfg_file
 
     @staticmethod
+    def in_docker():
+        """ Returns: True if running in a Docker container, else False """
+        with open('/proc/1/cgroup', 'rt') as ifh:
+            return 'docker' in ifh.read()
+
+    @staticmethod
     def check_dependencies(packages: list):
         # Verify requirements are available on OS
         for software in packages:
@@ -145,6 +151,10 @@ class Configuration:
             self.use_docker = config.getboolean('main', 'use_docker')
         except configparser.NoOptionError:
             self.use_docker = False
+
+        # If running from within a container then firejail is meaningless
+        if self.in_docker():
+            self.use_docker = True
 
         # Verify software dependencies
         packages = ["timeout", "git"]
