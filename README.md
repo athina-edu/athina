@@ -1,8 +1,14 @@
 # ATHINA - An autograder, automated feedback microservice
 
+[![Build Status](https://travis-ci.com/athina-edu/athina.svg?branch=master)](https://travis-ci.com/athina-edu/athina)
+[![](https://images.microbadger.com/badges/image/athinaedu/athina.svg)](https://microbadger.com/images/athinaedu/athina "Get your own image badge on microbadger.com")
+[![](https://images.microbadger.com/badges/version/athinaedu/athina.svg)](https://microbadger.com/images/athinaedu/athina "Get your own version badge on microbadger.com")
+
 [![codebeat badge](https://codebeat.co/badges/fda271b0-41ae-4835-9e71-2c54855f7402)](https://codebeat.co/projects/github-com-athina-edu-athina-master)
 [![Maintainability](https://api.codeclimate.com/v1/badges/d2fc5713b775535b5273/maintainability)](https://codeclimate.com/github/athina-edu/athina/maintainability)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/d2fc5713b775535b5273/test_coverage)](https://codeclimate.com/github/athina-edu/athina/test_coverage)
+
+
 
 
 Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 
