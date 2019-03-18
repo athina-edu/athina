@@ -62,14 +62,18 @@ class Tester:
 
         return user_object  # returning the user object
 
+    def copy_dir(self, source, destination):
+        try:
+            shutil.copytree(source, destination)
+        except FileNotFoundError:
+            self.logger.vprint("Could not copy %s to %s" % (source, destination))
+
     def process_student_assignment(self, user_id, forced_testing=False):
         # Acquire DB connection if missing (e.g., parallel run)
         self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
         user_object = Users.get(Users.user_id == user_id)
 
         self.logger.vprint("> Checking %s - %d" % (user_object.user_fullname, user_id), debug=True)
-
-        # TODO: Need to split the code below since repo testing has additional steps when just testing doesn't
 
         # Code has changed and due date for submissions does not exceed submitted dates
         self.logger.vprint("Commit Due Date Comparison: %s < %s ?" % (
@@ -94,89 +98,8 @@ class Tester:
             test_reports = []
 
             for x in range(0, len(self.configuration.test_scripts)):
-                test_reports.append(("Test %d with weight %.2f" %
-                                     (x + 1, self.configuration.test_weights[x])).encode("utf-8"))
-                test_script = self.configuration.test_scripts[x]
-
-                if self.configuration.processes < 2:  # If we are not running things in parallel, default will do
-                    # (ensures backwards compatibility) with non parallelized tests
-                    athina_student_code_dir = "/tmp/athina"
-                    athina_test_tmp_dir = "/tmp/athina-test"
-                else:
-                    athina_student_code_dir = "/tmp/athina%s" % time.time()
-                    athina_test_tmp_dir = "/tmp/athina-test%s" % time.time()
-
-                # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-                self.rm_dir(athina_student_code_dir)
-                if self.configuration.no_repo is False:
-                    try:
-                        shutil.copytree('%s/repodata%s/u%s' % (self.configuration.config_dir,
-                                                               self.configuration.assignment_id,
-                                                               user_id),
-                                        '%s' % athina_student_code_dir)
-                    except FileNotFoundError:
-                        self.logger.vprint("Could not copy student directory at %s/repodata%s/u%s/*" %
-                                           (self.configuration.config_dir, self.configuration.assignment_id, user_id))
-                # Copy tests in tmp folder
-                self.rm_dir(athina_test_tmp_dir)
-                try:
-                    shutil.copytree('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
-                except FileNotFoundError:
-                    self.logger.vprint("Could not copy test directory at %s/tests" % self.configuration.config_dir)
-
-                if self.configuration.pass_extra_params is True:
-                    extra_params = [user_object.secondary_id, self.configuration.due_date.isoformat()]
-                else:
-                    extra_params = [athina_student_code_dir, athina_test_tmp_dir]
-
-                # Execute using docker or firejail (depending on what the settings are)
-                if self.configuration.use_docker is True:
-                        if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
-                            out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
-                                                                extra_params, test_script)
-                        else:
-                            out, err = b"0", b"Missing Dockerfile (contact instructor)"
-                else:
-                    out, err = self.execute_with_firejail(athina_student_code_dir, athina_test_tmp_dir,
-                                                          extra_params, test_script)
-
-                # TODO: convert these to cmmands using shutils and os
-                # Clear temp directories
-                subprocess.run("rm -rf '%s'" % athina_test_tmp_dir, shell=True)
-                subprocess.run("rm -rf '%s'" % athina_student_code_dir, shell=True)
-
-                # If we cannot find a number returned at the end of this list
-                try:
-                    score = float(out.decode("utf-8", "backslashreplace").split("\n")[-2])
-                except IndexError:
-                    score = None
-                except UnicodeDecodeError:
-                    score = None
-                except ValueError:  # generated when errors exist in the test script
-                    score = None
-
-                if self.repository.check_error(err) and score is None:
-                    test_grades.append(0.0)
-                    out = self.trim_test_output(out)
-                    test_reports.append(out)
-                    test_reports.append("Tests failed:\n {0}".format(err.decode("utf-8", "backslashreplace")).
-                                        encode("utf-8"))
-                elif score is None:
-                    test_grades.append(0.0)
-                    out = self.trim_test_output(out)
-                    test_reports.append(out)
-                    test_reports.append(
-                        """Tests failed:
-                        Test likely timed out.
-                        This can happen if you have an infinite loop or non terminating loop,
-                        A missing library that the system doesn't have (contact the instructor)
-                        Non legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))
-                else:
-                    # scaling between 0 and 1
-                    test_grades.append(score / 100 * self.configuration.test_weights[x])
-                    # Check the size of the output and trim if larger than max allowed
-                    out = self.trim_test_output(out)
-                    test_reports.append(out)
+                # Run individual test, add results in test_reports and test_grades
+                self.run_test(x, test_reports, test_grades, user_object)
 
             # sum and scale grades from tests
             grade = round((sum(test_grades)) * self.configuration.total_points)
@@ -193,7 +116,8 @@ class Tester:
                              in Users.select()
                              if current_user_object.repository_url == user_object.repository_url]
 
-            user_object_list = []  # Return object in case we update multiple user_objects (important for parallel)
+            user_object_list = []  # Return object for multiple user_objects (important for parallel - testing)
+
             # Submitting grades for as many students that share the repository url (depending on how many are permitted)
             for current_user_id, current_user_object in user_list:
                 # Submit grade
@@ -221,6 +145,70 @@ class Tester:
             if self.configuration.simulate is False:
                 user_object.save()
             return [user_object]  # return list of the current object
+
+    def run_test(self, x, test_reports, test_grades, user_object):
+        test_reports.append(("Test %d with weight %.2f" %
+                             (x + 1, self.configuration.test_weights[x])).encode("utf-8"))
+        test_script = self.configuration.test_scripts[x]
+
+        # If we are not running things in parallel, default will do
+        # (ensures backwards compatibility) with non parallelized tests
+        time_field = "" if self.configuration.processes < 2 else time.time()
+        athina_student_code_dir = "/tmp/athina%s" % time_field
+        athina_test_tmp_dir = "/tmp/athina-test%s" % time_field
+
+        # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
+        self.rm_dir(athina_student_code_dir)
+        if self.configuration.no_repo is False:
+            self.copy_dir('%s/repodata%s/u%s' % (self.configuration.config_dir, self.configuration.assignment_id,
+                                                 user_object.user_id), '%s' % athina_student_code_dir)
+        # Copy tests in tmp folder
+        self.rm_dir(athina_test_tmp_dir)
+        self.copy_dir('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
+
+        if self.configuration.pass_extra_params is True:
+            extra_params = [user_object.secondary_id, self.configuration.due_date.isoformat()]
+        else:
+            extra_params = [athina_student_code_dir, athina_test_tmp_dir]
+
+        # Execute using docker or firejail (depending on what the settings are)
+        if self.configuration.use_docker is True:
+            if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
+                out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
+                                                    extra_params, test_script)
+            else:
+                out, err = b"0", b"Missing Dockerfile (contact instructor)"
+        else:
+            out, err = self.execute_with_firejail(athina_student_code_dir, athina_test_tmp_dir,
+                                                  extra_params, test_script)
+
+        # Clear temp directories
+        self.rm_dir(athina_test_tmp_dir)
+        self.rm_dir(athina_student_code_dir)
+
+        # If we cannot find a number returned at the end of this list
+        try:
+            score = float(out.decode("utf-8", "backslashreplace").split("\n")[-2])
+        except (IndexError, UnicodeDecodeError, ValueError):  # generated when errors exist in the test script
+            score = None
+
+        out = self.trim_test_output(out)
+        test_reports.append(out)
+        if self.repository.check_error(err) and score is None:
+            test_grades.append(0.0)
+            test_reports.append("Tests failed:\n {0}".format(err.decode("utf-8", "backslashreplace")).
+                                encode("utf-8"))
+        elif score is None:
+            test_grades.append(0.0)
+            test_reports.append(
+                """Tests failed:
+                Test likely timed out.
+                This can happen if you have an infinite loop or non terminating loop,
+                A missing library that the system doesn't have (contact the instructor)
+                Non legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))
+        else:
+            # scaling between 0 and 1
+            test_grades.append(score / 100 * self.configuration.test_weights[x])
 
     def execute_with_firejail(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
         # Custom firejail profile that allows to sandbox suid processes (so that athina wont run as root)
@@ -289,16 +277,13 @@ class Tester:
                                     moss_lang=self.configuration.moss_lang)
             directory_list = []
             for key, value in self.user_data.db.items():
-                if os.path.isdir("%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                         self.configuration.assignment_id,
-                                                         key)):
-                    if glob.glob("%s/repodata%s/u%s/%s" %
-                                 (self.configuration.config_dir, self.configuration.assignment_id, key,
-                                  self.configuration.moss_pattern)):
-                        directory_list.append("%s/repodata%s/u%s/%s" %
-                                              (self.configuration.config_dir, self.configuration.assignment_id, key,
-                                               self.configuration.moss_pattern))
+                base_dir = "%s/repodata%s/u%s/" % (self.configuration.config_dir, self.configuration.assignment_id, key)
+                if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, self.configuration.moss_pattern)):
+                    directory_list.append("%s%s" % (base_dir, self.configuration.moss_pattern))
+
+            # Execute plagiarism check for the directories
             comparison_data = plagiarism.check_plagiarism(directory_list)
+
             values = []
             [[values.append(v) for v in val] for key, val in comparison_data.items()]
             # values does not include users that were found to not have any similar code
@@ -314,10 +299,9 @@ class Tester:
                 try:
                     user_max_value = [np.max(np.array(val)) for key, val in
                                       comparison_data.items() if key == int(user_id)][0]
-                except RuntimeWarning:
+                except (RuntimeWarning, IndexError):
                     user_max_value = 0
-                except IndexError:
-                    user_max_value = 0
+
                 if self.configuration.simulate is False:
                     self.e_learning.submit_comment(user_id,
                                                    """Your highest similarity score with another student: %s
@@ -347,7 +331,7 @@ class Tester:
                     # groups
                     reverse_repository_index[user.repository_url] = user.user_id
             else:
-                # When no repo is involved it is 1 to 1 check for assignments
+                # When no repo is involved it is 1 to 1 testing (individual assignment)
                 reverse_repository_index[user.user_id] = user.user_id
         processing_list = [[user.user_id, user] for user in Users.select() if
                            user.user_id in reverse_repository_index.values()]
