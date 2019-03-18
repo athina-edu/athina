@@ -26,7 +26,7 @@ class Database:
         DB.connect()
         DB.create_tables([Users])
         # TODO: check if table exists otherwise output this
-        #if self.logger is not None:
+        # if self.logger is not None:
         #    self.logger.vprint("Warning: Cannot load Users db (probably this is a first run for a new assignment).")
         os.chmod(db_filename, 0o666)
 
@@ -40,25 +40,23 @@ class Database:
         @param same_url_limit: number of occurrences to be found to be considered plagiarism
         @return: None
         """
-        # TODO: this function can definitely be optimized
-        urls = []
-        ids = []
-        for val in Users.select():
-            if val.repository_url != "" and val.repository_url is not None:
-                urls.append(val.repository_url)
-                ids.append(val.user_id)
-                indices = [i for i, x in enumerate(urls) if x == val.repository_url]
-                if len(indices) > same_url_limit:
-                    for i in indices:
-                        obj = Users.get(Users.user_id == ids[i])
-                        if obj.same_url_flag is not True:
-                            obj.same_url_flag = True
-                            obj.save()
-                else:
-                    obj = Users.get(Users.user_id == val.user_id)
-                    if obj.same_url_flag is not False:
-                        obj.same_url_flag = False
+        urls = dict()
+        for val in Users.select().where(Users.repository_url != ""):
+            if urls.get(val.repository_url, 0) == 0:
+                urls[val.repository_url] = [val.user_id]
+            else:
+                urls[val.repository_url].append(val.user_id)
+
+            if len(urls[val.repository_url]) > same_url_limit:
+                for i in urls[val.repository_url]:
+                    obj = Users.get(Users.user_id == i)
+                    if obj.same_url_flag is not True:
+                        obj.same_url_flag = True
                         obj.save()
+            else:
+                if val.same_url_flag is not False:
+                    val.same_url_flag = False
+                    val.save()
 
 
 class Users(Model):

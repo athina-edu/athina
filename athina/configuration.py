@@ -87,35 +87,19 @@ class Configuration:
         self.config_filename = os.path.split(self.find_cfg(directory))[1]  # cfg filename or dir name
 
         # Load arguments from config
-        try:
-            self.logger.print_debug_messages = config.getboolean('main', 'print_debug_msgs')
-        except (configparser.NoOptionError, configparser.NoSectionError):
-            self.logger.print_debug_messages = False
+        self.logger.print_debug_messages = config.getboolean('main', 'print_debug_msgs', fallback=False)
         self.logger.vprint("Loading configuration", debug=True)
         self.logger.vprint("Reading %s in %s" % (self.config_filename, self.config_dir), debug=True)
 
-        try:
-            self.auth_token = config.get('main', 'auth_token')
-        except configparser.NoSectionError:
-            self.logger.vprint("Unable to read config file!")
-            return False
-        try:
-            self.course_id = config.getint('main', 'course_id')
-        except ValueError:
-            self.course_id = 0
-        try:
-            self.assignment_id = config.getint('main', 'assignment_id')
-        except ValueError:
-            self.assignment_id = 0
+        self.auth_token = config.get('main', 'auth_token', fallback=False)
+        self.course_id = config.getint('main', 'course_id', fallback=0)
+        self.assignment_id = config.getint('main', 'assignment_id', fallback=0)
 
         self.total_points = config.getint('main', 'total_points')
         self.enforce_due_date = config.getboolean('main', 'enforce_due_date')
         self.test_scripts = json.loads(config.get('main', 'test_scripts'))
         self.test_weights = json.loads(config.get('main', 'test_weights'))
-        try:
-            self.moss_id = config.getint('main', 'moss_id')
-        except ValueError:
-            self.moss_id = 0
+        self.moss_id = config.getint('main', 'moss_id', fallback=0)
         self.moss_lang = config.get('main', 'moss_lang')
         self.moss_pattern = config.get('main', 'moss_pattern')
         self.git_username = config.get('main', 'git_username')
@@ -125,39 +109,14 @@ class Configuration:
         self.submit_results_as_file = config.getboolean('main', 'submit_results_as_file')
         self.max_file_size = config.getint('main', 'max_file_size')
         self.max_file_size = self.max_file_size * 1024  # Convert KB to bytes
-        try:
-            self.test_timeout = config.getint('main', 'test_timeout')
-        except configparser.NoOptionError:
-            self.test_timeout = 120
-        try:
-            self.no_repo = config.getboolean('main', 'no_repo')
-        except configparser.NoOptionError:
-            self.no_repo = False
-        try:
-            self.pass_extra_params = config.getboolean('main', 'pass_extra_params')
-        except configparser.NoOptionError:
-            self.pass_extra_params = False
-        try:
-            self.grade_update_frequency = config.getint('main', 'grade_update_frequency') - 1
-        except configparser.NoOptionError:
-            self.grade_update_frequency = 24 - 1
-        try:
-            self.git_url = config.get('main', 'git_url')
-        except configparser.NoOptionError:
-            self.git_url = 'gitlab.cs.wwu.edu'
-        try:
-            self.processes = config.getint('main', 'processes')
-        except configparser.NoOptionError:
-            self.processes = 1
-        try:
-            self.canvas_url = config.get('main', 'canvas_url')
-        except configparser.NoOptionError:
-            self.canvas_url = "www.instructure.com"
-
-        try:
-            self.use_docker = config.getboolean('main', 'use_docker')
-        except configparser.NoOptionError:
-            self.use_docker = False
+        self.test_timeout = config.getint('main', 'test_timeout', fallback=120)
+        self.no_repo = config.getboolean('main', 'no_repo', fallback=False)
+        self.pass_extra_params = config.getboolean('main', 'pass_extra_params', fallback=False)
+        self.grade_update_frequency = config.getint('main', 'grade_update_frequency', fallback=24-1) - 1
+        self.git_url = config.get('main', 'git_url', fallback='www.github.com')
+        self.processes = config.getint('main', 'processes', fallback=1)
+        self.canvas_url = config.get('main', 'canvas_url', fallback="www.instructure.com")
+        self.use_docker = config.getboolean('main', 'use_docker', fallback=False)
 
         # If running from within a container then firejail is meaningless
         if self.in_docker():
