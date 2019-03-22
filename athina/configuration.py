@@ -92,14 +92,14 @@ class Configuration:
         self.logger.vprint("Reading %s in %s" % (self.config_filename, self.config_dir), debug=True)
 
         self.auth_token = config.get('main', 'auth_token', fallback=False)
-        self.course_id = config.getint('main', 'course_id', fallback=0)
-        self.assignment_id = config.getint('main', 'assignment_id', fallback=0)
+        self.course_id = config.getint('main', 'course_id', fallback=1)
+        self.assignment_id = config.getint('main', 'assignment_id', fallback=1)
 
         self.total_points = config.getint('main', 'total_points')
         self.enforce_due_date = config.getboolean('main', 'enforce_due_date')
         self.test_scripts = json.loads(config.get('main', 'test_scripts'))
         self.test_weights = json.loads(config.get('main', 'test_weights'))
-        self.moss_id = config.getint('main', 'moss_id', fallback=0)
+        self.moss_id = config.getint('main', 'moss_id', fallback=1)
         self.moss_lang = config.get('main', 'moss_lang')
         self.moss_pattern = config.get('main', 'moss_pattern')
         self.git_username = config.get('main', 'git_username')

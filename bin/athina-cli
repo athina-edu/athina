@@ -75,9 +75,12 @@ def main():
     for run_record in run_list:
         # Build configuration object
         configuration = Configuration(logger=LOGGER)
-        if configuration.load_configuration(run_record['directory']) is False:
-            # Unable to read configuration file (or find it)
-            continue  # skip to next item in run_list
+        try:
+            if configuration.load_configuration(run_record['directory']) is False:
+                # Unable to read configuration file (or find it)
+                continue  # skip to next item in run_list
+        except TypeError:
+            continue  # in case a use forgets and gives empty values in their config
 
         # Obtain simulation parameters and specify log file
         assert type(run_record['simulate']) is bool, \
