@@ -11,15 +11,18 @@ def request_url(url, headers=None, payload=None, method="get", return_type="json
     payload = {} if payload is None else payload
     files = {} if files is None else files
 
-    if method == "get":
-        r = requests.get(url, headers=headers)
-    elif method == "put":
-        r = requests.put(url, headers=headers, data=payload)
-    elif method == "post" and len(files) == 0:
-        r = requests.post(url, headers=headers, data=payload)
-    elif method == "post" and len(files) > 0:
-        r = requests.post(url, headers=headers, data=payload, files=files)
-    else:
+    try:
+        if method == "get":
+            r = requests.get(url, headers=headers)
+        elif method == "put":
+            r = requests.put(url, headers=headers, data=payload)
+        elif method == "post" and len(files) == 0:
+            r = requests.post(url, headers=headers, data=payload)
+        elif method == "post" and len(files) > 0:
+            r = requests.post(url, headers=headers, data=payload, files=files)
+        else:
+            return None
+    except requests.exceptions.ConnectionError:
         return None
 
     if return_type == "json":
