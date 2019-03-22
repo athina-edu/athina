@@ -75,7 +75,6 @@ def main():
     for run_record in run_list:
         # Build configuration object
         configuration = Configuration(logger=LOGGER)
-        LOGGER.log_file = "%s/%s.log" % (configuration.config_dir, configuration.config_filename)
         try:
             if configuration.load_configuration(run_record['directory']) is False:
                 # Unable to read configuration file (or find it)
@@ -92,6 +91,7 @@ def main():
         configuration.simulate = run_record['simulate']
 
         # Starting statement
+        LOGGER.log_file = "%s/%s.log" % (configuration.config_dir, configuration.config_filename)
         LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
 
         # Load e-learning platform functions
