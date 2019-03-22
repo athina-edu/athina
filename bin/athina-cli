@@ -79,7 +79,7 @@ def main():
             if configuration.load_configuration(run_record['directory']) is False:
                 # Unable to read configuration file (or find it)
                 continue  # skip to next item in run_list
-        except TypeError:
+        except (ValueError, TypeError):
             continue  # in case a use forgets and gives empty values in their config
 
         # Obtain simulation parameters and specify log file

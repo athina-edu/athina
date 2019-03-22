@@ -23,7 +23,7 @@ def request_url(url, headers=None, payload=None, method="get", return_type="json
         else:
             return None
     except requests.exceptions.ConnectionError:
-        return None
+        return {}
 
     if return_type == "json":
         try:
