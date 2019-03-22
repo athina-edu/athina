@@ -75,11 +75,14 @@ def main():
     for run_record in run_list:
         # Build configuration object
         configuration = Configuration(logger=LOGGER)
+        LOGGER.log_file = "%s/%s.log" % (configuration.config_dir, configuration.config_filename)
         try:
             if configuration.load_configuration(run_record['directory']) is False:
                 # Unable to read configuration file (or find it)
                 continue  # skip to next item in run_list
         except (ValueError, TypeError):
+            LOGGER.vprint("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
+                          "missing or incorrect (e.g., no quotes are necessary for strings).")
             continue  # in case a use forgets and gives empty values in their config
 
         # Obtain simulation parameters and specify log file
@@ -87,7 +90,6 @@ def main():
             "Simulate is not properly read. " \
             "Either the parameter was passed wrong or the code needs fixing."
         configuration.simulate = run_record['simulate']
-        LOGGER.log_file = "%s/%s.log" % (configuration.config_dir, configuration.config_filename)
 
         # Starting statement
         LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
