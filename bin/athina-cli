@@ -6,8 +6,8 @@ import time
 import filelock
 import signal
 import sys
-from athina.users import *
 from athina.logger import *
+from athina.users import *
 from athina.tester import *
 from athina.configuration import *
 
@@ -76,12 +76,10 @@ def main():
         # Build configuration object
         configuration = Configuration(logger=LOGGER)
         try:
-            if configuration.load_configuration(run_record['directory']) is False:
-                # Unable to read configuration file (or find it)
-                continue  # skip to next item in run_list
+            configuration.load_configuration(run_record['directory'])
         except (ValueError, TypeError):
-            LOGGER.vprint("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
-                          "missing or incorrect (e.g., no quotes are necessary for strings).")
+            LOGGER.logger.error("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
+                         "missing or incorrect (e.g., no quotes are necessary for strings).")
             continue  # in case a use forgets and gives empty values in their config
 
         # Obtain simulation parameters and specify log file
@@ -91,8 +89,7 @@ def main():
         configuration.simulate = run_record['simulate']
 
         # Starting statement
-        LOGGER.log_file = "%s/%s.log" % (configuration.config_dir, configuration.config_filename)
-        LOGGER.vprint("###\nStarting - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
+        LOGGER.logger.info("Processing...")
 
         # Load e-learning platform functions
         e_learning = Canvas(configuration, LOGGER)
@@ -127,6 +124,7 @@ def main():
                                                if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
         elif ARGS.repo_url_testing is not None:
             # Creating tmp user and simulating the test for the provided repository
+            LOGGER.logger.debug("TEST")
             try:
                 obj = Users[1]
                 obj.delete_instance()
@@ -137,12 +135,13 @@ def main():
                          url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
                          new_url=True,
                          commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
-            LOGGER.verbose = True
-            LOGGER.print_debug_messages = True
+            LOGGER.set_verbose(True)
+            LOGGER.set_debug(True)
             configuration.simulate = True
             repository.check_repository_changes(1)
             tester.process_student_assignment(1)
-            LOGGER.vprint("Repo testing complete!")
+            print(LOGGER.logger.handlers)
+            LOGGER.logger.info("Single repository testing completed.")
             exit(0)  # This is used for testing so no further processing is necessary
         else:
             # Start testing changed records (new or updated) if any exist
@@ -152,17 +151,14 @@ def main():
         if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
             tester.plagiarism_checks_on_users()
 
-        # Save database changes
-        if LOGGER.verbose is False:
-            subprocess.run("echo \"$(tail -3000 '%s')\" > '%s'" % (LOGGER.log_file, LOGGER.log_file), shell=True)
-            os.chmod(LOGGER.log_file, 0o666)
         # In case this script is run as another user the repo needs to be also set to be editable by anyone
         try:
             os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o777)
         except FileNotFoundError:
             pass
 
-        LOGGER.vprint("###\nFinished - %s\n###" % datetime.now(timezone.utc).isoformat(' '))
+        del configuration
+        LOGGER.logger.info("Processing done.")
 
 
 if __name__ == "__main__":
@@ -177,13 +173,11 @@ if __name__ == "__main__":
 
     # Setup logger
     LOGGER = Logger()
-
-    # helper_functions also imports builtins, a way to make global variable
-    LOGGER.verbose = ARGS.verbose
+    LOGGER.set_verbose(ARGS.verbose)  # this also creates LOGGER.logger
 
     # Capturing and terminating on service or non service interrupt
     signal.signal(signal.SIGINT, signal_handler)
-    print('Press Ctrl+C at any time to terminate Athina.')
+    LOGGER.logger.info('Press Ctrl+C at any time to terminate Athina.')
 
     # Start main process
     if ARGS.service is True:

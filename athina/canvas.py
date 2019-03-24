@@ -61,8 +61,8 @@ class Canvas:
 
     def validate_response(self, data):
         if not isinstance(data, list) and isinstance(data, dict) and data.get('status', 0) == 'unauthenticated':
-            self.logger.vprint("Incorrect response data from Canvas (bad authentication).")
-            self.logger.vprint(data, debug=True)
+            self.logger.logger.error("Incorrect response data from Canvas (bad authentication).")
+            self.logger.logger.debug(data)
             return False
         else:
             return True
@@ -79,10 +79,9 @@ class Canvas:
             return dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
         try:
             due_date = dateutil.parser.parse(data["due_at"]).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
-        except TypeError:
-            self.logger.vprint(
-                "Type error for due date (probably not specified on elearning platform), using no due date.",
-                debug=True)
+        except (TypeError, KeyError):
+            self.logger.logger.error(
+                "Type/Key error for due date (probably not specified on elearning platform), using no due date.")
             return dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
 
         return due_date
@@ -124,7 +123,7 @@ class Canvas:
 
     def upload_file_to_canvas(self, filename, user_id, file_contents):
         public = False
-        self.logger.vprint("Attempting to upload file size: %d" % len(file_contents))
+        self.logger.logger.info("Attempting to upload file size: %d" % len(file_contents))
         link_url = self.upload_params_for_comment_upload(filename, user_id)
         return_url = self.upload(link_url, file_contents)
         if return_url.get("message", 0) == 'file size exceeds quota limits':
@@ -164,8 +163,8 @@ class Canvas:
         try:
             link_url["upload_params"]
         except KeyError:
-            self.logger.vprint("Attempted upload failed to return expected output.")
-            self.logger.vprint("This is typically associated with a wrong canvas url or canvas is down.")
+            self.logger.logger.error("Attempted upload failed to return expected output.")
+            self.logger.logger.error("This is typically associated with a wrong canvas url or canvas is down.")
             return {}
 
         payload = dict()

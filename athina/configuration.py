@@ -5,6 +5,8 @@ import glob
 import configparser
 import json
 import shutil
+import logging
+import logging.handlers
 
 
 class Configuration:
@@ -86,10 +88,13 @@ class Configuration:
         self.config_dir = os.path.dirname(directory)
         self.config_filename = os.path.split(self.find_cfg(directory))[1]  # cfg filename or dir name
 
+        # Set new log file
+        self.logger.set_assignment_log_file("%s/%s.log" % (self.config_dir, self.config_filename))
+
         # Load arguments from config
-        self.logger.print_debug_messages = config.getboolean('main', 'print_debug_msgs', fallback=False)
-        self.logger.vprint("Loading configuration", debug=True)
-        self.logger.vprint("Reading %s in %s" % (self.config_filename, self.config_dir), debug=True)
+        if config.getboolean('main', 'print_debug_msgs', fallback=False):
+            self.logger.set_debug(True)
+        self.logger.logger.info("Reading %s in %s" % (self.config_filename, self.config_dir))
 
         self.auth_token = config.get('main', 'auth_token', fallback=False)
         self.course_id = config.getint('main', 'course_id', fallback=1)

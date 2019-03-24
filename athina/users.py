@@ -20,14 +20,14 @@ class Database:
         self.db_filename = db_filename
         self.logger = logger
 
-        if self.logger is not None:
-            self.logger.vprint("Loaded saved file: %s" % db_filename, debug=True)
+        self.logger.logger.debug("Loaded saved file: %s" % db_filename)
         DB.init(self.db_filename)
         DB.connect()
         DB.create_tables([Users])
         # TODO: check if table exists otherwise output this
         # if self.logger is not None:
-        #    self.logger.vprint("Warning: Cannot load Users db (probably this is a first run for a new assignment).")
+        #    self.logger.logger.error("Warning: Cannot load Users db (probably this is a
+        #    first run for a new assignment).")
         os.chmod(db_filename, 0o666)
 
     def __del__(self):
