@@ -53,7 +53,7 @@ def parse_command_line():
 
 
 def signal_handler():
-    print('Ctrl+C detected. Terminating service...')
+    LOGGER.logger.info('Ctrl+C detected. Terminating service...')
     lock.release()
     sys.exit(0)
 
@@ -140,7 +140,6 @@ def main():
             configuration.simulate = True
             repository.check_repository_changes(1)
             tester.process_student_assignment(1)
-            print(LOGGER.logger.handlers)
             LOGGER.logger.info("Single repository testing completed.")
             exit(0)  # This is used for testing so no further processing is necessary
         else:

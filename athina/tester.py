@@ -69,6 +69,10 @@ class Tester:
             self.logger.logger.error("Could not copy %s to %s" % (source, destination))
 
     def process_student_assignment(self, user_id, forced_testing=False):
+        # Reconnect logger if missing (e.g., parallel run)
+        if self.logger.logger is None:
+            self.logger.create_logger()
+
         # Acquire DB connection if missing (e.g., parallel run)
         self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
         user_object = Users.get(Users.user_id == user_id)
@@ -360,6 +364,7 @@ class Tester:
         # For parallel runs database objects have to be dropped (they cannot be pickled)
         self.configuration.db_filename = self.user_data.db_filename
         del self.user_data
+        self.logger.delete_logger()
 
         # FIXME: Alternatively process could become a staticmethod but a lot of parameters have to be passed to it then.
         user_object_results = compute_pool.map(self.process_student_assignment, user_ids)

@@ -20,7 +20,8 @@ class Database:
         self.db_filename = db_filename
         self.logger = logger
 
-        self.logger.logger.debug("Loaded saved file: %s" % db_filename)
+        if self.logger is not None:
+            self.logger.logger.debug("Loaded saved file: %s" % db_filename)
         DB.init(self.db_filename)
         DB.connect()
         DB.create_tables([Users])
