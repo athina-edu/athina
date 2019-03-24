@@ -42,7 +42,7 @@ class Tester:
         try:
             shutil.rmtree(folder)
         except PermissionError:
-            self.logger.vprint("Cannot delete %s. Likely permissions error." % folder)
+            self.logger.logger.error("Cannot delete %s. Likely permissions error." % folder)
             raise PermissionError(folder)
         except FileNotFoundError:
             pass
@@ -66,19 +66,23 @@ class Tester:
         try:
             shutil.copytree(source, destination)
         except FileNotFoundError:
-            self.logger.vprint("Could not copy %s to %s" % (source, destination))
+            self.logger.logger.error("Could not copy %s to %s" % (source, destination))
 
     def process_student_assignment(self, user_id, forced_testing=False):
+        # Reconnect logger if missing (e.g., parallel run)
+        if self.logger.logger is None:
+            self.logger.create_logger()
+
         # Acquire DB connection if missing (e.g., parallel run)
         self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
         user_object = Users.get(Users.user_id == user_id)
 
-        self.logger.vprint("> Checking %s - %d" % (user_object.user_fullname, user_id), debug=True)
+        self.logger.logger.info("> Checking %s - %d" % (user_object.user_fullname, user_id))
 
         # Code has changed and due date for submissions does not exceed submitted dates
-        self.logger.vprint("Commit Due Date Comparison: %s < %s ?" % (
+        self.logger.logger.debug("Commit Due Date Comparison: %s < %s ?" % (
             user_object.commit_date.strftime("%Y-%m-%d %H:%M:%S"),
-            self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")), debug=True)
+            self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
 
         # Boolean arguments broken up into logical components to reduce the size of if statement below
         repo_mode_conditions = True if (user_object.changed_state and
@@ -91,7 +95,7 @@ class Tester:
                                            datetime.now(timezone.utc).replace(tzinfo=None)) else False
 
         if repo_mode_conditions or forced_testing or no_repo_mode_conditions:
-            self.logger.vprint(">>> Testing")
+            self.logger.logger.info(">> Testing")
 
             # Run tests
             test_grades = []
@@ -126,8 +130,8 @@ class Tester:
                                                  test_reports=test_reports)
                 else:  # print instead
                     for text in test_reports:
-                        self.logger.vprint(text.decode("utf-8", "backslashreplace"))
-                self.logger.vprint(">>> Submitting new grade for %s: %s" % (current_user_id, grade))
+                        self.logger.logger.info(text.decode("utf-8", "backslashreplace"))
+                self.logger.logger.info(">>> Submitting new grade for %s: %s" % (current_user_id, grade))
 
                 # Update the user db that grades have been submitted
                 self.update_user_db(current_user_object)
@@ -139,7 +143,7 @@ class Tester:
 
             return user_object_list  # return the list of all updated objects
         else:
-            self.logger.vprint(">> No changes or past due date", debug=True)
+            self.logger.logger.info(">> No changes or past due date")
             user_object.changed_state = False
 
             if self.configuration.simulate is False:
@@ -220,7 +224,7 @@ class Tester:
                                        "--whitelist=%s/" % athina_student_code_dir,
                                        "--whitelist=%s/" % athina_test_tmp_dir] + test_script.split(
             " ") + extra_params
-        self.logger.vprint(" ".join(test_command), debug=True)
+        self.logger.logger.debug(" ".join(test_command))
         process = subprocess.Popen(test_command,
                                    cwd="%s/" % athina_test_tmp_dir,
                                    stdout=subprocess.PIPE,
@@ -244,14 +248,14 @@ class Tester:
                          "%s" % hashed_name]
 
         # Building the image. This is built once and then things are much faster but the check needs to happen
-        self.logger.vprint(" ".join(build_statement), debug=True)
+        self.logger.logger.debug(" ".join(build_statement))
         process = subprocess.Popen(build_statement, cwd="%s/" % self.configuration.config_dir, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         out, err = process.communicate()
 
         # If build was successful, run the image
         if not self.repository.check_error(err):
-            self.logger.vprint(" ".join(run_statement), debug=True)
+            self.logger.logger.debug(" ".join(run_statement))
             process = subprocess.Popen(run_statement, cwd="%s/" % self.configuration.config_dir,
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE)
@@ -269,8 +273,8 @@ class Tester:
                         if user_object.plagiarism_to_grade is True and
                         user_object.last_plagiarism_check + timedelta(hours=23) <=
                         datetime.now(timezone.utc).replace(tzinfo=None)]
-        self.logger.vprint("Checking for plagiarism...")
-        self.logger.vprint(users_graded)
+        self.logger.logger.info("Checking for plagiarism...")
+        self.logger.logger.debug(users_graded)
 
         if len(users_graded) != 0:
             plagiarism = Plagiarism(service_type="moss",
@@ -310,7 +314,7 @@ class Tester:
                                                    The mean similarity score is: %s""" %
                                                    (user_max_value, mean_similarity))
                 results.append([user_id, user_max_value, mean_similarity])
-                self.logger.vprint("> Submitted similarity results for %s: %s/%s" % (
+                self.logger.logger.info("> Submitted similarity results for %s: %s/%s" % (
                     user_id, user_max_value, mean_similarity))
                 obj = Users.get(Users.user_id == user_id)
                 obj.last_plagiarism_check = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -323,7 +327,7 @@ class Tester:
         return results
 
     def start_testing_db(self):
-        self.logger.vprint("Pre-fetching all user repositories")
+        self.logger.logger.info("Pre-fetching all user repositories")
         # Pre-fetching is important for group assignments where grade is submitted to multiple members and all
         # user dbs need to be updated later on
         reverse_repository_index = dict()
@@ -360,6 +364,7 @@ class Tester:
         # For parallel runs database objects have to be dropped (they cannot be pickled)
         self.configuration.db_filename = self.user_data.db_filename
         del self.user_data
+        self.logger.delete_logger()
 
         # FIXME: Alternatively process could become a staticmethod but a lot of parameters have to be passed to it then.
         user_object_results = compute_pool.map(self.process_student_assignment, user_ids)

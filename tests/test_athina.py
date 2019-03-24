@@ -1,10 +1,10 @@
 # athina_cli_tests.py
 
 import unittest
+from athina.logger import *
 from athina.users import *
 from athina.git import *
 from athina.configuration import *
-from athina.logger import *
 from athina.tester import *
 from athina.canvas import *
 import os
@@ -77,9 +77,17 @@ class TestFunctions(unittest.TestCase):
 
         return user_data
 
+    @staticmethod
+    def create_logger():
+        logger = Logger()
+        logger.set_verbose(True)
+        logger.set_debug(True)
+        return logger
+
     def test_git_tester(self):
         results = []
-        logger = Logger()
+        logger = self.create_logger()
+
         configuration = Configuration(logger=logger)
         # Create fake directories
         shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
@@ -89,7 +97,6 @@ class TestFunctions(unittest.TestCase):
         f.close()
 
         configuration.simulate = False
-        logger.verbose = True
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)
@@ -144,7 +151,6 @@ class TestFunctions(unittest.TestCase):
 
         # User with no url, no grading
         user_object = tester.process_student_assignment(5)
-        print(user_object)
         self.assertEqual(user_object[0].last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
 
@@ -203,7 +209,7 @@ class TestFunctions(unittest.TestCase):
 
     @unittest.skip("Moss service hangs for too long. Implement timeouts in moss.py")
     def test_tester_plagiarism(self):
-        logger = Logger()
+        logger = self.create_logger()
         configuration = Configuration(logger=logger)
         # Create fake directories
         shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
@@ -212,7 +218,6 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
-        logger.verbose = True
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)
@@ -245,7 +250,7 @@ class TestFunctions(unittest.TestCase):
 
     def test_tester_docker(self):
         results = []
-        logger = Logger()
+        logger = self.create_logger()
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
@@ -259,8 +264,6 @@ class TestFunctions(unittest.TestCase):
         f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
         f.close()
 
-        logger.verbose = True
-        logger.print_debug_messages = True
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)
@@ -295,7 +298,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object_results[2][1].last_grade, 80)
 
     def test_tester_db_testing(self):
-        logger = Logger()
+        logger = self.create_logger()
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
@@ -309,8 +312,7 @@ class TestFunctions(unittest.TestCase):
         f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
         f.close()
 
-        logger.verbose = True
-        logger.print_debug_messages = True
+
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)

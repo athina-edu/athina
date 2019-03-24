@@ -21,7 +21,7 @@ class Repository:
 
     def check_error(self, err):
         if err != b'':
-            self.logger.vprint("Testing script returned error: %s" % err.decode("utf-8", "backslashreplace"))
+            self.logger.logger.warning("Testing script returned warning/error: %s" % err.decode("utf-8", "backslashreplace"))
             return True
 
     # TODO: change some of these commands to appropriate module commands, e.g., shutils, os etc.
@@ -68,7 +68,7 @@ class Repository:
             changed_state = False
         elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
             # Submit grade
-            self.logger.vprint("The URL is being used by another student")
+            self.logger.logger.warning("The URL is being used by another student. Will not test.")
             if self.configuration.simulate is False:
                 self.e_learning.submit_grade(user_id, user_values, 0, 'The URL is being used by another student')
             user_values.new_url = False
@@ -76,7 +76,7 @@ class Repository:
             user_values.save()
             changed_state = False  # do not process anything for this student
         elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
-            self.logger.vprint(">> New Submission: %s - %d" % (user_values.user_fullname, user_id))
+            self.logger.logger.info("> New Submission: %s - %d" % (user_values.user_fullname, user_id))
             # Delete dir, create dir and clone repository
             self.clone_git_repo(user_id, user_values)
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
@@ -87,7 +87,7 @@ class Repository:
             else:
                 user_values.changed_state = False  # invalid copy, couldn't be cloned.
                 user_values.save()
-                self.logger.vprint(">>> Could not clone the repository.")
+                self.logger.logger.error(">>> Could not clone the repository.")
                 changed_state = False
                 # TODO: make the user aware with solutions on how to get their git accessible
         else:
@@ -99,7 +99,7 @@ class Repository:
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = process.communicate()
             if b"unresolved conflict" in err:
-                self.logger.vprint("Cannot pull due to unresolved conflicts...initiating git clone...")
+                self.logger.logger.warning("Cannot pull due to unresolved conflicts...initiating git clone...")
                 self.clone_git_repo(user_id, user_values)
             out, err = self.retrieve_git_log(user_id)
             if self.check_error(err):  # no repo or commit cannot be obtained
@@ -108,7 +108,7 @@ class Repository:
                 commit_date = dateutil.parser.parse(out).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
 
             if commit_date > user_values.commit_date:
-                self.logger.vprint(">> New Commit on Repo")
+                self.logger.logger.info(">> New Commit on Repo")
                 user_values.changed_state = True
                 user_values.commit_date = commit_date  # This helps with the test that follows, value is updated later
                 user_values.save()

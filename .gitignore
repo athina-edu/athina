@@ -18,6 +18,7 @@ venv
 /.gtm/
 tests/user_data.sqlite3
 .eggs
-config-examples/assignementsample.cfg.log
+config-examples/assignementsample.cfg.log*
 config-examples/repodata*
 config-examples/0.sqlite3
+athina.log*
