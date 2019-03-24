@@ -370,6 +370,7 @@ class Tester:
         user_object_results = compute_pool.map(self.process_student_assignment, user_ids)
 
         # Restoring the objects
+        self.logger.create_logger()
         self.user_data = Database(self.configuration.db_filename)
 
         return user_object_results
