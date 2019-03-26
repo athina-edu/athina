@@ -99,15 +99,21 @@ def main():
 
         # No point contacting elearning platform if no auth token is provided
         if configuration.auth_token != "":
+            LOGGER.logger.debug("Retrieving submission list from elearning platform...")
             e_learning.get_all_submissions()
+            LOGGER.logger.debug("Retrieved!")
             if len(Users.select()) > 0:
+                LOGGER.logger.debug("Retrieving user info from elearning platform...")
                 user_data = e_learning.get_additional_user_info(user_data)
+                LOGGER.logger.debug("Retrieved!")
                 if configuration.enforce_due_date:
                     configuration.due_date = e_learning.get_assignment_due_date()
                 else:
                     configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
                 # Check if more than N times the same URL in usrdb
+                LOGGER.logger.debug("Checking for duplicate urls...")
                 user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
+                LOGGER.logger.debug("Checked!")
 
         # Build Repository Object
         repository = Repository(LOGGER, configuration, e_learning)

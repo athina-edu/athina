@@ -21,10 +21,11 @@ class Database:
         self.logger = logger
 
         if self.logger is not None:
-            self.logger.logger.debug("Loaded saved file: %s" % db_filename)
+            self.logger.logger.debug("Connecting to db file: %s" % db_filename)
         DB.init(self.db_filename)
         DB.connect()
         DB.create_tables([Users])
+        self.logger.logger.debug("Connected!")
         # TODO: check if table exists otherwise output this
         # if self.logger is not None:
         #    self.logger.logger.error("Warning: Cannot load Users db (probably this is a

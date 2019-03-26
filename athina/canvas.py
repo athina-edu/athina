@@ -177,9 +177,10 @@ class Canvas:
         for record in data:
             try:
                 obj = Users.get(Users.user_id == record["id"])
+            except (KeyError, Users.DoesNotExist):
+                continue
+            if obj.secondary_id != record["login_id"] or obj.user_fullname != record["name"]:
                 obj.secondary_id = record["login_id"]
                 obj.user_fullname = record["name"]
                 obj.save()
-            except (KeyError, Users.DoesNotExist):
-                continue
         return users
