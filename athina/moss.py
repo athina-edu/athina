@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Plagiarism Checker
-
-Created on Thu Sep 21 12:04:01 2017
-
-@author: Michael Tsikerdekis
-"""
 
 import subprocess
 import time
@@ -37,6 +30,7 @@ class Plagiarism:
                                      ">",
                                      "%s/mossnet.pl" % self.dir_path]), shell=True)
 
+    # TODO: print statements need to be turned to logger statements
     def check_plagiarism(self, folder_list):
         if self.service_type == "moss" and len(folder_list) != 0:
             process = subprocess.Popen(
@@ -48,9 +42,15 @@ class Plagiarism:
             out, err = process.communicate()
             print(err)
             print(out)
-            print(out.decode("ascii").split("\n")[-2])
+            try:
+                print(out.decode("ascii").split("\n")[-2])
+            except IndexError:
+                pass
 
-            text = self.request_url(out.decode("ascii").split("\n")[-2], return_type="text")
+            try:
+                text = self.request_url(out.decode("ascii").split("\n")[-2], return_type="text")
+            except IndexError:
+                text = ""
             matches = re.findall("<TR>.*?u(\d*?)\/ \((.*?)\%\).*?u(\d*?)\/ \((.*?)\%\)",
                                  text, re.DOTALL)
 

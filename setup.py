@@ -11,5 +11,6 @@ setup(
     author='Michail Tsikerdekis',
     author_email='tsikerdekis@gmail.com',
     description='',
-    test_suite="tests"
+    test_suite="tests",
+    data_files=[('athina', ['athina/mossnet'])]
 )
