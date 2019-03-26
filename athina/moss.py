@@ -59,6 +59,8 @@ class Plagiarism:
                 self.parse_comparison_time(comparisons, item[0], item[1])
                 self.parse_comparison_time(comparisons, item[2], item[3])
             return comparisons
+        else:
+            return dict()
 
     @staticmethod
     def parse_comparison_time(comparisons, item, value):
