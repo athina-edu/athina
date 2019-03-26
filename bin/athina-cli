@@ -2,6 +2,7 @@
 
 # Required modules
 import argparse
+import pickle
 import time
 import filelock
 import signal
@@ -102,7 +103,9 @@ def main():
             LOGGER.logger.debug("Retrieving submission list from elearning platform...")
             e_learning.get_all_submissions()
             LOGGER.logger.debug("Retrieved!")
-            if len(Users.select()) > 0:
+
+            # Getting additional information from e-learning platform
+            if len(Users.select()) > 0 and e_learning.needs_update:  # this helps reduce API calls
                 LOGGER.logger.debug("Retrieving user info from elearning platform...")
                 user_data = e_learning.get_additional_user_info(user_data)
                 LOGGER.logger.debug("Retrieved!")
@@ -110,7 +113,9 @@ def main():
                     configuration.due_date = e_learning.get_assignment_due_date()
                 else:
                     configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
-                # Check if more than N times the same URL in usrdb
+                e_learning.update_last_update()
+            # Check if more than N times the same URL in usrdb
+            elif len(Users.select()) > 0:
                 LOGGER.logger.debug("Checking for duplicate urls...")
                 user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
                 LOGGER.logger.debug("Checked!")

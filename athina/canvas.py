@@ -1,7 +1,8 @@
 # All functions relating to data retrieval and submission in relation to Canvas e-learning platform
 # There are built in a general fashion so that e-learning platforms can be easily switched (as long as func names
 # remain the same)
-from datetime import datetime
+from datetime import datetime, timedelta
+import pickle
 import dateutil.parser
 from athina.url import *
 from athina.users import *
@@ -10,10 +11,29 @@ from athina.users import *
 class Canvas:
     configuration = None
     logger = None  # athina's logger object for event logging and debugging
+    last_update = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
 
     def __init__(self, configuration, logger):
         self.configuration = configuration
         self.logger = logger
+        self.get_last_updated()
+
+    def get_last_updated(self):
+        try:
+            f = open("%s/%s.pkl" % (self.configuration.config_dir, self.configuration.assignment_id), 'rb')
+            data = pickle.load(f)
+        except FileNotFoundError:
+            data = {}
+        self.last_update = data.get('last_update', datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
+
+    def update_last_update(self):
+        data = {"last_update": datetime.now(timezone.utc).replace(tzinfo=None)}
+        with open("%s/%s.pkl" % (self.configuration.config_dir, self.configuration.assignment_id), 'wb') as f:
+            pickle.dump(data, f)
+
+    @property
+    def needs_update(self):
+        return self.last_update + timedelta(days=1) <= datetime.now(timezone.utc).replace(tzinfo=None)
 
     @property
     def base_url(self):
