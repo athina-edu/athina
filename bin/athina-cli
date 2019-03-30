@@ -53,7 +53,7 @@ def parse_command_line():
     return args
 
 
-def signal_handler():
+def signal_handler(signum, frame):
     LOGGER.logger.info('Ctrl+C detected. Terminating service...')
     lock.release()
     sys.exit(0)
