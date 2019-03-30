@@ -10,7 +10,6 @@
 
 
 
-
 Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 
 for managing multiple assignments by multiple instructors on a single machine (see [Athina-Web](https://github.com/athina-edu/athina-web)).
 
