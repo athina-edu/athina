@@ -77,8 +77,9 @@ class Users(Model):
     plagiarism_to_grade = BooleanField(default=False)  # Signifies whether a user received a new grade (plagiarism)
     last_plagiarism_check = DateTimeField(default=datetime.now(timezone.utc).replace(tzinfo=None))
     last_graded = DateTimeField(default=datetime(1, 1, 1, 0, 0))
-    last_grade = SmallIntegerField(null=True)
     changed_state = BooleanField(default=False)
+    last_grade = SmallIntegerField(null=True)
+    last_report = BlobField(default="", null=True)
 
     class Meta:
         database = DB

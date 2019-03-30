@@ -39,6 +39,7 @@ class Configuration:
     due_date = datetime(2100, 1, 1, 0, 0)
     use_docker = False
     canvas_url = "www.instructure.com"
+    send_grade_to_canvas = True
 
     # Set on the fly
     db_filename = ""
@@ -121,6 +122,7 @@ class Configuration:
         self.git_url = config.get('main', 'git_url', fallback='www.github.com')
         self.processes = config.getint('main', 'processes', fallback=1)
         self.canvas_url = config.get('main', 'canvas_url', fallback="www.instructure.com")
+        self.send_grade_to_canvas = config.getboolean('main', 'send_grade_to_canvas', fallback=True)
         self.use_docker = config.getboolean('main', 'use_docker', fallback=False)
 
         # If running from within a container then firejail is meaningless
