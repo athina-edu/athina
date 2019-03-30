@@ -22,17 +22,41 @@ class Database:
 
         if self.logger is not None:
             self.logger.logger.debug("Connecting to db file: %s" % db_filename)
-        DB.init(self.db_filename)
-        DB.connect()
-        DB.create_tables([Users])
-        # TODO: check if table exists otherwise output this
-        # if self.logger is not None:
-        #    self.logger.logger.error("Warning: Cannot load Users db (probably this is a
-        #    first run for a new assignment).")
+
+        self.connect_to_db(self.db_filename)
+        if not self.database_is_healthy:
+            if self.logger is not None:
+                self.logger.logger.error("Warning: Cannot load Users db. Starting from scratch.")
+            self.close_db()
+            os.remove(self.db_filename)
+            self.connect_to_db(self.db_filename)
+
         os.chmod(db_filename, 0o666)
 
     def __del__(self):
+        self.close_db()
+
+    @staticmethod
+    def connect_to_db(db):
+        DB.init(db)
+        DB.connect()
+        DB.create_tables([Users])
+
+    @staticmethod
+    def close_db():
         DB.close()
+
+    @property
+    def database_is_healthy(self):
+        try:
+            user = Users.select().limit(1)[0]
+            return True
+        except OperationalError:
+            # Database specifications have changed (e.g., newer athina version)
+            # delete old sql file and start a new
+            return False
+        except IndexError:
+            return True  # If the database is empty, this is a normal error
 
     @staticmethod
     def check_duplicate_url(same_url_limit=1):
