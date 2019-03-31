@@ -22,3 +22,5 @@ config-examples/assignementsample.cfg.log*
 config-examples/repodata*
 config-examples/0.sqlite3
 athina.log*
+.coverage
+user_data.sqlite3
