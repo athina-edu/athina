@@ -21,4 +21,4 @@ script:
   #- pytest
 after_script:
   - coverage xml
-  - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT
+  - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT --prefix /home/travis/build/athina-edu/athina/
