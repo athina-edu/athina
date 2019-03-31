@@ -17,6 +17,7 @@ before_script:
   - ./cc-test-reporter before-build
 # command to run tests
 script:
-  - pytest
+  - coverage run --omit *site-packages* setup.py test
+  #- pytest
 after_script:
   - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT
