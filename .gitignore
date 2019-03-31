@@ -24,3 +24,5 @@ config-examples/0.sqlite3
 athina.log*
 .coverage
 user_data.sqlite3
+cc-test-reporter
+coverage.xml

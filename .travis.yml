@@ -20,4 +20,5 @@ script:
   - coverage run --omit *site-packages* setup.py test
   #- pytest
 after_script:
+  - coverage xml
   - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT
