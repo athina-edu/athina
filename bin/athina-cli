@@ -78,9 +78,9 @@ def main():
         configuration = Configuration(logger=LOGGER)
         try:
             configuration.load_configuration(run_record['directory'])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, configparser.NoSectionError):
             LOGGER.logger.error("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
-                         "missing or incorrect (e.g., no quotes are necessary for strings).")
+                                "missing or incorrect (e.g., no quotes are necessary for strings).")
             continue  # in case a use forgets and gives empty values in their config
 
         # Obtain simulation parameters and specify log file
