@@ -128,6 +128,10 @@ class Configuration:
         self.send_grade_to_canvas = config.getboolean('main', 'send_grade_to_canvas', fallback=True)
         self.use_docker = config.getboolean('main', 'use_docker', fallback=False)
 
+        # If no repo then definitely pass extra params
+        if self.no_repo:
+            self.pass_extra_params = True
+
         # If running from within a container then firejail is meaningless
         if self.in_docker():
             self.use_docker = True
