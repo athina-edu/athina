@@ -1,5 +1,6 @@
 from athina.firejail import *
 from datetime import timedelta, datetime, timezone
+from athina.tester.docker import *
 import subprocess
 import glob
 import time
@@ -160,37 +161,40 @@ class Tester:
         # If we are not running things in parallel, default will do
         # (ensures backwards compatibility) with non parallelized tests
         time_field = "" if self.configuration.processes < 2 else time.time()
-        athina_student_code_dir = "/tmp/athina%s" % time_field
-        athina_test_tmp_dir = "/tmp/athina-test%s" % time_field
+        self.configuration.athina_student_code_dir = "/tmp/athina%s" % time_field
+        self.configuration.athina_test_tmp_dir = "/tmp/athina-test%s" % time_field
 
         # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-        self.rm_dir(athina_student_code_dir)
+        self.rm_dir(self.configuration.athina_student_code_dir)
         if self.configuration.no_repo is False:
             self.copy_dir('%s/repodata%s/u%s' % (self.configuration.config_dir, self.configuration.assignment_id,
-                                                 user_object.user_id), '%s' % athina_student_code_dir)
+                                                 user_object.user_id),
+                          '%s' % self.configuration.athina_student_code_dir)
         # Copy tests in tmp folder
-        self.rm_dir(athina_test_tmp_dir)
-        self.copy_dir('%s/tests' % self.configuration.config_dir, '%s' % athina_test_tmp_dir)
+        self.rm_dir(self.configuration.athina_test_tmp_dir)
+        self.copy_dir('%s/tests' % self.configuration.config_dir, '%s' % self.configuration.athina_test_tmp_dir)
 
         if self.configuration.pass_extra_params is True:
-            extra_params = [user_object.secondary_id, self.configuration.due_date.isoformat()]
+            self.configuration.extra_params = [user_object.secondary_id, self.configuration.due_date.isoformat()]
         else:
-            extra_params = [athina_student_code_dir, athina_test_tmp_dir]
+            self.configuration.extra_params = [self.configuration.athina_student_code_dir,
+                                               self.configuration.athina_test_tmp_dir]
 
         # Execute using docker or firejail (depending on what the settings are)
         if self.configuration.use_docker is True:
             if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
-                out, err = self.execute_with_docker(athina_student_code_dir, athina_test_tmp_dir,
-                                                    extra_params, test_script)
+                out, err = docker_run(test_script, configuration=self.configuration, logger=self.logger)
             else:
                 out, err = b"0", b"Missing Dockerfile (contact instructor)"
         else:
-            out, err = self.execute_with_firejail(athina_student_code_dir, athina_test_tmp_dir,
-                                                  extra_params, test_script)
+            out, err = self.execute_with_firejail(self.configuration.athina_student_code_dir,
+                                                  self.configuration.athina_test_tmp_dir,
+                                                  self.configuration.extra_params,
+                                                  test_script)
 
         # Clear temp directories
-        self.rm_dir(athina_test_tmp_dir)
-        self.rm_dir(athina_student_code_dir)
+        self.rm_dir(self.configuration.athina_test_tmp_dir)
+        self.rm_dir(self.configuration.athina_student_code_dir)
 
         # If we cannot find a number returned at the end of this list
         try:
@@ -234,40 +238,6 @@ class Tester:
         out, err = process.communicate()
         return out, err
 
-    def execute_with_docker(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
-        hashed_name = hashlib.md5(self.configuration.config_filename.encode("ascii")).hexdigest()
-
-        build_statement = ["docker", "build", "-t",
-                           "%s" % hashed_name,
-                           "-f", "Dockerfile", "."]
-        run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
-                         "--stop-timeout", "%d" % self.configuration.test_timeout,
-                         "-e", "STUDENT_DIR=%s" % athina_student_code_dir,
-                         "-e", "TEST_DIR=%s" % athina_test_tmp_dir,
-                         "-e", "EXTRA_PARAMS=%s" % extra_params,
-                         "-v", "%s:%s" % (athina_student_code_dir, athina_student_code_dir),
-                         "-v", "%s:%s" % (athina_test_tmp_dir, athina_test_tmp_dir),
-                         "%s" % hashed_name]
-
-        # Building the image. This is built once and then things are much faster but the check needs to happen
-        self.logger.logger.debug(" ".join(build_statement))
-        process = subprocess.Popen(build_statement, cwd="%s/" % self.configuration.config_dir, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
-        out, err = process.communicate()
-
-        # If build was successful, run the image
-        if not self.repository.check_error(err):
-            self.logger.logger.debug(" ".join(run_statement))
-            process = subprocess.Popen(run_statement, cwd="%s/" % self.configuration.config_dir,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
-            run_out, run_err = process.communicate()
-            out += run_out
-            err += run_err
-
-        return out, err
-
-    # TODO: this function needs a test
     def plagiarism_checks_on_users(self):
         # Report plagiarism to any newly submitted grades (currently uses only MOSS)
         results = []
@@ -347,6 +317,9 @@ class Tester:
         processing_list = [[user.user_id, user] for user in Users.select() if
                            user.user_id in reverse_repository_index.values()]
         del reverse_repository_index
+
+        # If we utilize docker we need to pre-build the docker container
+        docker_build(configuration=self.configuration, logger=self.logger)
 
         # Whether we should run processes in parallel or not
         user_object_results = []

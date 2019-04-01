@@ -2,14 +2,12 @@
 
 import unittest
 from athina.logger import *
-from athina.users import *
 from athina.git import *
 from athina.configuration import *
-from athina.tester import *
+from athina.tester.tester import *
 from athina.canvas import *
 import os
 import shutil
-import multiprocessing
 
 
 class TestFunctions(unittest.TestCase):

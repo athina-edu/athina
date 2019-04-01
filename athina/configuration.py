@@ -43,6 +43,9 @@ class Configuration:
 
     # Set on the fly
     db_filename = ""
+    athina_student_code_dir = ""
+    athina_test_tmp_dir = ""
+    extra_params = ""
 
     def __init__(self, logger):
         self.logger = logger

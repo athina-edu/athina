@@ -2,14 +2,11 @@
 
 # Required modules
 import argparse
-import pickle
-import time
 import filelock
 import signal
 import sys
 from athina.logger import *
-from athina.users import *
-from athina.tester import *
+from athina.tester.tester import *
 from athina.configuration import *
 
 # Variable modules (extensions, e.g., canvas or blackboard)
