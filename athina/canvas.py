@@ -35,7 +35,7 @@ class Canvas:
 
     @property
     def needs_update(self):
-        return self.last_update + timedelta(days=1) <= datetime.now(timezone.utc).replace(tzinfo=None)
+        return self.last_update + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None)
 
     @property
     def base_url(self):

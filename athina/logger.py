@@ -2,6 +2,17 @@ import logging
 import logging.handlers
 
 
+class WatchedRotatingFileHandler(logging.handlers.RotatingFileHandler, logging.handlers.WatchedFileHandler):
+    def __init__(self, filename, **kwargs):
+        super().__init__(filename, **kwargs)
+        self.dev, self.ino = -1, -1
+        self._statstream()
+
+    def emit(self, record):
+        self.reopenIfNeeded()
+        super().emit(record)
+
+
 class Logger:
     """
     The Logger scripts uses set function and recreates a logger's state based on its configuration.
@@ -20,7 +31,7 @@ class Logger:
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
         # create file handler which logs info messages
-        fh = logging.handlers.RotatingFileHandler('athina.log', maxBytes=100000, backupCount=3)
+        fh = WatchedRotatingFileHandler('athina.log', maxBytes=100000, backupCount=3)
         fh.setLevel(logging_state)
         fh.setFormatter(formatter)
         self.__safe_add_handler(fh)
@@ -33,7 +44,7 @@ class Logger:
             self.__safe_add_handler(ch)
 
         if self._logfile is not None:
-            fc = logging.handlers.RotatingFileHandler(self._logfile, maxBytes=100000, backupCount=3)
+            fc = WatchedRotatingFileHandler(self._logfile, maxBytes=100000, backupCount=3)
             fc.setLevel(logging_state)
             fc.setFormatter(formatter)
             self.__safe_add_handler(fc)
