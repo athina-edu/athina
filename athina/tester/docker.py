@@ -28,7 +28,7 @@ def docker_run(test_script, configuration, logger):
                      "--stop-timeout", "%d" % configuration.test_timeout,
                      "-e", "STUDENT_DIR=%s" % configuration.athina_student_code_dir,
                      "-e", "TEST_DIR=%s" % configuration.athina_test_tmp_dir,
-                     "-e", "EXTRA_PARAMS=%s" % configuration.extra_params,
+                     "-e", "EXTRA_PARAMS=%s" % " ".join(configuration.extra_params),
                      "-v", "%s:%s" % (configuration.athina_student_code_dir, configuration.athina_student_code_dir),
                      "-v", "%s:%s" % (configuration.athina_test_tmp_dir, configuration.athina_test_tmp_dir),
                      "%s" % __generate_hash(configuration.config_dir)]

@@ -180,13 +180,11 @@ class Tester:
         self.copy_dir('%s/tests' % self.configuration.config_dir, '%s' % self.configuration.athina_test_tmp_dir)
 
         if self.configuration.pass_extra_params is True:
-            self.configuration.extra_params = "%s %s" %\
-                                              (user_object.secondary_id,
-                                               self.configuration.due_date.astimezone(timezone.utc).isoformat())
+            self.configuration.extra_params = [user_object.secondary_id,
+                                               self.configuration.due_date.astimezone(timezone.utc).isoformat()]
         else:
-            self.configuration.extra_params = "%s %s" %\
-                                              (self.configuration.athina_student_code_dir,
-                                               self.configuration.athina_test_tmp_dir)
+            self.configuration.extra_params = [self.configuration.athina_student_code_dir,
+                                               self.configuration.athina_test_tmp_dir]
 
         # Execute using docker or firejail (depending on what the settings are)
         if self.configuration.use_docker is True:
