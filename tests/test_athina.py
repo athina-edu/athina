@@ -310,7 +310,6 @@ class TestFunctions(unittest.TestCase):
         f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
         f.close()
 
-
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)
@@ -327,7 +326,3 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object_results[2][0].last_grade, 80)
         self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(user_object_results[2][1].last_grade, 80)
-
-
-if __name__ == '__main__':
-    unittest.main()

@@ -6,3 +6,4 @@ def generate_firejail_profile(filename):
     profile_text = file.read()
     with open(filename, 'w') as out:
         out.write(profile_text)
+    file.close()

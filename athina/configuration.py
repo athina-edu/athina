@@ -1,12 +1,10 @@
 # Hyper object that retains all execution parameters shared between modules
-from datetime import datetime, timezone
+from datetime import datetime
 import os
 import glob
 import configparser
 import json
 import shutil
-import logging
-import logging.handlers
 
 
 class Configuration:

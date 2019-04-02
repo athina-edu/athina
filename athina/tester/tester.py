@@ -6,7 +6,6 @@ import glob
 import time
 import shutil
 import np
-import hashlib
 import multiprocessing
 
 # Modifiable loading
