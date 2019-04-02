@@ -31,7 +31,7 @@ class Logger:
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
         # create file handler which logs info messages
-        fh = self._create_handler('log/athina.log')
+        fh = self._create_handler('logs/athina.log')
         fh.setLevel(logging_state)
         fh.setFormatter(formatter)
         self.__safe_add_handler(fh)
