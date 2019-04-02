@@ -160,7 +160,7 @@ class Tester:
 
         # If we are not running things in parallel, default will do
         # (ensures backwards compatibility) with non parallelized tests
-        time_field = "" if self.configuration.processes < 2 else time.time()
+        time_field = "" if self.configuration.processes < 2 else "%s-%s" % (time.time(), os.getpid())
         self.configuration.athina_student_code_dir = "/tmp/athina%s" % time_field
         self.configuration.athina_test_tmp_dir = "/tmp/athina-test%s" % time_field
 
@@ -170,15 +170,23 @@ class Tester:
             self.copy_dir('%s/repodata%s/u%s' % (self.configuration.config_dir, self.configuration.assignment_id,
                                                  user_object.user_id),
                           '%s' % self.configuration.athina_student_code_dir)
+        else:
+            # Docker tends to create mount points which result in root folders that then cannot be deleted
+            # The code below solves this problem.
+            os.mkdir('%s' % self.configuration.athina_student_code_dir, mode=0o777)
+
         # Copy tests in tmp folder
         self.rm_dir(self.configuration.athina_test_tmp_dir)
         self.copy_dir('%s/tests' % self.configuration.config_dir, '%s' % self.configuration.athina_test_tmp_dir)
 
         if self.configuration.pass_extra_params is True:
-            self.configuration.extra_params = [user_object.secondary_id, self.configuration.due_date.isoformat()]
+            self.configuration.extra_params = "%s %s" %\
+                                              (user_object.secondary_id,
+                                               self.configuration.due_date.astimezone(timezone.utc).isoformat())
         else:
-            self.configuration.extra_params = [self.configuration.athina_student_code_dir,
-                                               self.configuration.athina_test_tmp_dir]
+            self.configuration.extra_params = "%s %s" %\
+                                              (self.configuration.athina_student_code_dir,
+                                               self.configuration.athina_test_tmp_dir)
 
         # Execute using docker or firejail (depending on what the settings are)
         if self.configuration.use_docker is True:
