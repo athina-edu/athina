@@ -23,23 +23,24 @@ class Logger:
         fh = logging.handlers.RotatingFileHandler('athina.log', maxBytes=100000, backupCount=3)
         fh.setLevel(logging_state)
         fh.setFormatter(formatter)
-        self._safe_add_handler(fh)
+        self.__safe_add_handler(fh)
 
         if self._verbose:
             # create console handler
             ch = logging.StreamHandler()
             ch.setLevel(logging_state)
             ch.setFormatter(formatter)
-            self._safe_add_handler(ch)
+            self.__safe_add_handler(ch)
 
         if self._logfile is not None:
             fc = logging.handlers.RotatingFileHandler(self._logfile, maxBytes=100000, backupCount=3)
             fc.setLevel(logging_state)
             fc.setFormatter(formatter)
-            self._safe_add_handler(fc)
+            self.__safe_add_handler(fc)
 
-    def _safe_add_handler(self, handler):
+    def __safe_add_handler(self, handler):
         handler_found = False
+        self.logger.debug(self.logger.handlers)  # debug line
         for single_handler in self.logger.handlers:
             if single_handler.stream.name == handler.stream.name:
                 handler_found = True

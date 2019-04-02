@@ -25,9 +25,11 @@ class Canvas:
         except FileNotFoundError:
             data = {}
         self.last_update = data.get('last_update', datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
+        self.configuration.due_date = data.get('due_date', datetime(2050, 1, 1, 0, 0).replace(tzinfo=None))
 
     def update_last_update(self):
-        data = {"last_update": datetime.now(timezone.utc).replace(tzinfo=None)}
+        data = {"last_update": datetime.now(timezone.utc).replace(tzinfo=None),
+                "due_date": self.configuration.due_date}
         with open("%s/%s.pkl" % (self.configuration.config_dir, self.configuration.assignment_id), 'wb') as f:
             pickle.dump(data, f)
 
