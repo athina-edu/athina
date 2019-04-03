@@ -324,7 +324,8 @@ class Tester:
         del reverse_repository_index
 
         # If we utilize docker we need to pre-build the docker container
-        docker_build(configuration=self.configuration, logger=self.logger)
+        if self.configuration.use_docker:
+            docker_build(configuration=self.configuration, logger=self.logger)
 
         # Whether we should run processes in parallel or not
         user_object_results = []
