@@ -253,7 +253,8 @@ class Tester:
         self.logger.logger.info("Checking for plagiarism...")
         self.logger.logger.debug(users_graded)
 
-        if len(users_graded) != 0:
+        # Check if the user requested a plagiarism check (in the cfg if the settings exist)
+        if len(users_graded) != 0 and self.configuration.moss_id != 1:
             plagiarism = Plagiarism(service_type="moss",
                                     moss_id=self.configuration.moss_id,
                                     moss_lang=self.configuration.moss_lang)
