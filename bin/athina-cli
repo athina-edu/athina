@@ -63,6 +63,7 @@ def main():
         try:
             run_list = request_url(ARGS.json, method="get", return_type="json")
         except requests.exceptions.ConnectionError:
+            LOGGER.logger.error("Cannot connect to URL: %s" % ARGS.json)
             pass
     elif ARGS.config is not None:
         run_list.append({'directory': ARGS.config, 'simulate': ARGS.simulate})
