@@ -61,8 +61,8 @@ class Logger:
         if self.logger is not None:
             handlers = self.logger.handlers[:]
             for handler in handlers:
-                handler.close()
                 self.logger.removeHandler(handler)
+                handler.close()
             self.logger = None
 
     def set_verbose(self, state):

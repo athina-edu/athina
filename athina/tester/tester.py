@@ -341,14 +341,13 @@ class Tester:
         return user_object_results  # This is not necessary but for sake of testing is left here
 
     def parallel_map(self, user_ids):
-        compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
-
         # For parallel runs database objects have to be dropped (they cannot be pickled)
         self.configuration.db_filename = self.user_data.db_filename
         del self.user_data
         self.logger.delete_logger()
 
         # FIXME: Alternatively process could become a staticmethod but a lot of parameters have to be passed to it then.
+        compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
         user_object_results = compute_pool.map(self.process_student_assignment, user_ids)
 
         # Restoring the objects
