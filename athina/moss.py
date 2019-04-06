@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import subprocess
 import time
 import re
 import requests
-import os
+import mosspy
 
 
 class Plagiarism:
@@ -12,8 +11,9 @@ class Plagiarism:
     moss_id = None
     moss_lang = None
     dir_path = None
+    logger = None
 
-    def __init__(self, **kwargs):
+    def __init__(self, logger, **kwargs):
         if kwargs.get("service_type", 0) == "moss":
             try:
                 self.service_type = kwargs["service_type"]
@@ -22,37 +22,27 @@ class Plagiarism:
             except KeyError:
                 raise KeyError('Moss type requires parameters moss_id, moss_lang')
 
-            self.dir_path = os.path.dirname(os.path.realpath(__file__))
+            self.logger = logger
 
-            # Add userid to mossnet file
-            subprocess.run(" ".join(["sed", "'s/\$userid=.*;/\$userid=%d;/g'" % self.moss_id,
-                                     "%s/mossnet" % self.dir_path,
-                                     ">",
-                                     "%s/mossnet.pl" % self.dir_path]), shell=True)
-
-    # TODO: print statements need to be turned to logger statements
     def check_plagiarism(self, folder_list):
         if self.service_type == "moss" and len(folder_list) != 0:
-            process = subprocess.Popen(
-                " ".join(["perl", "%s/mossnet.pl" % self.dir_path, "-l", "python", "-d"] + folder_list),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True)
-            print(" ".join(["perl", "%s/mossnet.pl" % self.dir_path, "-l", "python", "-d"] + folder_list))
-            out, err = process.communicate()
-            print(err)
-            print(out)
+            moss = mosspy.Moss(self.moss_id, self.moss_lang)
+            for folder in folder_list:
+                moss.addFilesByWildcard(folder)
             try:
-                print(out.decode("ascii").split("\n")[-2])
-            except IndexError:
-                pass
+                url = moss.send()
+            except:
+                self.logger.logger.error("An error occured with the moss script.")
+                return dict()
+
+            self.logger.logger.info("Attempting to get results from moss url: %s" % url)
 
             try:
-                text = self.request_url(out.decode("ascii").split("\n")[-2], return_type="text")
+                text = self.request_url(url, return_type="text")
             except IndexError:
                 text = ""
-            matches = re.findall("<TR>.*?u(\d*?)\/ \((.*?)\%\).*?u(\d*?)\/ \((.*?)\%\)",
-                                 text, re.DOTALL)
+
+            matches = re.findall(r"<TR>.+?u(\d+?)/.+?(\d+)%.+?u(\d+?)/.+?(\d+)%", text, re.DOTALL)
 
             comparisons = dict()
             for item in matches:
@@ -69,6 +59,7 @@ class Plagiarism:
         else:
             comparisons[int(item)].append(int(value))
 
+    # TODO: this needs to go into a utils file
     @staticmethod
     def request_url(url, headers=None, payload=None, method="get", return_type="json"):
         time.sleep(1)  # artificial delay in case code attempts to spam with requests

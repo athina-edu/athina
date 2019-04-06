@@ -1,6 +1,7 @@
 import unittest
 import shutil
 from athina.moss import *
+from athina.logger import *
 
 
 class TestFunctions(unittest.TestCase):
@@ -21,10 +22,20 @@ class TestFunctions(unittest.TestCase):
         f = open("/tmp/u3/test.py", 'a')
         f.write("a=9875\nprint(a)")
         f.close()
-        x = Plagiarism(service_type="moss",
+
+        logger = self.create_logger()
+        x = Plagiarism(logger=logger,
+                       service_type="moss",
                        moss_id=20181579,
                        moss_lang="python")
-        data = x.check_plagiarism(['/tmp/u1/*.py',
-                                   '/tmp/u2/*.py',
-                                   '/tmp/u3/*.py'])
-        self.assertEqual(data, {1: [75], 2: [75]})
+        data = x.check_plagiarism(["/tmp/u1/*.py",
+                                   "/tmp/u2/*.py",
+                                   "/tmp/u3/*.py"])
+        self.assertEqual({1: [75], 2: [75]}, data)
+
+    @staticmethod
+    def create_logger():
+        logger = Logger()
+        logger.set_verbose(True)
+        logger.set_debug(True)
+        return logger

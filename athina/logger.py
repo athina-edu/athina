@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import os
 from multiprocessing import current_process
 
 
@@ -31,6 +32,8 @@ class Logger:
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
         # create file handler which logs info messages
+        if not os.path.isdir('logs'):
+            os.mkdir('logs')
         fh = self._create_handler('logs/athina.log')
         fh.setLevel(logging_state)
         fh.setFormatter(formatter)
