@@ -12,6 +12,5 @@ setup(
     author_email='tsikerdekis@gmail.com',
     description='',
     test_suite="tests",
-    include_package_data=True,
-    data_files=[('athina', ['athina/mossnet'])]
+    include_package_data=True
 )
