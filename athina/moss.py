@@ -4,6 +4,7 @@ import time
 import re
 import requests
 import mosspy
+from athina.users import *
 
 
 class Plagiarism:
@@ -34,6 +35,8 @@ class Plagiarism:
             except:
                 self.logger.logger.error("An error occured with the moss script.")
                 return dict()
+
+            update_key_in_assignment_data("moss_url", url)
 
             self.logger.logger.info("Attempting to get results from moss url: %s" % url)
 

@@ -286,7 +286,7 @@ class Tester:
                 except (RuntimeWarning, IndexError):
                     user_max_value = 0
 
-                if self.configuration.simulate is False:
+                if not self.configuration.simulate and self.configuration.moss_publish:
                     self.e_learning.submit_comment(user_id,
                                                    """Your highest similarity score with another student: %s
                                                    The mean similarity score is: %s""" %
@@ -296,6 +296,8 @@ class Tester:
                     user_id, user_max_value, mean_similarity))
                 obj = Users.get(Users.user_id == user_id)
                 obj.last_plagiarism_check = datetime.now(timezone.utc).replace(tzinfo=None)
+                obj.moss_max = user_max_value
+                obj.moss_average = mean_similarity
                 obj.save()
 
             for user_object in Users.select():

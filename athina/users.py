@@ -130,7 +130,7 @@ def update_key_in_assignment_data(key, value):
         obj.save()
     except AssignmentData.DoesNotExist:
         AssignmentData.create(key=key, value=value)
-        
+
 
 def load_key_from_assignment_data(key):
     try:

@@ -38,6 +38,7 @@ class Configuration:
     use_docker = False
     canvas_url = "www.instructure.com"
     send_grade_to_canvas = True
+    moss_publish = False
 
     # Set on the fly
     db_filename = ""
@@ -109,6 +110,7 @@ class Configuration:
         self.moss_id = config.getint('main', 'moss_id', fallback=1)
         self.moss_lang = config.get('main', 'moss_lang', fallback="C")
         self.moss_pattern = config.get('main', 'moss_pattern', fallback=".c")
+        self.moss_publish = config.getboolean('main', 'moss_publish', fallback=False)
         self.git_username = config.get('main', 'git_username', fallback="test")
         self.git_password = config.get('main', 'git_password', fallback="test")
         self.same_url_limit = config.getint('main', 'same_url_limit', fallback=1)
