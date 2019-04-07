@@ -5,7 +5,7 @@ setup(
     version='0.95',
     packages=find_packages(),
     scripts=['bin/athina-cli'],
-    install_requires=['np', 'filelock', 'python-dateutil', 'requests', 'numpy', 'peewee', 'mosspy'],
+    install_requires=['np', 'filelock', 'python-dateutil', 'requests', 'numpy', 'peewee', 'mosspy', 'pyyaml'],
     url='https://github.com/athina-edu/athina',
     license='MIT',
     author='Michail Tsikerdekis',

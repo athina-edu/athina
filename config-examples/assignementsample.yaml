@@ -1,15 +1,14 @@
-[main]
 # Auth token can be generated through Canvas profile page
-auth_token = 0
+auth_token: 0
 
 # Depending on the instution that is using canvas a different subdomain may be required
-canvas_url = www.instructure.com
+canvas_url: www.instructure.com
 
 # Obtain from browser URL field
-course_id = 0
+course_id: 0
 
 # Obtain from browser URL field
-assignment_id = 0
+assignment_id: 0
 
 # A command for testing whatever files exist in the user's repo.
 # Tests are independent and no information carries over (all directories reset to the repo state).
@@ -24,77 +23,80 @@ assignment_id = 0
 # - tests directory
 # These are dynamically changed and so your scripts should read those whenever you need to switch directories
 # and access files.
-test_scripts = [
-        "bash test-python-clarity.bash",
-        "bash test-python-clarity.bash"
-        ]
-test_weights = [0.7,0.3]
+test_scripts:
+  - bash test-python-clarity.bash
+  - bash test-python-clarity.bash
+
+test_weights:
+  - 0.7
+  - 0.3
 
 # Total points for the assignment. This can also be used for scaling, e.g., 80% of total points
-total_points = 80
+total_points: 80
 
 # if true then we enforce it otherwise it is ignored
-enforce_due_date = true
+enforce_due_date: true
 
 # Moss plagiarism checking
-moss_id = 0
-moss_lang = python
+moss_id: 0
+moss_lang: python
 
 # Files to look for within the directory
-moss_pattern = *.py
+moss_pattern: *.py
 
 # Whether to publish moss results to elearning platform (students will see their max and average similarity percentages)
 # If false, results are still visible via AthinaWeb
-moss_publish = false
+moss_publish: false
 
 # If turned true, athina won't look for a repository submission
 # Instead it will just ran the test script and pass the user's identifier as a command line parameter
-no_repo = false
+no_repo: false
+
 # How often should the grade be updated in hours. This applies only for no repository (no_repo) testing.
-grade_update_frequency = 24
+grade_update_frequency: 24
 
 # The git url pattern to be accepted for submitted repositories.
 # This is extremely important for security purposes since a student may register their own domain and extract
 # your git credentials otherwise.
-git_url = www.github.com
+git_url: www.github.com
 
 # Git credentials
 # If special characters are included in username or password, they need to be escaped, e.g., @ becomes %%40
 # Do not use your regular password, most services support auth tokens (with read only rights)
-git_username = 0
-git_password = 0
+git_username: 0
+git_password: 0
 
 # The following can allow the same git url to be submitted by two or more students in cases of group assignments
 # value of 1 means individual assignments
-same_url_limit = 1
+same_url_limit: 1
 
 # Hour of the clock where plagiarism checks will run. 24-hour value
 # This is for once a day and will check this for any user that received a new grade 24 hours ago
-check_plagiarism_hour = 1
+check_plagiarism_hour: 1
 
 # Submit results from tests as an attachment file in the comment, or
 # if false, submit the results printed by the tests as a comment (can be really large after repeated comments)
-submit_results_as_file = True
+submit_results_as_file: true
 
 # Max file size (text) per test to be uploaded as a report (in Kilobytes)
-max_file_size = 1024
+max_file_size: 1024
 
 # Time to allow for tests to run before terminating them (in seconds)
-test_timeout = 300
+test_timeout: 300
 
 # Whether each test should receive an additional command line parameters: user secondary id and due data
-pass_extra_params = false
+pass_extra_params: false
 
 # Print debug msgs (this prints a bunch of stuff that you do not need to see unless you are debugging)
-print_debug_msgs = true
+print_debug_msgs: true
 
 # How many cores should be used for testing (in case you want tests to run in parallel)
-processes = 1
+processes: 1
 
 # Whether docker should be used or run scripts in the tests directory using firejail
 # If docker will be used, a Dockerfile needs to be placed in the directory of the cfg file.
-use_docker = true
+use_docker: true
 
 # Whether the results of the tests along with grade are to be submitted to canvas or
 # have the results printed in the log and stored in sqlite (viewable through AthinaWeb)
-send_grade_to_canvas = true
+grade_publish: true

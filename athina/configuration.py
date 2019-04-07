@@ -2,9 +2,8 @@
 from datetime import datetime
 import os
 import glob
-import configparser
-import json
 import shutil
+import yaml
 
 
 class Configuration:
@@ -12,33 +11,34 @@ class Configuration:
     config_dir = "/tmp/athina_empty"
     config_filename = "test_assignment"
     simulate = True
-    auth_token = None
+    auth_token = ""
     course_id = 1
     assignment_id = 1
     total_points = 100
     enforce_due_date = True
     test_scripts = ["bash test", "bash test"]  # this is defined as such for testing only
     test_weights = [0.8, 0.2]
-    moss_id = 20181579  # Registered by Michael Tsikerdekis - Michael.Tsikerdekis@wwu.edu, should be indivdly. changed
-    moss_lang = "Python"
-    moss_pattern = "*.py"
+    moss_id = 1
+    moss_lang = "C"
+    moss_pattern = "*.c"
+    moss_publish = False
     check_plagiarism_hour = 1
-    git_username = ""
-    git_password = ""
+    git_username = "test"
+    git_password = "test"
     same_url_limit = 1
     submit_results_as_file = True
     max_file_size = 1024
-    test_timeout = 120
+    test_timeout = 90
     no_repo = False
     pass_extra_params = False
-    grade_update_frequency = 23
-    git_url = 'github.com'
+    grade_update_frequency = 24
+    git_url = 'www.github.com'
     processes = 1
     due_date = datetime(2100, 1, 1, 0, 0)
     use_docker = False
     canvas_url = "www.instructure.com"
-    send_grade_to_canvas = True
-    moss_publish = False
+    grade_publish = True
+    print_debug_msgs = False
 
     # Set on the fly
     db_filename = ""
@@ -51,11 +51,11 @@ class Configuration:
         self.default_dir()
 
     @staticmethod
-    def find_cfg(directory):
+    def find_yaml(directory):
         if os.path.isdir(directory):
             # Find a cfg file in the directory
             try:
-                cfg_file = glob.glob('%s*.cfg' % directory)[0]
+                cfg_file = glob.glob('%s*.yaml' % directory)[0]
             except IndexError:
                 cfg_file = directory  # this will fail later on but we have done all that we can
         else:
@@ -82,51 +82,65 @@ class Configuration:
                 raise FileNotFoundError("%s is not available on the host system." % software)
         return True
 
+    # This is not a static function since it accesses class items passed as parameters: configvar
+    def load_value(self, config, key, configvar):
+        value = config.get(key, None)
+        if value is not None:
+            setattr(self, key, value)
+        else:
+            pass  # The default value as set in this configuration.py file remains
+
     def load_configuration(self, directory):
         # Load Configuration file
-        config = configparser.ConfigParser()
-        config.read(self.find_cfg(directory))
+        with open(self.find_yaml(directory), 'r') as stream:
+            config = yaml.safe_load(stream)
 
         # Read Configuration file
         self.config_dir = os.path.dirname(directory)
-        self.config_filename = os.path.split(self.find_cfg(directory))[1]  # cfg filename or dir name
+        self.config_filename = os.path.split(self.find_yaml(directory))[1]  # cfg filename or dir name
 
         # Set new log file
         self.logger.set_assignment_log_file("%s/%s.log" % (self.config_dir, self.config_filename))
 
         # Load arguments from config
-        if config.getboolean('main', 'print_debug_msgs', fallback=False):
+        self.load_value(config, 'print_debug_msgs', self.print_debug_msgs)
+        if self.print_debug_msgs:
             self.logger.set_debug(True)
         self.logger.logger.info("Reading %s in %s" % (self.config_filename, self.config_dir))
 
-        self.auth_token = config.get('main', 'auth_token', fallback=False)
-        self.course_id = config.getint('main', 'course_id', fallback=1)
-        self.assignment_id = config.getint('main', 'assignment_id', fallback=1)
+        self.load_value(config, 'auth_token', self.auth_token)
+        self.load_value(config, 'course_id', self.course_id)
+        self.load_value(config, 'assignment_id', self.assignment_id)
 
-        self.total_points = config.getint('main', 'total_points', fallback=100)
-        self.enforce_due_date = config.getboolean('main', 'enforce_due_date', fallback=True)
-        self.test_scripts = json.loads(config.get('main', 'test_scripts', fallback={}))
-        self.test_weights = json.loads(config.get('main', 'test_weights', fallback={}))
-        self.moss_id = config.getint('main', 'moss_id', fallback=1)
-        self.moss_lang = config.get('main', 'moss_lang', fallback="C")
-        self.moss_pattern = config.get('main', 'moss_pattern', fallback=".c")
-        self.moss_publish = config.getboolean('main', 'moss_publish', fallback=False)
-        self.git_username = config.get('main', 'git_username', fallback="test")
-        self.git_password = config.get('main', 'git_password', fallback="test")
-        self.same_url_limit = config.getint('main', 'same_url_limit', fallback=1)
-        self.check_plagiarism_hour = config.getint('main', 'check_plagiarism_hour', fallback=1)
-        self.submit_results_as_file = config.getboolean('main', 'submit_results_as_file', fallback=True)
-        self.max_file_size = config.getint('main', 'max_file_size', fallback=1)
+        self.load_value(config, 'total_points', self.total_points)
+        self.load_value(config, 'enforce_due_date', self.enforce_due_date)
+        self.load_value(config, 'test_scripts', self.test_scripts)
+        self.load_value(config, 'test_weights', self.test_weights)
+
+        self.load_value(config, 'moss_id', self.moss_id)
+        self.load_value(config, 'moss_lang', self.moss_lang)
+        self.load_value(config, 'moss_pattern', self.moss_pattern)
+        self.load_value(config, 'moss_publish', self.moss_publish)
+
+        self.load_value(config, 'git_username', self.git_username)
+        self.load_value(config, 'git_password', self.git_password)
+        self.load_value(config, 'same_url_limit', self.same_url_limit)
+        self.load_value(config, 'check_plagiarism_hour', self.check_plagiarism_hour)
+        self.load_value(config, 'submit_results_as_file', self.submit_results_as_file)
+        self.load_value(config, 'max_file_size', self.max_file_size)
         self.max_file_size = self.max_file_size * 1024  # Convert KB to bytes
-        self.test_timeout = config.getint('main', 'test_timeout', fallback=120)
-        self.no_repo = config.getboolean('main', 'no_repo', fallback=False)
-        self.pass_extra_params = config.getboolean('main', 'pass_extra_params', fallback=False)
-        self.grade_update_frequency = config.getint('main', 'grade_update_frequency', fallback=24-1) - 1
-        self.git_url = config.get('main', 'git_url', fallback='www.github.com')
-        self.processes = config.getint('main', 'processes', fallback=1)
-        self.canvas_url = config.get('main', 'canvas_url', fallback="www.instructure.com")
-        self.send_grade_to_canvas = config.getboolean('main', 'send_grade_to_canvas', fallback=True)
-        self.use_docker = config.getboolean('main', 'use_docker', fallback=False)
+        self.load_value(config, 'test_timeout', self.test_timeout)
+
+        self.load_value(config, 'no_repo', self.no_repo)
+        self.load_value(config, 'pass_extra_params', self.pass_extra_params)
+        self.load_value(config, 'grade_update_frequency', self.grade_update_frequency)
+        self.grade_update_frequency -= 1
+
+        self.load_value(config, 'git_url', self.git_url)
+        self.load_value(config, 'canvas_url', self.canvas_url)
+        self.load_value(config, 'processes', self.processes)
+        self.load_value(config, 'grade_publish', self.grade_publish)
+        self.load_value(config, 'use_docker', self.use_docker)
 
         # If no repo then definitely pass extra params
         if self.no_repo:

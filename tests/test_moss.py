@@ -30,7 +30,7 @@ class TestFunctions(unittest.TestCase):
         logger = self.create_logger()
         x = Plagiarism(logger=logger,
                        service_type="moss",
-                       moss_id=20181579,
+                       moss_id=20181579,  # Registered by Michael Tsikerdekis - Michael.Tsikerdekis@wwu.edu. Do not use.
                        moss_lang="python")
         data = x.check_plagiarism(["/tmp/u1/*.py",
                                    "/tmp/u2/*.py",

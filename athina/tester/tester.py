@@ -125,7 +125,7 @@ class Tester:
             # Submitting grades for as many students that share the repository url (depending on how many are permitted)
             for current_user_id, current_user_object in user_list:
                 # Submit grade
-                if not self.configuration.simulate and self.configuration.send_grade_to_canvas:
+                if not self.configuration.simulate and self.configuration.grade_publish:
                     self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
                                                  test_reports=test_reports)
                 else:  # print instead
