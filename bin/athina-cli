@@ -90,11 +90,10 @@ def main():
         # Starting statement
         LOGGER.logger.info("Processing...")
 
-        # Load e-learning platform functions
-        e_learning = Canvas(configuration, LOGGER)
+        user_data = Database("%s/%s.sqlite3" % (configuration.config_dir, configuration.assignment_id), logger=LOGGER)
 
         # Begin gathering data from Canvas
-        user_data = Database("%s/%s.sqlite3" % (configuration.config_dir, configuration.assignment_id), logger=LOGGER)
+        e_learning = Canvas(configuration, LOGGER)
 
         # No point contacting elearning platform if no auth token is provided
         if configuration.auth_token != "":

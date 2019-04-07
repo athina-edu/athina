@@ -26,7 +26,7 @@ class Database:
         self.connect_to_db(self.db_filename)
         if not self.database_is_healthy:
             if self.logger is not None:
-                self.logger.logger.error("Warning: Cannot load Users db. Starting from scratch.")
+                self.logger.logger.error("Warning: Cannot load db. Starting from scratch.")
             self.close_db()
             os.remove(self.db_filename)
             self.connect_to_db(self.db_filename)
@@ -40,7 +40,7 @@ class Database:
     def connect_to_db(db):
         DB.init(db)
         DB.connect()
-        DB.create_tables([Users])
+        DB.create_tables([Users, AssignmentData])
 
     @staticmethod
     def close_db():
@@ -50,6 +50,7 @@ class Database:
     def database_is_healthy(self):
         try:
             user = Users.select().limit(1)[0]
+            assignment = AssignmentData.select().limit(1)[0]
             return True
         except OperationalError:
             # Database specifications have changed (e.g., newer athina version)
@@ -104,6 +105,36 @@ class Users(Model):
     changed_state = BooleanField(default=False)
     last_grade = SmallIntegerField(null=True)
     last_report = BlobField(default="", null=True)
+    moss_max = IntegerField(default=0, null=True)
+    moss_average = IntegerField(default=0, null=True)
 
     class Meta:
         database = DB
+
+
+class AssignmentData(Model):
+    """
+    Key-value database to store extra assignment info
+    """
+    key = TextField(primary_key=True)
+    value = TextField(default="", null=True)
+
+    class Meta:
+        database = DB
+
+
+def update_key_in_assignment_data(key, value):
+    try:
+        obj = AssignmentData.get(AssignmentData.key == key)
+        obj.value = value
+        obj.save()
+    except AssignmentData.DoesNotExist:
+        AssignmentData.create(key=key, value=value)
+        
+
+def load_key_from_assignment_data(key):
+    try:
+        obj = AssignmentData.get(AssignmentData.key == key)
+        return obj.value
+    except AssignmentData.DoesNotExist:
+        return None

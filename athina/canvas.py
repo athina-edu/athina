@@ -2,7 +2,6 @@
 # There are built in a general fashion so that e-learning platforms can be easily switched (as long as func names
 # remain the same)
 from datetime import datetime, timedelta
-import pickle
 import dateutil.parser
 from athina.url import *
 from athina.users import *
@@ -19,19 +18,21 @@ class Canvas:
         self.get_last_updated()
 
     def get_last_updated(self):
-        try:
-            f = open("%s/%s.pkl" % (self.configuration.config_dir, self.configuration.assignment_id), 'rb')
-            data = pickle.load(f)
-        except FileNotFoundError:
-            data = {}
-        self.last_update = data.get('last_update', datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
-        self.configuration.due_date = data.get('due_date', datetime(2050, 1, 1, 0, 0).replace(tzinfo=None))
+        last_update = load_key_from_assignment_data("last_update")
+        if last_update is not None:
+            self.last_update = dateutil.parser.parse(last_update)
+        else:
+            self.last_update = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
+
+        due_date = load_key_from_assignment_data("due_date")
+        if due_date is not None:
+            self.configuration.due_date = dateutil.parser.parse(due_date)
+        else:
+            self.configuration.due_date = datetime(2050, 1, 1, 0, 0).replace(tzinfo=None)
 
     def update_last_update(self):
-        data = {"last_update": datetime.now(timezone.utc).replace(tzinfo=None),
-                "due_date": self.configuration.due_date}
-        with open("%s/%s.pkl" % (self.configuration.config_dir, self.configuration.assignment_id), 'wb') as f:
-            pickle.dump(data, f)
+        update_key_in_assignment_data("last_update", datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+        update_key_in_assignment_data("due_date", self.configuration.due_date.isoformat())
 
     @property
     def needs_update(self):
