@@ -32,7 +32,7 @@ class Configuration:
     no_repo = False
     pass_extra_params = False
     grade_update_frequency = 24
-    git_url = 'www.github.com'
+    git_url = 'github.com'
     processes = 1
     due_date = datetime(2100, 1, 1, 0, 0)
     use_docker = False
