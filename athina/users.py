@@ -3,10 +3,37 @@
 
 from datetime import datetime, timezone
 import os
-from peewee import *
+import peewee
+import time
+
+
+# Overriding peewee's execute to account for database locks and wait until other processes finish.
+# This is the cleanest patchy solution. Lines of code from peewee are flagged
+# There are alternative solutions such as using sqlite3 WAL (partially solves the problem for concurrent read-write)
+# Other alternatives:
+# from playhouse.sqliteq import SqliteQueueDatabase
+# import playhouse.apsw_ext as apsw_ext
+# APSW is supposedly portable across threads but it doesn't work with map
+# It may however internally handle lock issues.
+def _execute(self, query, commit=peewee.SENTINEL, **context_options):
+    success = False
+    while success is False:
+        try:
+            ctx = self.get_sql_context(**context_options)  # derived from original execute func
+            sql, params = ctx.sql(query).query()  # derived from original execute func
+            return self.execute_sql(sql, params, commit=commit)  # derived from original execute func
+        except peewee.OperationalError:
+            if "database is locked" in peewee.OperationalError:
+                time.sleep(0.1)
+                success = False
+            else:
+                raise peewee.OperationalError
+
+peewee.Database.execute = _execute  # overriding peewee execute
+
 
 # Global database object
-DB = SqliteDatabase(None)
+DB = peewee.SqliteDatabase(None)
 
 
 class Database:
@@ -52,7 +79,7 @@ class Database:
             user = Users.select().limit(1)[0]
             assignment = AssignmentData.select().limit(1)[0]
             return True
-        except OperationalError:
+        except peewee.OperationalError:
             # Database specifications have changed (e.g., newer athina version)
             # delete old sql file and start a new
             return False
@@ -85,42 +112,41 @@ class Database:
                     val.save()
 
 
-class Users(Model):
+class BaseModel(peewee.Model):
+    class Meta:
+        database = DB
+
+
+class Users(BaseModel):
     """
     The class containing local information obtained through canvas about each user, assignment status, last commit,
     plagiarism status and other important information for ATHINA to function.
     """
-    user_id = BigIntegerField(primary_key=True)
-    course_id = BigIntegerField(default=0)
-    user_fullname = TextField(default="")
-    secondary_id = TextField(default="")
-    repository_url = TextField(default="", null=True)
-    url_date = DateTimeField(default=datetime(1, 1, 1, 0, 0))  # When a new url was found
-    new_url = BooleanField(default=False)  # Switched when new url is discovered on e-learning site
-    commit_date = DateTimeField(default=datetime(1, 1, 1, 0, 0))  # Day of the last commit
-    same_url_flag = BooleanField(default=False)  # Is repo url found to be similar with N other students?
-    plagiarism_to_grade = BooleanField(default=False)  # Signifies whether a user received a new grade (plagiarism)
-    last_plagiarism_check = DateTimeField(default=datetime.now(timezone.utc).replace(tzinfo=None))
-    last_graded = DateTimeField(default=datetime(1, 1, 1, 0, 0))
-    changed_state = BooleanField(default=False)
-    last_grade = SmallIntegerField(null=True)
-    last_report = BlobField(default="", null=True)
-    moss_max = IntegerField(default=0, null=True)
-    moss_average = IntegerField(default=0, null=True)
-
-    class Meta:
-        database = DB
+    user_id = peewee.BigIntegerField(primary_key=True)
+    course_id = peewee.BigIntegerField(default=0)
+    user_fullname = peewee.TextField(default="")
+    secondary_id = peewee.TextField(default="")
+    repository_url = peewee.TextField(default="", null=True)
+    url_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))  # When a new url was found
+    new_url = peewee.BooleanField(default=False)  # Switched when new url is discovered on e-learning site
+    commit_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))  # Day of the last commit
+    same_url_flag = peewee.BooleanField(default=False)  # Is repo url found to be similar with N other students?
+    plagiarism_to_grade = peewee.BooleanField(default=False)  # Signifies if a user received a new grade (plagiarism)
+    last_plagiarism_check = peewee.DateTimeField(default=datetime.now(timezone.utc).replace(tzinfo=None))
+    last_graded = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))
+    changed_state = peewee.BooleanField(default=False)
+    last_grade = peewee.SmallIntegerField(null=True)
+    last_report = peewee.BlobField(default="", null=True)
+    moss_max = peewee.IntegerField(default=0, null=True)
+    moss_average = peewee.IntegerField(default=0, null=True)
 
 
-class AssignmentData(Model):
+class AssignmentData(BaseModel):
     """
     Key-value database to store extra assignment info
     """
-    key = TextField(primary_key=True)
-    value = TextField(default="", null=True)
-
-    class Meta:
-        database = DB
+    key = peewee.TextField(primary_key=True)
+    value = peewee.TextField(default="", null=True)
 
 
 def update_key_in_assignment_data(key, value):

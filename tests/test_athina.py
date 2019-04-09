@@ -8,6 +8,7 @@ from athina.tester.tester import *
 from athina.canvas import *
 import os
 import shutil
+import multiprocessing
 
 
 class TestFunctions(unittest.TestCase):
@@ -282,7 +283,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object[0].last_grade, 80)
 
         # Parallel process
-        configuration.processes = 2
+        configuration.processes = 5
         user_object_results = tester.parallel_map([1, 2, 3, 4, 5])
         self.assertEqual(user_object_results[0][0].new_url, False)
         self.assertGreater(user_object_results[0][0].last_graded, datetime(1, 1, 1, 0, 0))
@@ -326,3 +327,4 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object_results[2][0].last_grade, 80)
         self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(user_object_results[2][1].last_grade, 80)
+
