@@ -15,23 +15,11 @@ for managing multiple assignments by multiple instructors on a single machine (s
 
 Need plug-and-play assignments, tests and test configuration for your course? Check out [Athina Assignments](https://github.com/athina-edu/athina-assignments) repository.
 
-## Supported programming languages:
-
-![C, C++, Bash, Java, Python, Ruby, ... (virtually any)](docs/img/languages.png)
-
-*Also, anything you can write or wrap in Bash*
-
-## Supported e-learning platforms:
-
-![Canvas](docs/img/canvas-logo-3.jpg)
-
-## Supported VCS (anything Git):
-
-![git (github, gitlab etc.)](docs/img/git.jpg)
-
-## Supported plagiarism check software:
-
-Moss
+| Supported programming languages        | Supported e-learning platforms           | 
+| :-------------: |:-------------:| 
+| ![C, C++, Bash, Java, Python, Ruby, ... (virtually any)](docs/img/languages1.png)      | ![Canvas](docs/img/canvas-logo-3.jpg) | 
+|   **Supported VCS (anything Git)**      | **Supported plagiarism check software**      |
+| ![git (github, gitlab etc.)](docs/img/git.jpg)     | Moss |
 
 # Here is what it does:
 1. Build your tests in your language of choice
