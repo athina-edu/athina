@@ -23,9 +23,12 @@ def _execute(self, query, commit=peewee.SENTINEL, **context_options):
             ctx = self.get_sql_context(**context_options)  # derived from original execute func
             sql, params = ctx.sql(query).query()  # derived from original execute func
             return self.execute_sql(sql, params, commit=commit)  # derived from original execute func
-        except (peewee.OperationalError, sqlite3.OperationalError):
-            time.sleep(0.1)
-            success = False
+        except (peewee.OperationalError, sqlite3.OperationalError) as es:
+            if "locked" in str(es):
+                time.sleep(0.1)
+                success = False
+            else:
+                raise peewee.OperationalError
 
 
 peewee.Database.execute = _execute  # overriding peewee execute
