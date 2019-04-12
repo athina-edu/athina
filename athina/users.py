@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import os
 import peewee
 import time
+import sqlite3
 
 
 # Overriding peewee's execute to account for database locks and wait until other processes finish.
@@ -22,12 +23,10 @@ def _execute(self, query, commit=peewee.SENTINEL, **context_options):
             ctx = self.get_sql_context(**context_options)  # derived from original execute func
             sql, params = ctx.sql(query).query()  # derived from original execute func
             return self.execute_sql(sql, params, commit=commit)  # derived from original execute func
-        except peewee.OperationalError:
-            if "database is locked" in peewee.OperationalError:
-                time.sleep(0.1)
-                success = False
-            else:
-                raise peewee.OperationalError
+        except (peewee.OperationalError, sqlite3.OperationalError):
+            time.sleep(0.1)
+            success = False
+
 
 peewee.Database.execute = _execute  # overriding peewee execute
 
