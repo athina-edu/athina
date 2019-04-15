@@ -31,7 +31,7 @@ def _return_requested_type(data, return_type):
     if return_type == "json":
         try:
             return_value = data.json()
-        except json.decoder.JSONDecodeError:
+        except (json.decoder.JSONDecodeError, AttributeError):
             return_value = {}
     elif return_type == "text":
         try:
