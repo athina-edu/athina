@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import time
 import re
-import requests
 import mosspy
 from athina.users import *
+from athina.url import *
 
 
 class Plagiarism:
@@ -41,7 +40,7 @@ class Plagiarism:
             self.logger.logger.info("Attempting to get results from moss url: %s" % url)
 
             try:
-                text = self.request_url(url, return_type="text")
+                text = request_url(url, return_type="text")
             except IndexError:
                 text = ""
 
@@ -61,18 +60,3 @@ class Plagiarism:
             comparisons[int(item)] = [int(value)]
         else:
             comparisons[int(item)].append(int(value))
-
-    # TODO: this needs to go into a utils file
-    @staticmethod
-    def request_url(url, headers=None, payload=None, method="get", return_type="json"):
-        time.sleep(1)  # artificial delay in case code attempts to spam with requests
-        headers = {} if headers is None else headers
-        payload = {} if payload is None else payload
-        if method == "get":
-            r = requests.get(url, headers=headers)
-        elif method == "put":
-            r = requests.put(url, headers=headers, data=payload)
-        if return_type == "json":
-            return r.json()
-        elif return_type == "text":
-            return r.text
