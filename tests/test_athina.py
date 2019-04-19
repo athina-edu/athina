@@ -328,3 +328,29 @@ class TestFunctions(unittest.TestCase):
         self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(user_object_results[2][1].last_grade, 80)
 
+    def test_tester_timeout(self):
+        logger = self.create_logger()
+        configuration = Configuration(logger=logger)
+
+        configuration.use_docker = True
+        configuration.test_timeout = 10
+        # Create fake directories
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'w')
+        f.write("#!/bin/bash\necho 'test'\nsleep 20\necho 80\n")
+        f.close()
+        f = open("/tmp/athina_empty/Dockerfile", 'w')
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
+        f.close()
+
+        e_learning = Canvas(configuration, logger)
+        user_data = self.create_fake_user_db()
+        repository = Repository(logger, configuration, e_learning)
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
+        configuration.processes = 2
+        user_object_results = tester.start_testing_db()
+        self.assertNotEqual(user_object_results[0][0].last_grade, 80)
+        # Group assignment
+        self.assertNotEqual(user_object_results[2][0].last_grade, 80)
+        self.assertNotEqual(user_object_results[2][1].last_grade, 80)

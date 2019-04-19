@@ -1,5 +1,7 @@
 import hashlib
 import subprocess
+import os
+import time
 
 
 def __generate_hash(string):
@@ -24,21 +26,32 @@ def docker_build(configuration, logger):
 
 
 def docker_run(test_script, configuration, logger):
+    container_name = __generate_hash("%s-%s" % (time.time(), os.getpid()))
     run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
-                     "--stop-timeout", "%d" % configuration.test_timeout,
+                     "--stop-timeout", "1",
                      "-e", "STUDENT_DIR=%s" % configuration.athina_student_code_dir,
                      "-e", "TEST_DIR=%s" % configuration.athina_test_tmp_dir,
                      "-e", "EXTRA_PARAMS=%s" % " ".join(configuration.extra_params),
-                     "-v", "%s:%s" % (configuration.athina_student_code_dir, configuration.athina_student_code_dir),
-                     "-v", "%s:%s" % (configuration.athina_test_tmp_dir, configuration.athina_test_tmp_dir),
+                     "-v", "%s:%s" % (
+                         configuration.athina_student_code_dir, configuration.athina_student_code_dir),
+                     "-v",
+                     "%s:%s" % (configuration.athina_test_tmp_dir, configuration.athina_test_tmp_dir),
+                     "--name", "%s" % container_name,
                      "%s" % __generate_hash(configuration.config_dir)]
 
     logger.logger.debug(" ".join(run_statement))
 
     process = subprocess.Popen(run_statement, cwd="%s/" % configuration.config_dir,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+
+    try:
+        process.wait(configuration.test_timeout)
+    except subprocess.TimeoutExpired:
+        # Kill container
+        terminate_container(container_name)
+
     out, err = process.communicate()
+    terminate_container(container_name)
 
     if process.returncode and err:
         pass
@@ -46,3 +59,8 @@ def docker_run(test_script, configuration, logger):
         err = b""  # removing any warnings since we do not care about these
 
     return out, err
+
+
+def terminate_container(container_name):
+    subprocess.Popen(["docker", "stop", "-t", "1", "%s" % container_name],
+                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
