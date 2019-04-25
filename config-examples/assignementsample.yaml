@@ -90,9 +90,6 @@ pass_extra_params: false
 # Print debug msgs (this prints a bunch of stuff that you do not need to see unless you are debugging)
 print_debug_msgs: true
 
-# How many cores should be used for testing (in case you want tests to run in parallel)
-processes: 1
-
 # Whether docker should be used or run scripts in the tests directory using firejail
 # If docker will be used, a Dockerfile needs to be placed in the directory of the cfg file.
 use_docker: true

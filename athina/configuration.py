@@ -4,6 +4,7 @@ import os
 import glob
 import shutil
 import yaml
+import multiprocessing
 
 
 class Configuration:
@@ -142,9 +143,10 @@ class Configuration:
 
         self.load_value(config, 'git_url', self.git_url)
         self.load_value(config, 'canvas_url', self.canvas_url)
-        self.load_value(config, 'processes', self.processes)
         self.load_value(config, 'grade_publish', self.grade_publish)
         self.load_value(config, 'use_docker', self.use_docker)
+
+        self.processes = multiprocessing.cpu_count()
 
         # If no repo then definitely pass extra params
         if self.no_repo:

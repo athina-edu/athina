@@ -253,6 +253,7 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
+        configuration.simulate = False
         # Create fake directories
         shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
         os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
@@ -284,23 +285,29 @@ class TestFunctions(unittest.TestCase):
 
         # Parallel process
         configuration.processes = 5
-        user_object_results = tester.parallel_map([1, 2, 3, 4, 5])
-        self.assertEqual(user_object_results[0][0].new_url, False)
-        self.assertGreater(user_object_results[0][0].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object_results[0][0].last_grade, 80)
-        self.assertEqual(user_object_results[1][0].plagiarism_to_grade, False)
-        self.assertEqual(user_object_results[1][0].commit_date, datetime(1, 1, 1, 0, 0))
+        tester.spawn_worker([1, 2, 3, 4, 5])
+        time.sleep(40)
+        obj = Users.get(Users.user_id == 1)
+        self.assertEqual(obj.new_url, False)
+        self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, 80)
+        obj = Users.get(Users.user_id == 2)
+        self.assertEqual(obj.plagiarism_to_grade, False)
+        self.assertEqual(obj.commit_date, datetime(1, 1, 1, 0, 0))
         # Group assignment
-        self.assertGreater(user_object_results[2][0].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object_results[2][0].last_grade, 80)
-        self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object_results[2][1].last_grade, 80)
+        obj = Users.get(Users.user_id == 3)
+        self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, 80)
+        obj = Users.get(Users.user_id == 4)
+        self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, 80)
 
     def test_tester_db_testing(self):
         logger = self.create_logger()
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
+        configuration.simulate = False
         # Create fake directories
         shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
         os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
@@ -316,23 +323,29 @@ class TestFunctions(unittest.TestCase):
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
         configuration.processes = 2
-        user_object_results = tester.start_testing_db()
-        self.assertEqual(user_object_results[0][0].new_url, False)
-        self.assertGreater(user_object_results[0][0].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object_results[0][0].last_grade, 80)
-        self.assertEqual(user_object_results[1][0].plagiarism_to_grade, False)
-        self.assertEqual(user_object_results[1][0].commit_date, datetime(1, 1, 1, 0, 0))
+        tester.start_testing_db()
+        time.sleep(40)
+        obj = Users.get(Users.user_id == 1)
+        self.assertEqual(obj.new_url, False)
+        self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, 80)
+        obj = Users.get(Users.user_id == 2)
+        self.assertEqual(obj.plagiarism_to_grade, False)
+        self.assertEqual(obj.commit_date, datetime(1, 1, 1, 0, 0))
         # Group assignment
-        self.assertGreater(user_object_results[2][0].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object_results[2][0].last_grade, 80)
-        self.assertGreater(user_object_results[2][1].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object_results[2][1].last_grade, 80)
+        obj = Users.get(Users.user_id == 3)
+        self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, 80)
+        obj = Users.get(Users.user_id == 4)
+        self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, 80)
 
     def test_tester_timeout(self):
         logger = self.create_logger()
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
+        configuration.simulate = False
         configuration.test_timeout = 10
         # Create fake directories
         shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
@@ -349,8 +362,62 @@ class TestFunctions(unittest.TestCase):
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
         configuration.processes = 2
-        user_object_results = tester.start_testing_db()
-        self.assertNotEqual(user_object_results[0][0].last_grade, 80)
+        tester.start_testing_db()
+        time.sleep(40)  # delay that lets fork process end. Alt we can use os.wait but time is simpler
+        obj = Users.get(Users.user_id == 1)
+        self.assertNotEqual(obj.last_grade, 80)
         # Group assignment
-        self.assertNotEqual(user_object_results[2][0].last_grade, 80)
-        self.assertNotEqual(user_object_results[2][1].last_grade, 80)
+        obj = Users.get(Users.user_id == 3)
+        self.assertNotEqual(obj.last_grade, 80)
+        obj = Users.get(Users.user_id == 4)
+        self.assertNotEqual(obj.last_grade, 80)
+
+    def test_multiple_iters(self):
+        logger = self.create_logger()
+        configuration = Configuration(logger=logger)
+
+        configuration.use_docker = True
+        configuration.simulate = False
+        configuration.test_timeout = 10
+        # Create fake directories
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'w')
+        f.write("#!/bin/bash\necho 'test'\nsleep 20\necho 80\n")
+        f.close()
+        f = open("/tmp/athina_empty/Dockerfile", 'w')
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
+        f.close()
+
+        e_learning = Canvas(configuration, logger)
+        user_data = self.create_fake_user_db()
+        repository = Repository(logger, configuration, e_learning)
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
+        configuration.processes = 2
+        repository.check_repository_changes(1)
+        repository.check_repository_changes(2)
+        repository.check_repository_changes(3)
+        repository.check_repository_changes(4)
+
+        # Pretend that the tester is already running for these users
+        user_object = Users.get(Users.user_id == 1)
+        user_object.tester_active = True
+        user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        user_object.save()
+        user_object = Users.get(Users.user_id == 3)
+        user_object.tester_active = True
+        user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        user_object.save()
+        user_object = Users.get(Users.user_id == 4)
+        user_object.tester_active = True
+        user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        user_object.save()
+
+        tester.spawn_worker([1, 3, 4])
+        time.sleep(5)
+
+        cprocess = psutil.Process()
+        children = cprocess.children(recursive=True)
+        self.assertLessEqual(len(children), 4,
+                             msg="Processes needs to be less than user records (no duplicate processes)")
+

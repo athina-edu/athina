@@ -1,12 +1,14 @@
 from athina.firejail import *
 from datetime import timedelta, datetime, timezone
 from athina.tester.docker import *
+from random import uniform
 import subprocess
 import glob
 import time
 import shutil
 import np
-import multiprocessing
+import os
+import psutil
 
 # Modifiable loading
 from athina.moss import Plagiarism
@@ -77,6 +79,23 @@ class Tester:
         self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
         user_object = Users.get(Users.user_id == user_id)
 
+        # Make sure another fork for the same user is not active
+        # FIXME: The code below (if statement) needs to go into the preprocessing, otherwise we will spawn the same
+        # process every minute
+        if user_object.tester_active is False or \
+                (user_object.tester_date + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None)):
+            # Make this tester the primary tester
+            user_object.tester_active = True
+            user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
+            user_object.save()
+        else:
+            self.logger.logger.debug("Tester already active for user_id %d" % user_id)
+            os._exit(0)  # Terminating the child (pytest compatible)
+
+        # Wait until CPU is available (expand this to check RAM and disk IO availability)
+        while psutil.cpu_percent() > 90:
+            time.sleep(uniform(0.5, 1))
+
         self.logger.logger.info("> Checking %s - %d" % (user_object.user_fullname, user_id))
 
         # Code has changed and due date for submissions does not exceed submitted dates
@@ -85,6 +104,7 @@ class Tester:
             self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
 
         # Boolean arguments broken up into logical components to reduce the size of if statement below
+        # TODO: true if is not necessary for predicates below
         repo_mode_conditions = True if (user_object.changed_state and
                                         user_object.url_date < self.configuration.due_date and
                                         user_object.commit_date < self.configuration.due_date and
@@ -142,24 +162,27 @@ class Tester:
                 if not self.configuration.simulate:
                     current_user_object.save()
                 user_object_list.append(current_user_object)
-
-            return user_object_list  # return the list of all updated objects
         else:
             self.logger.logger.info(">> No changes or past due date")
             user_object.changed_state = False
 
             if not self.configuration.simulate:
                 user_object.save()
-            return [user_object]  # return list of the current object
+            user_object_list = [user_object]  # return list of the current object
+
+        # Remove the lock on the record
+        Users.update(tester_active=False).where(Users.user_id == user_object.user_id).execute()
+        self.logger.logger.info("Testing Completed for %d" % user_object.user_id)
+
+        return user_object_list  # return the list of all updated objects
 
     def run_test(self, x, test_reports, test_grades, user_object):
         test_reports.append(("Test %d with weight %.2f" %
                              (x + 1, self.configuration.test_weights[x])).encode("utf-8"))
         test_script = self.configuration.test_scripts[x]
 
-        # If we are not running things in parallel, default will do
-        # (ensures backwards compatibility) with non parallelized tests
-        time_field = "" if self.configuration.processes < 2 else "%s-%s" % (time.time(), os.getpid())
+        # Create student and tmp dir
+        time_field = "%s-%s" % (time.time(), os.getpid())
         self.configuration.athina_student_code_dir = "/tmp/athina%s" % time_field
         self.configuration.athina_test_tmp_dir = "/tmp/athina-test%s" % time_field
 
@@ -323,6 +346,7 @@ class Tester:
             else:
                 # When no repo is involved it is 1 to 1 testing (individual assignment)
                 reverse_repository_index[user.user_id] = user.user_id
+
         processing_list = [[user.user_id, user] for user in Users.select() if
                            user.user_id in reverse_repository_index.values()]
         del reverse_repository_index
@@ -331,30 +355,26 @@ class Tester:
         if self.configuration.use_docker:
             docker_build(configuration=self.configuration, logger=self.logger)
 
-        # Whether we should run processes in parallel or not
-        user_object_results = []
-        if self.configuration.processes < 2:
-            for key, value in processing_list:
-                user_objects = self.process_student_assignment(key)  # because what is returned is a list
-                user_object_results.append(user_objects)
-        else:
-            user_ids = [key for key, value in processing_list]
-            user_object_results = self.parallel_map(user_ids)
+        user_ids = [key for key, value in processing_list]
+        self.spawn_worker(user_ids)
 
-        return user_object_results  # This is not necessary but for sake of testing is left here
-
-    def parallel_map(self, user_ids):
-        # For parallel runs database objects have to be dropped (they cannot be pickled)
+    def spawn_worker(self, user_ids):
+        # For parallel/threaded runs database objects have to be dropped (they cannot be pickled)
+        # Same for logger
         self.configuration.db_filename = self.user_data.db_filename
         del self.user_data
         self.logger.delete_logger()
 
-        # FIXME: Alternatively process could become a staticmethod but a lot of parameters have to be passed to it then.
-        compute_pool = multiprocessing.Pool(processes=self.configuration.processes)
-        user_object_results = compute_pool.map(self.process_student_assignment, user_ids)
+        # FORK implementation for asynchronous testing (multithreaded)
+        # Loop through each student in list and fork (main continues)
+        for student_id in user_ids:
+            new_pid = os.fork()
+            if new_pid == 0:
+                # Child becomes operational
+                self.process_student_assignment(student_id)
+                os._exit(0)  # Terminating the child (pytest compatible)
 
-        # Restoring the objects
+        # Restoring the objects for the parent process
         self.logger.create_logger()
         self.user_data = Database(self.configuration.db_filename)
 
-        return user_object_results
