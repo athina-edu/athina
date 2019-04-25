@@ -104,15 +104,13 @@ class Tester:
             self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
 
         # Boolean arguments broken up into logical components to reduce the size of if statement below
-        # TODO: true if is not necessary for predicates below
-        repo_mode_conditions = True if (user_object.changed_state and
-                                        user_object.url_date < self.configuration.due_date and
-                                        user_object.commit_date < self.configuration.due_date and
-                                        user_object.same_url_flag is not True) else False
-        no_repo_mode_conditions = True if (self.configuration.no_repo is True and
-                                           user_object.last_graded +
-                                           timedelta(hours=self.configuration.grade_update_frequency) <=
-                                           datetime.now(timezone.utc).replace(tzinfo=None)) else False
+        repo_mode_conditions = (user_object.changed_state and
+                                user_object.url_date < self.configuration.due_date and
+                                user_object.commit_date < self.configuration.due_date and
+                                user_object.same_url_flag is not True)
+        no_repo_mode_conditions = (self.configuration.no_repo is True and user_object.last_graded +
+                                   timedelta(hours=self.configuration.grade_update_frequency) <=
+                                   datetime.now(timezone.utc).replace(tzinfo=None))
 
         if repo_mode_conditions or forced_testing or no_repo_mode_conditions:
             self.logger.logger.info(">> Testing")
