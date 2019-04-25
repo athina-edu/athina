@@ -1,5 +1,5 @@
 import athina.users
 import athina.moss
-import athina.firejail
+import athina.tester.firejail
 
 

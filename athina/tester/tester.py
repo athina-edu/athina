@@ -1,8 +1,7 @@
-from athina.firejail import *
+from athina.tester.firejail import *
 from datetime import timedelta, datetime, timezone
 from athina.tester.docker import *
 from random import uniform
-import subprocess
 import glob
 import time
 import shutil
@@ -213,10 +212,7 @@ class Tester:
             else:
                 out, err = b"0", b"Missing Dockerfile (contact instructor)"
         else:
-            out, err = self.execute_with_firejail(self.configuration.athina_student_code_dir,
-                                                  self.configuration.athina_test_tmp_dir,
-                                                  self.configuration.extra_params,
-                                                  test_script)
+            out, err = execute_with_firejail(self.configuration, test_script, self.logger)
 
         # Clear temp directories
         self.rm_dir(self.configuration.athina_test_tmp_dir)
@@ -245,24 +241,6 @@ class Tester:
         else:
             # scaling between 0 and 1
             test_grades.append(score / 100 * self.configuration.test_weights[x])
-
-    def execute_with_firejail(self, athina_student_code_dir, athina_test_tmp_dir, extra_params, test_script):
-        # Custom firejail profile that allows to sandbox suid processes (so that athina wont run as root)
-        generate_firejail_profile("%s/server.profile" % athina_test_tmp_dir)
-
-        # Run the test
-        test_timeout = ["timeout", "--kill-after=1", str(self.configuration.test_timeout)]
-        test_command = test_timeout + ["firejail", "--quiet", "--private", "--profile=server.profile",
-                                       "--whitelist=%s/" % athina_student_code_dir,
-                                       "--whitelist=%s/" % athina_test_tmp_dir] + test_script.split(
-            " ") + extra_params
-        self.logger.logger.debug(" ".join(test_command))
-        process = subprocess.Popen(test_command,
-                                   cwd="%s/" % athina_test_tmp_dir,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
-        out, err = process.communicate()
-        return out, err
 
     def plagiarism_checks_on_users(self):
         # Report plagiarism to any newly submitted grades (currently uses only MOSS)

@@ -1,1 +1,1 @@
-include athina/server.profile
+include athina/tester/server.profile
