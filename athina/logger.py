@@ -29,7 +29,7 @@ class Logger:
         logging_state = logging.DEBUG if self._debug else logging.INFO
         self.logger = logging.getLogger('athina')
         self.logger.setLevel(logging_state)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter('%(asctime)s - %(process)d - %(levelname)s - %(message)s')
 
         # create file handler which logs info messages
         if not os.path.isdir('logs'):

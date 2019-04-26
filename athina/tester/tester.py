@@ -92,7 +92,7 @@ class Tester:
             os._exit(0)  # Terminating the child (pytest compatible)
 
         # Wait until CPU is available (expand this to check RAM and disk IO availability)
-        while psutil.cpu_percent() > 90:
+        while psutil.cpu_percent() > 80:
             time.sleep(uniform(0.5, 1))
 
         self.logger.logger.info("> Checking %s - %d" % (user_object.user_fullname, user_id))
