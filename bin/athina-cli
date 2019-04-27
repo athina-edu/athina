@@ -12,6 +12,7 @@ from athina.configuration import *
 # Variable modules (extensions, e.g., canvas or blackboard)
 from athina.canvas import *
 from athina.git import *
+from athina.moss import *
 
 
 def lock_process():
@@ -156,7 +157,7 @@ def main():
 
         # Initiate plagiarism checks
         if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
-            tester.plagiarism_checks_on_users()
+            plagiarism_checks_on_users()
 
         # In case this script is run as another user the repo needs to be also set to be editable by anyone
         try:

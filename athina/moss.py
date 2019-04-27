@@ -1,9 +1,73 @@
 # -*- coding: utf-8 -*-
-
 import re
 import mosspy
 from athina.users import *
 from athina.url import *
+
+
+def plagiarism_checks_on_users(self):
+    # Report plagiarism to any newly submitted grades (currently uses only MOSS)
+    results = []
+    users_graded = [user_object.user_id for user_object in Users.select()
+                    if user_object.plagiarism_to_grade is True and
+                    user_object.last_plagiarism_check + timedelta(hours=23) <=
+                    datetime.now(timezone.utc).replace(tzinfo=None)]
+    self.logger.logger.info("Checking for plagiarism...")
+    self.logger.logger.debug(users_graded)
+
+    # Check if the user requested a plagiarism check (in the cfg if the settings exist)
+    if len(users_graded) != 0 and self.configuration.moss_id != 1:
+        plagiarism = Plagiarism(logger=self.logger,
+                                service_type="moss",
+                                moss_id=self.configuration.moss_id,
+                                moss_lang=self.configuration.moss_lang)
+        directory_list = []
+        for value in Users.select():
+            base_dir = "%s/repodata%s/u%s/" % (self.configuration.config_dir, self.configuration.assignment_id,
+                                               value.user_id)
+            if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, self.configuration.moss_pattern)):
+                directory_list.append("%s%s" % (base_dir, self.configuration.moss_pattern))
+
+        # Execute plagiarism check for the directories
+        comparison_data = plagiarism.check_plagiarism(directory_list)
+
+        values = []
+        [[values.append(v) for v in val] for key, val in comparison_data.items()]
+        # values does not include users that were found to not have any similar code
+        # we add these to get the proper mean similarity scores
+        for i in range(0, len(Users.select()) - len(values)):
+            values.append(0)
+        if len(values) != 0:  # this if is probably useless but kept here just in case
+            mean_similarity = np.mean(np.array(values).astype(np.float))
+        else:
+            mean_similarity = 0
+
+        for user_id in users_graded:
+            try:
+                user_max_value = [np.max(np.array(val)) for key, val in
+                                  comparison_data.items() if key == int(user_id)][0]
+            except (RuntimeWarning, IndexError):
+                user_max_value = 0
+
+            if not self.configuration.simulate and self.configuration.moss_publish:
+                self.e_learning.submit_comment(user_id,
+                                               """Your highest similarity score with another student: %s
+                                               The mean similarity score is: %s""" %
+                                               (user_max_value, mean_similarity))
+            results.append([user_id, user_max_value, mean_similarity])
+            self.logger.logger.info("> Submitted similarity results for %s: %s/%s" % (
+                user_id, user_max_value, mean_similarity))
+            obj = Users.get(Users.user_id == user_id)
+            obj.last_plagiarism_check = datetime.now(timezone.utc).replace(tzinfo=None)
+            obj.moss_max = user_max_value
+            obj.moss_average = mean_similarity
+            obj.save()
+
+        for user_object in Users.select():
+            user_object.plagiarism_to_grade = False
+            user_object.save()
+
+    return results
 
 
 class Plagiarism:
