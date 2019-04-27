@@ -183,10 +183,6 @@ if __name__ == "__main__":
     LOGGER = Logger()
     LOGGER.set_verbose(ARGS.verbose)  # this also creates LOGGER.logger
 
-    # Ignore signals from children
-    # This effectively ignores os.wait but since we use a DB for comms we do not have to wait
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-
     # Capturing and terminating on service or non service interrupt
     signal.signal(signal.SIGINT, signal_handler)
     LOGGER.logger.info('Press Ctrl+C at any time to terminate Athina.')

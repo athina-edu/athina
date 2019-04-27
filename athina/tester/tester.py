@@ -7,6 +7,7 @@ import shutil
 import os
 import psutil
 import peewee
+import signal
 
 # Modifiable loading
 from athina.users import Database, Users
@@ -285,6 +286,10 @@ class Tester:
         del self.user_data
         self.logger.delete_logger()
 
+        # Ignore signals from children
+        # This effectively ignores os.wait but since we use a DB for comms we do not have to wait
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
         # FORK implementation for asynchronous testing (multithreaded)
         # Loop through each student in list and fork (main continues)
         for student_id in user_ids:
@@ -295,6 +300,7 @@ class Tester:
                 os._exit(0)  # Terminating the child (pytest compatible)
 
         # Restoring the objects for the parent process
+        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         self.logger.create_logger()
         self.user_data = Database(self.configuration.db_filename)
 
