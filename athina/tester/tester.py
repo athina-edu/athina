@@ -4,7 +4,6 @@ from athina.tester.docker import *
 from random import uniform
 import time
 import shutil
-import np
 import os
 import psutil
 import peewee

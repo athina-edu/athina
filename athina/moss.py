@@ -1,32 +1,35 @@
 # -*- coding: utf-8 -*-
 import re
+import np
+import glob
 import mosspy
 from athina.users import *
 from athina.url import *
+from datetime import timedelta
 
 
-def plagiarism_checks_on_users(self):
+def plagiarism_checks_on_users(logger, configuration, e_learning):
     # Report plagiarism to any newly submitted grades (currently uses only MOSS)
     results = []
     users_graded = [user_object.user_id for user_object in Users.select()
                     if user_object.plagiarism_to_grade is True and
                     user_object.last_plagiarism_check + timedelta(hours=23) <=
                     datetime.now(timezone.utc).replace(tzinfo=None)]
-    self.logger.logger.info("Checking for plagiarism...")
-    self.logger.logger.debug(users_graded)
+    logger.logger.info("Checking for plagiarism...")
+    logger.logger.debug(users_graded)
 
     # Check if the user requested a plagiarism check (in the cfg if the settings exist)
-    if len(users_graded) != 0 and self.configuration.moss_id != 1:
-        plagiarism = Plagiarism(logger=self.logger,
+    if len(users_graded) != 0 and configuration.moss_id != 1:
+        plagiarism = Plagiarism(logger=logger,
                                 service_type="moss",
-                                moss_id=self.configuration.moss_id,
-                                moss_lang=self.configuration.moss_lang)
+                                moss_id=configuration.moss_id,
+                                moss_lang=configuration.moss_lang)
         directory_list = []
         for value in Users.select():
-            base_dir = "%s/repodata%s/u%s/" % (self.configuration.config_dir, self.configuration.assignment_id,
+            base_dir = "%s/repodata%s/u%s/" % (configuration.config_dir, configuration.assignment_id,
                                                value.user_id)
-            if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, self.configuration.moss_pattern)):
-                directory_list.append("%s%s" % (base_dir, self.configuration.moss_pattern))
+            if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, configuration.moss_pattern)):
+                directory_list.append("%s%s" % (base_dir, configuration.moss_pattern))
 
         # Execute plagiarism check for the directories
         comparison_data = plagiarism.check_plagiarism(directory_list)
@@ -49,13 +52,13 @@ def plagiarism_checks_on_users(self):
             except (RuntimeWarning, IndexError):
                 user_max_value = 0
 
-            if not self.configuration.simulate and self.configuration.moss_publish:
-                self.e_learning.submit_comment(user_id,
-                                               """Your highest similarity score with another student: %s
-                                               The mean similarity score is: %s""" %
-                                               (user_max_value, mean_similarity))
+            if not configuration.simulate and configuration.moss_publish:
+                e_learning.submit_comment(user_id,
+                                          """Your highest similarity score with another student: %s
+                                          The mean similarity score is: %s""" %
+                                          (user_max_value, mean_similarity))
             results.append([user_id, user_max_value, mean_similarity])
-            self.logger.logger.info("> Submitted similarity results for %s: %s/%s" % (
+            logger.logger.info("> Submitted similarity results for %s: %s/%s" % (
                 user_id, user_max_value, mean_similarity))
             obj = Users.get(Users.user_id == user_id)
             obj.last_plagiarism_check = datetime.now(timezone.utc).replace(tzinfo=None)

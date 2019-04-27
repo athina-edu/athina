@@ -157,7 +157,7 @@ def main():
 
         # Initiate plagiarism checks
         if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
-            plagiarism_checks_on_users()
+            plagiarism_checks_on_users(LOGGER, configuration, e_learning)
 
         # In case this script is run as another user the repo needs to be also set to be editable by anyone
         try:
