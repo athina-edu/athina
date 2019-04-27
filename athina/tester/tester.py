@@ -6,7 +6,7 @@ import time
 import shutil
 import os
 import psutil
-import peewee
+import sqlite3
 import signal
 
 # Modifiable loading
@@ -259,7 +259,7 @@ class Tester:
                 else:
                     # When no repo is involved it is 1 to 1 testing (individual assignment)
                     reverse_repository_index[user.user_id] = user.user_id
-        except peewee.ProgrammingError:
+        except sqlite3.ProgrammingError:
             self.logger.logger.error("Database connection closed. Cannot iterate through database records."
                                      "Skipping this round of checks."
                                      "This should be resolved in the next round of checks")
