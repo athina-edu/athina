@@ -8,6 +8,7 @@ import shutil
 import np
 import os
 import psutil
+import peewee
 
 # Modifiable loading
 from athina.moss import Plagiarism
@@ -311,17 +312,27 @@ class Tester:
         # Pre-fetching is important for group assignments where grade is submitted to multiple members and all
         # user dbs need to be updated later on
         reverse_repository_index = dict()
-        for user in Users.select():
-            if self.configuration.no_repo is not True:
-                if user.repository_url is not None:
-                    self.repository.check_repository_changes(user.user_id)
-                    # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
-                    # Process group assignment will test once and then it identifies and submits a grade for both
-                    # groups
-                    reverse_repository_index[user.repository_url] = user.user_id
-            else:
-                # When no repo is involved it is 1 to 1 testing (individual assignment)
-                reverse_repository_index[user.user_id] = user.user_id
+
+        try:
+            for user in Users.select():
+                if self.configuration.no_repo is not True:
+                    if user.repository_url is not None:
+                        self.repository.check_repository_changes(user.user_id)
+                        # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
+                        # Process group assignment will test once and then it identifies and submits a grade for both
+                        # groups
+                        reverse_repository_index[user.repository_url] = user.user_id
+                else:
+                    # When no repo is involved it is 1 to 1 testing (individual assignment)
+                    reverse_repository_index[user.user_id] = user.user_id
+        except peewee.ProgrammingError:
+            self.logger.logger.error("Database connection closed. Cannot iterate through database records."
+                                     "Skipping this round of checks."
+                                     "This should be resolved in the next round of checks")
+            self.configuration.db_filename = self.user_data.db_filename
+            del self.user_data
+            self.user_data = Database(self.configuration.db_filename)
+            return None
 
         processing_list = [[user.user_id, user] for user in Users.select() if
                            user.user_id in reverse_repository_index.values()]
