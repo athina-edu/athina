@@ -13,6 +13,19 @@ import signal
 from athina.users import Database, Users
 
 
+# There is extensive forking that occurs for each student testing from the tester
+# We set an async signal handling for terminating zombie processes
+def cleanup_zombie(signum, frame):
+    try:
+        os.waitpid(-1, os.WNOHANG)
+    except ChildProcessError:
+        pass
+
+
+# Set the signal for children to call the function
+signal.signal(signal.SIGCHLD, cleanup_zombie)
+
+
 class Tester:
     user_data = None
     logger = None
@@ -285,12 +298,6 @@ class Tester:
         self.configuration.db_filename = self.user_data.db_filename
         del self.user_data
         self.logger.delete_logger()
-
-        # Cleanup any past zombie processes
-        try:
-            os.waitpid(-1, os.WNOHANG)
-        except ChildProcessError:
-            pass
 
         # FORK implementation for asynchronous testing (multithreaded)
         # Loop through each student in list and fork (main continues)
