@@ -60,16 +60,15 @@ class Tester:
         except FileNotFoundError:
             pass
 
-    def update_user_db(self, user_object):
+    def update_user_db(self, user_object, commit_date_being_tested):
         user_object.plagiarism_to_grade = True
         user_object.last_graded = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Update commit date on record
         if self.configuration.no_repo is False:
-            last_commit_date = self.repository.retrieve_last_commit_date(user_object.user_id)
-            if last_commit_date is not None:
+            if commit_date_being_tested is not None:
                 user_object.new_url = False
-                user_object.commit_date = last_commit_date
+                user_object.commit_date = commit_date_being_tested
             else:
                 user_object.new_url = False
 
@@ -96,9 +95,9 @@ class Tester:
         if user_object.tester_active is False or \
                 (user_object.tester_date + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None)):
             # Make this tester the primary tester
-            user_object.tester_active = True
-            user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
-            user_object.save()
+            # Mark all users that use the same repository (i.e., groups) as being actively tested
+            Users.update(tester_active=True, tester_date=datetime.now(timezone.utc).replace(tzinfo=None)).where(
+                Users.repository_url == user_object.repository_url).execute()
         else:
             self.logger.logger.debug("Tester already active for user_id %d" % user_id)
             os._exit(0)  # Terminating the child (pytest compatible)
@@ -125,6 +124,8 @@ class Tester:
 
         if repo_mode_conditions or forced_testing or no_repo_mode_conditions:
             self.logger.logger.info(">> Testing")
+
+            commit_date_being_tested = self.repository.retrieve_last_commit_date(user_object.user_id)
 
             # Run tests
             test_grades = []
@@ -163,7 +164,7 @@ class Tester:
                 self.logger.logger.info(">>> Submitting new grade for %s: %s" % (current_user_id, grade))
 
                 # Update the user db that grades have been submitted
-                self.update_user_db(current_user_object)
+                self.update_user_db(current_user_object, commit_date_being_tested)
                 current_user_object.changed_state = False
                 current_user_object.last_grade = grade
                 current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") for test
@@ -180,7 +181,7 @@ class Tester:
             user_object_list = [user_object]  # return list of the current object
 
         # Remove the lock on the record
-        Users.update(tester_active=False).where(Users.user_id == user_object.user_id).execute()
+        Users.update(tester_active=False).where(Users.repository_url == user_object.repository_url).execute()
         self.logger.logger.info("Testing Completed for %d" % user_object.user_id)
 
         return user_object_list  # return the list of all updated objects

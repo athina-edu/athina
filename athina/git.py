@@ -45,7 +45,10 @@ class Repository:
                                                 self.configuration.assignment_id, user_id)])
 
     def retrieve_last_commit_date(self, user_id):
-        out, err = self.retrieve_git_log(user_id)
+        try:
+            out, err = self.retrieve_git_log(user_id)
+        except FileNotFoundError:
+            return None
 
         if not self.check_error(err):
             # Retrieve, convert to utc and remove timezone info (needed for sqlite3 compatibility)
