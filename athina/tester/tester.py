@@ -85,6 +85,15 @@ class Tester:
         return user_object.tester_active is False or (
         user_object.tester_date + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None))
 
+    def tester_lock(self, user_id):
+        user_object = Users.get(Users.user_id == user_id)
+        Users.update(tester_active=True, tester_date=datetime.now(timezone.utc).replace(tzinfo=None)).where(
+            Users.repository_url == user_object.repository_url).execute()
+
+    def tester_unlock(self, user_id):
+        user_object = Users.get(Users.user_id == user_id)
+        Users.update(tester_active=False).where(Users.repository_url == user_object.repository_url).execute()
+
     def process_student_assignment(self, user_id, forced_testing=False):
         # Reconnect logger if missing (e.g., parallel run)
         if self.logger.logger is None:
@@ -100,8 +109,7 @@ class Tester:
         if self.tester_is_inactive(user_id):
             # Make this tester the primary tester
             # Mark all users that use the same repository (i.e., groups) as being actively tested
-            Users.update(tester_active=True, tester_date=datetime.now(timezone.utc).replace(tzinfo=None)).where(
-                Users.repository_url == user_object.repository_url).execute()
+            self.tester_lock(user_id)
         else:
             self.logger.logger.debug("Tester already active for user_id %d" % user_id)
             os._exit(0)  # Terminating the child (pytest compatible)
@@ -185,7 +193,7 @@ class Tester:
             user_object_list = [user_object]  # return list of the current object
 
         # Remove the lock on the record
-        Users.update(tester_active=False).where(Users.repository_url == user_object.repository_url).execute()
+        self.tester_unlock(user_id)
         self.logger.logger.info("Testing Completed for %d" % user_object.user_id)
 
         return user_object_list  # return the list of all updated objects
