@@ -80,6 +80,11 @@ class Tester:
         except FileNotFoundError:
             self.logger.logger.error("Could not copy %s to %s" % (source, destination))
 
+    def tester_is_inactive(self, user_id):
+        user_object = Users.get(Users.user_id == user_id)
+        return user_object.tester_active is False or (
+        user_object.tester_date + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None))
+
     def process_student_assignment(self, user_id, forced_testing=False):
         # Reconnect logger if missing (e.g., parallel run)
         if self.logger.logger is None:
@@ -92,8 +97,7 @@ class Tester:
         # Make sure another fork for the same user is not active
         # FIXME: The code below (if statement) needs to go into the preprocessing, otherwise we will spawn the same
         # process every minute
-        if user_object.tester_active is False or \
-                (user_object.tester_date + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None)):
+        if self.tester_is_inactive(user_id):
             # Make this tester the primary tester
             # Mark all users that use the same repository (i.e., groups) as being actively tested
             Users.update(tester_active=True, tester_date=datetime.now(timezone.utc).replace(tzinfo=None)).where(
@@ -264,7 +268,7 @@ class Tester:
         try:
             for user in Users.select():
                 if self.configuration.no_repo is not True:
-                    if user.repository_url is not None:
+                    if user.repository_url is not None and self.tester_is_inactive(user.user_id):
                         self.repository.check_repository_changes(user.user_id)
                         # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
                         # Process group assignment will test once and then it identifies and submits a grade for both
