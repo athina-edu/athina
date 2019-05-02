@@ -62,9 +62,6 @@ class Repository:
 
         # If nothing has been submitted no point in testing
         if user_values.repository_url is None or user_values.repository_url == "":
-            # Check for changes
-            user_values.changed_state = False
-            user_values.save()
             changed_state = False
         elif user_values.commit_date > self.configuration.due_date:
             # If a previous commit has surpassed the due date then no future commit will work either
@@ -79,19 +76,15 @@ class Repository:
             user_values.save()
             changed_state = False  # do not process anything for this student
         elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
-            self.logger.logger.info("> New Submission: %s - %d" % (user_values.user_fullname, user_id))
+            self.logger.logger.info("> New URL Submission: %s - %d" % (user_values.user_fullname, user_id))
             # Delete dir, create dir and clone repository
             self.clone_git_repo(user_id, user_values)
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
                                                           self.configuration.assignment_id, user_id)):
-                user_values.changed_state = True  # valid copy cloned successfully, moving on
-                user_values.save()
-                changed_state = True
+                changed_state = True  # valid copy cloned successfully, moving on
             else:
-                user_values.changed_state = False  # invalid copy, couldn't be cloned.
-                user_values.save()
                 self.logger.logger.error(">>> Could not clone the repository.")
-                changed_state = False
+                changed_state = False  # invalid copy, couldn't be cloned.
                 # TODO: make the user aware with solutions on how to get their git accessible
         else:
             # Pull and see if there is anything that changed,
@@ -112,12 +105,13 @@ class Repository:
 
             if commit_date > user_values.commit_date:
                 self.logger.logger.info(">> New Commit on Repo")
-                user_values.changed_state = True
-                user_values.commit_date = commit_date  # This helps with the test that follows, value is updated later
-                user_values.save()
                 changed_state = True
             else:
                 changed_state = False
+
+        user_values.changed_state = changed_state
+        user_values.save()
+
         return changed_state
 
     def retrieve_git_log(self, user_id):

@@ -126,9 +126,11 @@ class Tester:
             self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
 
         # Boolean arguments broken up into logical components to reduce the size of if statement below
+        commit_date_being_tested = self.repository.retrieve_last_commit_date(user_object.user_id)
+
         repo_mode_conditions = (user_object.changed_state and
                                 user_object.url_date < self.configuration.due_date and
-                                user_object.commit_date < self.configuration.due_date and
+                                commit_date_being_tested < self.configuration.due_date and
                                 user_object.same_url_flag is not True)
         no_repo_mode_conditions = (self.configuration.no_repo is True and user_object.last_graded +
                                    timedelta(hours=self.configuration.grade_update_frequency) <=
@@ -136,8 +138,6 @@ class Tester:
 
         if repo_mode_conditions or forced_testing or no_repo_mode_conditions:
             self.logger.logger.info(">> Testing")
-
-            commit_date_being_tested = self.repository.retrieve_last_commit_date(user_object.user_id)
 
             # Run tests
             test_grades = []
