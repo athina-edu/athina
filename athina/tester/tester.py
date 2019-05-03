@@ -140,6 +140,8 @@ class Tester:
                 self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
         else:
             self.logger.logger.debug("Commit Due Date Comparison: no commit date on repo")
+            # If we cannot read a git log time then something is wrong with the repo or it is a nonrepo assignment
+            commit_date_being_tested = datetime(1, 1, 1, 0, 0)
 
         repo_mode_conditions = (user_object.changed_state and
                                 user_object.url_date < self.configuration.due_date and
