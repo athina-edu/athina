@@ -94,6 +94,18 @@ class Tester:
         user_object = Users.get(Users.user_id == user_id)
         Users.update(tester_active=False).where(Users.repository_url == user_object.repository_url).execute()
 
+    @staticmethod
+    def get_group_user_list(user_object):
+        # Check if the user that was just graded had a url (Participation assignments won't have this
+        if user_object.repository_url is None:
+            user_list = [(user_object.user_id, user_object)]
+        else:
+            # Get group members whose repository url is the same (for group assignments)
+            user_list = [(current_user_object.user_id, current_user_object) for current_user_object
+                         in Users.select()
+                         if current_user_object.repository_url == user_object.repository_url]
+        return user_list
+
     def process_student_assignment(self, user_id, forced_testing=False):
         # Reconnect logger if missing (e.g., parallel run)
         if self.logger.logger is None:
@@ -120,13 +132,14 @@ class Tester:
 
         self.logger.logger.info("> Checking %s - %d" % (user_object.user_fullname, user_id))
 
-        # Code has changed and due date for submissions does not exceed submitted dates
-        self.logger.logger.debug("Commit Due Date Comparison: %s < %s ?" % (
-            user_object.commit_date.strftime("%Y-%m-%d %H:%M:%S"),
-            self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
-
         # Boolean arguments broken up into logical components to reduce the size of if statement below
         commit_date_being_tested = self.repository.retrieve_last_commit_date(user_object.user_id)
+        if commit_date_being_tested is not None:
+            self.logger.logger.debug("Commit Due Date Comparison: %s < %s ?" % (
+                commit_date_being_tested.strftime("%Y-%m-%d %H:%M:%S"),
+                self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
+        else:
+            self.logger.logger.debug("Commit Due Date Comparison: no commit date on repo")
 
         repo_mode_conditions = (user_object.changed_state and
                                 user_object.url_date < self.configuration.due_date and
@@ -136,8 +149,13 @@ class Tester:
                                    timedelta(hours=self.configuration.grade_update_frequency) <=
                                    datetime.now(timezone.utc).replace(tzinfo=None))
 
-        if repo_mode_conditions or forced_testing or no_repo_mode_conditions:
+        if user_object.force_test or repo_mode_conditions or forced_testing or no_repo_mode_conditions:
             self.logger.logger.info(">> Testing")
+
+            # Disable force testing just in case it was active
+            if user_object.force_test:
+                user_object.force_test = False
+                user_object.save()
 
             # Run tests
             test_grades = []
@@ -153,14 +171,7 @@ class Tester:
                 b"\nNote: Maximum possible grade is %d, the rest is graded manually by the instructor.\n" %
                 self.configuration.total_points)
 
-            # Check if the user that was just graded had a url (Participation assignments won't have this
-            if user_object.repository_url is None:
-                user_list = [(user_id, user_object)]
-            else:
-                # Get group members whose repository url is the same (for group assignments)
-                user_list = [(current_user_object.user_id, current_user_object) for current_user_object
-                             in Users.select()
-                             if current_user_object.repository_url == user_object.repository_url]
+            user_list = self.get_group_user_list(user_object)
 
             user_object_list = []  # Return object for multiple user_objects (important for parallel - testing)
 

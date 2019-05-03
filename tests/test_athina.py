@@ -120,6 +120,13 @@ class TestFunctions(unittest.TestCase):
         user_object = tester.process_student_assignment(1)
         self.assertEqual(last_graded, user_object[0].last_graded)
 
+        # Testing whether the force testing will enable testing the user again
+        user_object = Users.get(Users.user_id == 1)
+        user_object.force_test = True
+        user_object.last_grade = 0
+        user_object = tester.process_student_assignment(1)
+        self.assertEqual(user_object[0].last_grade, 80, "Testing force_test option (to be enable via athina web)")
+
         # New repo check and then attempting to test again, no change
         repository.check_repository_changes(1)
         user_object = tester.process_student_assignment(1)

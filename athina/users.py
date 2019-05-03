@@ -143,6 +143,7 @@ class Users(BaseModel):
     moss_average = peewee.IntegerField(default=0, null=True)
     tester_active = peewee.BooleanField(default=False)
     tester_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))
+    force_test = peewee.BooleanField(default=False)
 
 
 class AssignmentData(BaseModel):
