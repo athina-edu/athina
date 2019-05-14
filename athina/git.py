@@ -89,15 +89,21 @@ class Repository:
         else:
             # Pull and see if there is anything that changed,
             # then check date and compare with last  date
-            process = subprocess.Popen(["git", "pull"], cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                                                    self.configuration.assignment_id,
-                                                                                    user_id),
-                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, err = process.communicate()
+            try:
+                process = subprocess.Popen(["git", "pull"], cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
+                                                                                        self.configuration.assignment_id,
+                                                                                        user_id),
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = process.communicate()
+            except FileNotFoundError:
+                # Attempt to git clone
+                err = b"unresolved conflict"
+
             if b"unresolved conflict" in err:
                 self.logger.logger.warning("Cannot pull due to unresolved conflicts...initiating git clone...")
                 self.clone_git_repo(user_id, user_values)
             out, err = self.retrieve_git_log(user_id)
+
             if self.check_error(err):  # no repo or commit cannot be obtained
                 commit_date = user_values.commit_date
             else:
