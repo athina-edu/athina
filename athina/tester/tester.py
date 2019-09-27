@@ -270,6 +270,8 @@ class Tester:
                                 encode("utf-8"))
         elif score is None:
             test_grades.append(0.0)
+            test_reports.append("Errors & Warnings:\n {0}".format(err.decode("utf-8", "backslashreplace")).
+                                encode("utf-8"))
             test_reports.append(
                 """Tests failed:
                 This can happen if you have an infinite loop or non terminating loop,
