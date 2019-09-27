@@ -266,16 +266,15 @@ class Tester:
         test_reports.append(out)
         if self.repository.check_error(err) and score is None:
             test_grades.append(0.0)
-            test_reports.append("Tests failed:\n {0}".format(err.decode("utf-8", "backslashreplace")).
+            test_reports.append("Errors & Warnings:\n {0}".format(err.decode("utf-8", "backslashreplace")).
                                 encode("utf-8"))
         elif score is None:
             test_grades.append(0.0)
             test_reports.append(
                 """Tests failed:
-                Test likely timed out.
                 This can happen if you have an infinite loop or non terminating loop,
-                A missing library that the system doesn't have (contact the instructor)
-                Non legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))
+                a missing library that the system doesn't have (contact the instructor)
+                non-legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))
         else:
             # scaling between 0 and 1
             test_grades.append(score / 100 * self.configuration.test_weights[x])

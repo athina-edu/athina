@@ -53,11 +53,6 @@ def docker_run(test_script, configuration, logger):
     out, err = process.communicate()
     terminate_container(container_name)
 
-    if process.returncode and err:
-        pass
-    else:
-        err = b""  # removing any warnings since we do not care about these
-
     return out, err
 
 

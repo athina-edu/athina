@@ -309,6 +309,40 @@ class TestFunctions(unittest.TestCase):
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(obj.last_grade, 80)
 
+    def test_tester_docker_errors(self):
+        results = []
+        logger = self.create_logger()
+        configuration = Configuration(logger=logger)
+
+        configuration.use_docker = True
+        configuration.simulate = False
+        # Create fake directories
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'w')
+        f.write("#!/bin/bash\ndoesntexist\n")
+        f.close()
+        f = open("/tmp/athina_empty/Dockerfile", 'w')
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
+        f.close()
+
+        e_learning = Canvas(configuration, logger)
+        user_data = self.create_fake_user_db()
+        repository = Repository(logger, configuration, e_learning)
+        results.append(repository.check_repository_changes(1))
+        results.append(repository.check_repository_changes(2))
+        results.append(repository.check_repository_changes(3))
+        results.append(repository.check_repository_changes(4))
+        results.append(repository.check_repository_changes(5))
+        results.append(repository.check_repository_changes(6))
+        self.assertEqual(results, [True, False, True, True, False, False])
+
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
+
+        # First time assignment evaluation
+        user_object = tester.process_student_assignment(1)
+        assert "command not found" in user_object[0].last_report
+
     def test_tester_db_testing(self):
         logger = self.create_logger()
         configuration = Configuration(logger=logger)
