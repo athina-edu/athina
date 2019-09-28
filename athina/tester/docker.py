@@ -49,8 +49,11 @@ def docker_run(test_script, configuration, logger):
     except subprocess.TimeoutExpired:
         # Kill container
         terminate_container(container_name)
+        logger.logger.warning("Terminated container %s due to timeout." % container_name)
 
     out, err = process.communicate()
+    logger.logger.debug("Docker output:\n %s" % out)
+    logger.logger.debug("Docker errors:\n %s" % err)
     terminate_container(container_name)
 
     return out, err
