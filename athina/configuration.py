@@ -40,6 +40,7 @@ class Configuration:
     canvas_url = "www.instructure.com"
     grade_publish = True
     print_debug_msgs = False
+    use_seccomp_on_docker = True
 
     # Set on the fly
     db_filename = ""
@@ -145,6 +146,7 @@ class Configuration:
         self.load_value(config, 'canvas_url', self.canvas_url)
         self.load_value(config, 'grade_publish', self.grade_publish)
         self.load_value(config, 'use_docker', self.use_docker)
+        self.load_value(config, 'use_seccomp_on_docker', self.use_seccomp_on_docker)
 
         self.processes = multiprocessing.cpu_count()
 

@@ -97,3 +97,10 @@ use_docker: true
 # Whether the results of the tests along with grade are to be submitted to canvas or
 # have the results printed in the log and stored in sqlite (viewable through AthinaWeb)
 grade_publish: true
+
+# This option is the default setting for docker (i.e., secure container). If disabled, then
+# a security profile is not used and ptrace can be attach to application debugging.
+# I.e., the docker container is less secure for the applications running within it, however,
+# it is still a sandbox (as much as containers can guarantee a degree of security).
+# For example, if students use gdb, then you will need to disable this.
+use_seccomp_on_docker: true
