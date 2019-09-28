@@ -271,7 +271,7 @@ class Tester:
         elif score is None:
             test_grades.append(0.0)
             test_reports.append(
-                """Tests failed:
+                """Test failed:
                 This can happen if you have an infinite loop or non terminating loop,
                 a missing library that the system doesn't have (contact the instructor)
                 non-legible script grade due to some other unforeseen circumstance.""".encode("utf-8"))

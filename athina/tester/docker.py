@@ -35,6 +35,7 @@ def docker_run(test_script, configuration, logger):
                      "-v", "%s:%s" % (
                          configuration.athina_student_code_dir, configuration.athina_student_code_dir),
                      "-v",
+                     "--cap-add=SYS_PTRACE --security-opt seccomp=unconfined",
                      "%s:%s" % (configuration.athina_test_tmp_dir, configuration.athina_test_tmp_dir),
                      "--name", "%s" % container_name,
                      "%s" % __generate_hash(configuration.config_dir)]
