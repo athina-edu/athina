@@ -93,80 +93,88 @@ def main():
 
         user_data = Database("%s/%s.sqlite3" % (configuration.config_dir, configuration.assignment_id), logger=LOGGER)
 
-        # Begin gathering data from Canvas
-        e_learning = Canvas(configuration, LOGGER)
-
-        # No point contacting elearning platform if no auth token is provided
-        if configuration.auth_token != "":
-            LOGGER.logger.debug("Retrieving submission list from elearning platform...")
-            e_learning.get_all_submissions()
-            LOGGER.logger.debug("Retrieved!")
-
-            # Getting additional information from e-learning platform
-            if len(Users.select()) > 0 and e_learning.needs_update:  # this helps reduce API calls
-                LOGGER.logger.debug("Retrieving user info from elearning platform...")
-                user_data = e_learning.get_additional_user_info(user_data)
-                LOGGER.logger.debug("Retrieved!")
-                if configuration.enforce_due_date:
-                    configuration.due_date = e_learning.get_assignment_due_date()
-                else:
-                    configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
-                e_learning.update_last_update()
-            # Check if more than N times the same URL in usrdb
-            elif len(Users.select()) > 0:
-                LOGGER.logger.debug("Checking for duplicate urls...")
-                user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
-                LOGGER.logger.debug("Checked!")
-
-        # Build Repository Object
-        repository = Repository(LOGGER, configuration, e_learning)
-
-        # Build Tester Object
-        tester = Tester(user_data, LOGGER, configuration, e_learning, repository)
-
-        if ARGS.forced_testing is not None:
-            # Test specific user
-            # FIXME: tester is returned the changed userdb object
-            repository.check_repository_changes([value.user_id for key, value in user_data.db.items()
-                                                 if value.user_fullname == ARGS.forced_testing][0])
-            tester.process_student_assignment([value.user_id for key, value in user_data.db.items()
-                                               if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
-        elif ARGS.repo_url_testing is not None:
-            # Creating tmp user and simulating the test for the provided repository
-            LOGGER.logger.debug("TEST")
-            try:
-                obj = Users[1]
-                obj.delete_instance()
-            except Users.DoesNotExist:
-                pass
-            Users.create(user_id=1,
-                         repository_url=ARGS.repo_url_testing,
-                         url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
-                         new_url=True,
-                         commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
-            LOGGER.set_verbose(True)
-            LOGGER.set_debug(True)
-            configuration.simulate = True
-            repository.check_repository_changes(1)
-            tester.process_student_assignment(1)
-            LOGGER.logger.info("Single repository testing completed.")
-            exit(0)  # This is used for testing so no further processing is necessary
-        else:
-            # Start testing changed records (new or updated) if any exist
-            tester.start_testing_db()
-
-        # Initiate plagiarism checks
-        if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
-            plagiarism_checks_on_users(LOGGER, configuration, e_learning)
-
-        # In case this script is run as another user the repo needs to be also set to be editable by anyone
         try:
-            os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o777)
-        except FileNotFoundError:
+            core_iteration(configuration, user_data)
+        except sqlite3.ProgrammingError:  # database lock usually, resolves after a new connection is initiated
             pass
 
+        del user_data
         del configuration
         LOGGER.logger.info("Processing done.")
+
+
+def core_iteration(configuration, user_data):
+    # Begin gathering data from Canvas
+    e_learning = Canvas(configuration, LOGGER)
+
+    # No point contacting elearning platform if no auth token is provided
+    if configuration.auth_token != "":
+        LOGGER.logger.debug("Retrieving submission list from elearning platform...")
+        e_learning.get_all_submissions()
+        LOGGER.logger.debug("Retrieved!")
+
+        # Getting additional information from e-learning platform
+        if len(Users.select()) > 0 and e_learning.needs_update:  # this helps reduce API calls
+            LOGGER.logger.debug("Retrieving user info from elearning platform...")
+            user_data = e_learning.get_additional_user_info(user_data)
+            LOGGER.logger.debug("Retrieved!")
+            if configuration.enforce_due_date:
+                configuration.due_date = e_learning.get_assignment_due_date()
+            else:
+                configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
+            e_learning.update_last_update()
+        # Check if more than N times the same URL in usrdb
+        elif len(Users.select()) > 0:
+            LOGGER.logger.debug("Checking for duplicate urls...")
+            user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
+            LOGGER.logger.debug("Checked!")
+
+    # Build Repository Object
+    repository = Repository(LOGGER, configuration, e_learning)
+
+    # Build Tester Object
+    tester = Tester(user_data, LOGGER, configuration, e_learning, repository)
+
+    if ARGS.forced_testing is not None:
+        # Test specific user
+        # FIXME: tester is returned the changed userdb object
+        repository.check_repository_changes([value.user_id for key, value in user_data.db.items()
+                                             if value.user_fullname == ARGS.forced_testing][0])
+        tester.process_student_assignment([value.user_id for key, value in user_data.db.items()
+                                           if value.user_fullname == ARGS.forced_testing][0], forced_testing=True)
+    elif ARGS.repo_url_testing is not None:
+        # Creating tmp user and simulating the test for the provided repository
+        LOGGER.logger.debug("TEST")
+        try:
+            obj = Users[1]
+            obj.delete_instance()
+        except Users.DoesNotExist:
+            pass
+        Users.create(user_id=1,
+                     repository_url=ARGS.repo_url_testing,
+                     url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
+                     new_url=True,
+                     commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
+        LOGGER.set_verbose(True)
+        LOGGER.set_debug(True)
+        configuration.simulate = True
+        repository.check_repository_changes(1)
+        tester.process_student_assignment(1)
+        LOGGER.logger.info("Single repository testing completed.")
+        exit(0)  # This is used for testing so no further processing is necessary
+    else:
+        # Start testing changed records (new or updated) if any exist
+        tester.start_testing_db()
+
+    # Initiate plagiarism checks
+    if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
+        plagiarism_checks_on_users(LOGGER, configuration, e_learning)
+
+    # In case this script is run as another user the repo needs to be also set to be editable by anyone
+    try:
+        os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o777)
+    except FileNotFoundError:
+        pass
 
 
 if __name__ == "__main__":
