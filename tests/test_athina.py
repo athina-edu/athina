@@ -6,6 +6,7 @@ from athina.git import *
 from athina.configuration import *
 from athina.tester.tester import *
 from athina.canvas import *
+from athina.moss import *
 import os
 import shutil
 import multiprocessing
@@ -213,7 +214,7 @@ class TestFunctions(unittest.TestCase):
         user_object = tester.process_student_assignment(7)
         self.assertGreater(user_object[0].last_graded, last_graded)
 
-    @unittest.skip("Moss service hangs for too long. Implement timeouts in moss.py")
+    @unittest.skip("Does not work and needs to fix. Empty result")
     def test_tester_plagiarism(self):
         logger = self.create_logger()
         configuration = Configuration(logger=logger)
@@ -244,14 +245,13 @@ class TestFunctions(unittest.TestCase):
         tester.process_student_assignment(5)
         tester.process_student_assignment(6)
 
-        user_data.db[1].last_plagiarism_check = user_data.db[1].last_plagiarism_check - timedelta(hours=48)
-        user_data.db[2].last_plagiarism_check = user_data.db[2].last_plagiarism_check - timedelta(hours=48)
-        user_data.db[3].last_plagiarism_check = user_data.db[3].last_plagiarism_check - timedelta(hours=48)
-        user_data.db[4].last_plagiarism_check = user_data.db[4].last_plagiarism_check - timedelta(hours=48)
-        user_data.db[5].last_plagiarism_check = user_data.db[5].last_plagiarism_check - timedelta(hours=48)
-        user_data.db[6].last_plagiarism_check = user_data.db[6].last_plagiarism_check - timedelta(hours=48)
+        for i in range(1, 7):
+            obj = Users.get(Users.user_id == i)
+            obj.last_plagiarism_check = obj.last_plagiarism_check - timedelta(hours=48)
+            obj.save()
 
-        results = tester.plagiarism_checks_on_users()
+        results = plagiarism_checks_on_users(logger, configuration, e_learning)
+        print(results)
         self.assertEqual(len(results), 3)
 
     def test_tester_docker(self):
