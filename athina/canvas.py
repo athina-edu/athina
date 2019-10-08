@@ -90,6 +90,7 @@ class Canvas:
             self.logger.logger.debug(data)
             return False
         else:
+            self.logger.logger.debug("Canvas Response: %s" % data)
             return True
 
     def get_assignment_due_date(self):
