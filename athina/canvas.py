@@ -55,7 +55,8 @@ class Canvas:
         if not self.validate_response(data):
             return False
         for record in data:
-            self.parse_canvas_submissions(record)
+            if isinstance(record, list) or isinstance(record, dict):
+                self.parse_canvas_submissions(record)
         return True
 
     def submit_comment(self, user_id, comment):
