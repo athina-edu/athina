@@ -68,6 +68,10 @@ these depending on their configuration file.
 
 `pip3 install .`
 
+
+# Video Tutorial
+How to configure and build tests: https://youtu.be/ZPx7qf9a1VY
+
 # Usage (10 second tutorial)
 The following runs the [example configuration](config-examples) (your tests) against a [test repo](https://github.com/athina-edu/testing.git) (e.g., student code) that contains a simple python file. 
 Tests use pylint3 and output a grade for the student.
@@ -82,9 +86,6 @@ Tests use pylint3 and output a grade for the student.
 `bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git`
 
 Tests that use docker (instead of firejail) take longer the first time they are executed but subsequent runs are virtually instant.
-
-# Video Tutorial
-How to configure and build tests: https://youtu.be/ZPx7qf9a1VY
 
 # Usage
 1. Build your tests as you would normally. Print as many things that you want students to see and make sure the last 
