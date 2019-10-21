@@ -83,6 +83,9 @@ Tests use pylint3 and output a grade for the student.
 
 Tests that use docker (instead of firejail) take longer the first time they are executed but subsequent runs are virtually instant.
 
+# Video Tutorial
+How to configure and build tests: https://youtu.be/ZPx7qf9a1VY
+
 # Usage
 1. Build your tests as you would normally. Print as many things that you want students to see and make sure the last 
 item(line) you print is their grade from 0-100. Decimals are accepted. The directories of the student code and tests 
