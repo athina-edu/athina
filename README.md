@@ -68,6 +68,10 @@ these depending on their configuration file.
 
 `pip3 install .`
 
+
+# Video Tutorial
+How to configure and build tests: https://youtu.be/TAYRRYnk3NQ
+
 # Usage (10 second tutorial)
 The following runs the [example configuration](config-examples) (your tests) against a [test repo](https://github.com/athina-edu/testing.git) (e.g., student code) that contains a simple python file. 
 Tests use pylint3 and output a grade for the student.
