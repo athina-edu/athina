@@ -63,9 +63,6 @@ class Repository:
         # If nothing has been submitted no point in testing
         if user_values.repository_url is None or user_values.repository_url == "":
             changed_state = False
-        elif user_values.commit_date > self.configuration.due_date:
-            # If a previous commit has surpassed the due date then no future commit will work either
-            changed_state = False
         elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
             # Submit grade
             self.logger.logger.warning("The URL is being used by another student. Will not test.")
@@ -81,7 +78,8 @@ class Repository:
             self.clone_git_repo(user_id, user_values)
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
                                                           self.configuration.assignment_id, user_id)):
-                changed_state = True  # valid copy cloned successfully, moving on
+                # valid copy cloned successfully, moving on assuming the rest of the checks clear
+                changed_state = self.compare_commit_date_with_due_date(user_id, user_values)
             else:
                 self.logger.logger.error(">>> Could not clone the repository.")
                 changed_state = False  # invalid copy, couldn't be cloned.
@@ -90,9 +88,10 @@ class Repository:
             # Pull and see if there is anything that changed,
             # then check date and compare with last  date
             try:
-                process = subprocess.Popen(["git", "pull"], cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                                                        self.configuration.assignment_id,
-                                                                                        user_id),
+                process = subprocess.Popen(["git", "pull"],
+                                           cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
+                                                                       self.configuration.assignment_id,
+                                                                       user_id),
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, err = process.communicate()
             except FileNotFoundError:
@@ -102,23 +101,28 @@ class Repository:
             if b"unresolved conflict" in err:
                 self.logger.logger.warning("Cannot pull due to unresolved conflicts...initiating git clone...")
                 self.clone_git_repo(user_id, user_values)
-            out, err = self.retrieve_git_log(user_id)
 
-            if self.check_error(err):  # no repo or commit cannot be obtained
-                commit_date = user_values.commit_date
-            else:
-                commit_date = dateutil.parser.parse(out).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
-
-            if commit_date > user_values.commit_date:
-                self.logger.logger.info(">> New Commit on Repo")
-                changed_state = True
-            else:
-                changed_state = False
+            changed_state = self.compare_commit_date_with_due_date(user_id, user_values)
 
         user_values.changed_state = changed_state
         user_values.save()
 
         return changed_state
+
+    def compare_commit_date_with_due_date(self, user_id, user_values):
+        commit_date = self.retrieve_last_commit_date(user_id)
+        if commit_date is None:  # no repo or commit cannot be obtained
+            commit_date = user_values.commit_date
+
+        # If new commit date newer than old commit but smaller than due date
+        if self.configuration.due_date > commit_date > user_values.commit_date:
+            self.logger.logger.info(">> New commit on repo before due date")
+            return True
+        elif user_values.force_test is True:
+            self.logger.logger.info(">> Force testing requested for user: %s." % user_id)
+            return True
+        else:
+            return False
 
     def retrieve_git_log(self, user_id):
         process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
