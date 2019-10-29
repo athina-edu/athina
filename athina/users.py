@@ -18,6 +18,7 @@ import sqlite3
 # It may however internally handle lock issues.
 def _execute(self, query, commit=peewee.SENTINEL, **context_options):
     success = False
+    trial_counter = 0
     while success is False:
         try:
             ctx = self.get_sql_context(**context_options)  # derived from original execute func
@@ -25,7 +26,10 @@ def _execute(self, query, commit=peewee.SENTINEL, **context_options):
             return self.execute_sql(sql, params, commit=commit)  # derived from original execute func
         except (peewee.OperationalError, sqlite3.OperationalError) as es:
             if "locked" in str(es):
+                if trial_counter == 50:
+                    DB.close()
                 time.sleep(0.1)
+                trial_counter += 1
                 success = False
             else:
                 raise peewee.OperationalError
