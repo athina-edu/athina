@@ -58,6 +58,7 @@ grade_update_frequency: 24
 # The git url pattern to be accepted for submitted repositories.
 # This is extremely important for security purposes since a student may register their own domain and extract
 # your git credentials otherwise.
+# Any url not matching the pattern below will be rejected by Athina
 git_url: www.github.com
 
 # Git credentials

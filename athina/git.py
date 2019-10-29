@@ -32,6 +32,7 @@ class Repository:
                                                               self.configuration.assignment_id, user_id)])
         url_matches = re.findall("(.*?)://(.*?)$", user_object.repository_url)
         # If the submitted URL is not gitlab then don't submit the password (avoiding a phishing attack)
+        # Implementing rule to enforce git_url to comply with what the athina.yaml (ie, what the instructor requested)
         if re.match(r"^" + re.escape(self.configuration.git_url + "/") + r".*", url_matches[0][1]) and \
            url_matches[0][0] == 'https':
             git_url = "%s://%s:%s@%s" % (url_matches[0][0],
@@ -39,7 +40,7 @@ class Repository:
                                          html.escape(self.configuration.git_password),
                                          url_matches[0][1])
         else:
-            git_url = user_object.repository_url
+            git_url = ""
         subprocess.run(["git", "clone", "%s" % git_url,
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                 self.configuration.assignment_id, user_id)])
