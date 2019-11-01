@@ -120,6 +120,7 @@ class Repository:
             commit_date = user_values.commit_date
 
         # If new commit date newer than old commit but smaller than due date
+        self.logger.logger.debug("Checking due > git log commit > db commit: %s %s %s" % (self.configuration.due_date, commit_date, user_values.commit_date))
         if self.configuration.due_date > commit_date > user_values.commit_date:
             self.logger.logger.info(">> New commit on repo before due date")
             return True
