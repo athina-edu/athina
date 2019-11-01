@@ -114,7 +114,7 @@ class Canvas:
     @staticmethod
     def parse_canvas_submissions(data):
         if data["submitted_at"] is None:
-            submitted_date = datetime(1, 1, 1, 0, 0)
+            submitted_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
         else:
             submitted_date = dateutil.parser.parse(data["submitted_at"]).astimezone(dateutil.tz.UTC). \
                 replace(tzinfo=None)
@@ -127,14 +127,15 @@ class Canvas:
                          repository_url=data["url"],
                          url_date=submitted_date,
                          new_url=True,
-                         commit_date=datetime(1, 1, 1, 0, 0))
+                         commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
         else:
             # New submission will always happen on Canvas on a chronological order
             if obj.url_date < submitted_date:
+                self.logger.logger.debug("Storing newly submitted url.")
                 obj.repository_url = data["url"]
                 obj.url_date = submitted_date
                 obj.new_url = True
-                obj.commit_date = datetime(1, 1, 1, 0, 0)
+                obj.commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
                 obj.save()
 
     def upload_params_for_comment_upload(self, filename, user_id):
