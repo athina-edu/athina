@@ -127,14 +127,14 @@ class Canvas:
                          repository_url=data["url"],
                          url_date=submitted_date,
                          new_url=True,
-                         commit_date=submitted_date)
+                         commit_date=datetime(1, 1, 1, 0, 0))
         else:
             # New submission will always happen on Canvas on a chronological order
             if obj.url_date < submitted_date:
                 obj.repository_url = data["url"]
                 obj.url_date = submitted_date
                 obj.new_url = True
-                obj.commit_date = submitted_date
+                obj.commit_date = datetime(1, 1, 1, 0, 0)
                 obj.save()
 
     def upload_params_for_comment_upload(self, filename, user_id):
