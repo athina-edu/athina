@@ -41,6 +41,7 @@ class Repository:
                                          html.escape(self.configuration.git_password),
                                          url_matches[0][1])
         else:
+            self.logger.logger.error("Error: submitted url does not match git url domain in the configuration.")
             git_url = ""
         subprocess.run(["git", "clone", "%s" % git_url,
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
