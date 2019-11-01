@@ -143,6 +143,7 @@ class Tester:
             # If we cannot read a git log time then something is wrong with the repo or it is a nonrepo assignment
             commit_date_being_tested = datetime(1, 1, 1, 0, 0)
 
+        self.logger.logger.debug("Verifying: changed_state - %r, url_date - %s" % (user_object.changed_state, user_object.url_date))
         repo_mode_conditions = (user_object.changed_state and
                                 user_object.url_date < self.configuration.due_date and
                                 commit_date_being_tested < self.configuration.due_date and
