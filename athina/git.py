@@ -33,6 +33,7 @@ class Repository:
         url_matches = re.findall("(.*?)://(.*?)$", user_object.repository_url)
         # If the submitted URL is not gitlab then don't submit the password (avoiding a phishing attack)
         # Implementing rule to enforce git_url to comply with what the athina.yaml (ie, what the instructor requested)
+        self.logger.logger.debug("Attempting to clone %s" % user_object.repository_url)
         if re.match(r"^" + re.escape(self.configuration.git_url + "/") + r".*", url_matches[0][1]) and \
            url_matches[0][0] == 'https':
             git_url = "%s://%s:%s@%s" % (url_matches[0][0],
@@ -49,6 +50,7 @@ class Repository:
         try:
             out, err = self.retrieve_git_log(user_id)
         except FileNotFoundError:
+            self.logger.logger.debug("Error: file not found when obtaining commit date through git log.")
             return None
 
         if not self.check_error(err):
@@ -112,6 +114,7 @@ class Repository:
 
     def compare_commit_date_with_due_date(self, user_id, user_values):
         commit_date = self.retrieve_last_commit_date(user_id)
+        self.logger.logger.debug("Retrieving latest git commit date from git log: %s" % commit_date)
         if commit_date is None:  # no repo or commit cannot be obtained
             commit_date = user_values.commit_date
 
