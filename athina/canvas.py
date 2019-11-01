@@ -131,7 +131,6 @@ class Canvas:
         else:
             # New submission will always happen on Canvas on a chronological order
             if obj.url_date < submitted_date:
-                self.logger.logger.debug("Storing newly submitted url.")
                 obj.repository_url = data["url"]
                 obj.url_date = submitted_date
                 obj.new_url = True
