@@ -313,6 +313,7 @@ class Tester:
 
         # If we utilize docker we need to pre-build the docker container
         if self.configuration.use_docker:
+            print(self.repository.get_repo_commit(self.configuration.config_dir))
             docker_build(configuration=self.configuration, logger=self.logger)
 
         user_ids = [key for key, value in processing_list]
