@@ -36,13 +36,17 @@ class Repository:
         self.logger.logger.debug("Attempting to clone %s" % user_object.repository_url)
         if re.match(r"^" + re.escape(self.configuration.git_url + "/") + r".*", url_matches[0][1]) and \
            url_matches[0][0] == 'https':
-            git_url = "%s://%s:%s@%s" % (url_matches[0][0],
-                                         html.escape(self.configuration.git_username),
-                                         html.escape(self.configuration.git_password),
-                                         url_matches[0][1])
+            if self.configuration.git_username != "":
+                git_url = "%s://%s:%s@%s" % (url_matches[0][0],
+                                             html.escape(self.configuration.git_username),
+                                             html.escape(self.configuration.git_password),
+                                             url_matches[0][1])
+            else:
+                git_url = user_object.repository_url
         else:
             self.logger.logger.error("Error: submitted url does not match git url domain in the configuration.")
             git_url = ""
+
         subprocess.run(["git", "clone", "%s" % git_url,
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                 self.configuration.assignment_id, user_id)])

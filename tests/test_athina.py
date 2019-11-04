@@ -112,9 +112,10 @@ class TestFunctions(unittest.TestCase):
 
         # First time assignment evaluation
         user_object = tester.process_student_assignment(1)
+        print(user_object[0].last_grade)
         self.assertEqual(user_object[0].new_url, False)
         self.assertGreater(user_object[0].last_graded, datetime(1, 1, 1, 0, 0))
-        self.assertEqual(user_object[0].last_grade, 80)
+        self.assertEqual(user_object[0].last_grade, 80, "First time assignment evaluation")
         last_graded = user_object[0].last_graded
 
         # Second time of athina iterating through but no new commit (grading should not change)
