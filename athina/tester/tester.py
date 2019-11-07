@@ -318,7 +318,7 @@ class Tester:
             repo_commit = self.repository.get_repo_commit(self.configuration.config_dir)
             if repo_commit != load_key_from_assignment_data("repo_commit"):
                 docker_build(configuration=self.configuration, logger=self.logger)
-            update_key_in_assignment_data("repo_commit", self.configuration.due_date.isoformat())
+            update_key_in_assignment_data("repo_commit", repo_commit)
 
         user_ids = [key for key, value in processing_list]
         self.spawn_worker(user_ids)
