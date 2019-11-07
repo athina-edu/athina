@@ -1,6 +1,7 @@
 from athina.tester.firejail import *
 from datetime import timedelta, datetime, timezone
 from athina.tester.docker import *
+from athina.users import *
 from random import uniform
 import time
 import shutil
@@ -313,8 +314,11 @@ class Tester:
 
         # If we utilize docker we need to pre-build the docker container
         if self.configuration.use_docker:
-            print(self.repository.get_repo_commit(self.configuration.config_dir))
-            docker_build(configuration=self.configuration, logger=self.logger)
+            # Build if something has changed (i.e., new commit)
+            repo_commit = self.repository.get_repo_commit(self.configuration.config_dir)
+            if repo_commit != load_key_from_assignment_data("repo_commit"):
+                docker_build(configuration=self.configuration, logger=self.logger)
+            update_key_in_assignment_data("repo_commit", self.configuration.due_date.isoformat())
 
         user_ids = [key for key, value in processing_list]
         self.spawn_worker(user_ids)

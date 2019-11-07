@@ -23,9 +23,11 @@ class Repository:
     @staticmethod
     def get_repo_commit(folder):
         repo = git.Repo(folder)
-        heads = repo.heads
-        master = heads.master  # lists can be accessed by name for convenience
-        return master.commit
+        try:
+            return repo.heads.master.commit
+        except AttributeError:
+            # repo with no commits
+            return None
 
     def check_error(self, err):
         if err != b'':

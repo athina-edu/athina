@@ -9,8 +9,8 @@ def __generate_hash(string):
 
 
 def docker_build(configuration, logger):
-    build_statement = ["docker", "build", "-t", "%s" % __generate_hash(configuration.config_dir), "-f", "Dockerfile",
-                       "."]
+    build_statement = ["docker", "build", "--no-cache", "-t", "%s" % __generate_hash(configuration.config_dir),
+                       "-f", "Dockerfile", "."]
     # Building the image. This is built once and then things are much faster but the check needs to happen
     logger.logger.debug(" ".join(build_statement))
     process = subprocess.Popen(build_statement, cwd="%s/" % configuration.config_dir, stdout=subprocess.PIPE,
