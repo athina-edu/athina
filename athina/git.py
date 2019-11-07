@@ -4,6 +4,7 @@ import subprocess
 import re
 import os
 import html
+import git
 from datetime import datetime, timezone
 import dateutil.parser
 from athina.users import *
@@ -18,6 +19,15 @@ class Repository:
         self.logger = logger
         self.configuration = configuration
         self.e_learning = e_learning
+
+    @staticmethod
+    def get_repo_commit(folder):
+        repo = git.Repo(folder)
+        try:
+            return repo.heads.master.commit
+        except AttributeError:
+            # repo with no commits
+            return None
 
     def check_error(self, err):
         if err != b'':

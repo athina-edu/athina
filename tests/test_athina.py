@@ -255,6 +255,20 @@ class TestFunctions(unittest.TestCase):
         print(results)
         self.assertEqual(len(results), 3)
 
+    @staticmethod
+    def create_test_config(msg="echo 80"):
+        # Create fake directories
+        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
+        shutil.rmtree("/tmp/athina_empty/.git", ignore_errors=True)
+        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
+        f = open("/tmp/athina_empty/tests/test", 'w')
+        f.write("#!/bin/bash\n%s\n" % msg)
+        f.close()
+        f = open("/tmp/athina_empty/Dockerfile", 'w')
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
+        f.close()
+        shutil.copytree("tests/git", "/tmp/athina_empty/.git")
+
     def test_tester_docker(self):
         results = []
         logger = self.create_logger()
@@ -262,15 +276,7 @@ class TestFunctions(unittest.TestCase):
 
         configuration.use_docker = True
         configuration.simulate = False
-        # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'w')
-        f.write("#!/bin/bash\necho 80\n")
-        f.close()
-        f = open("/tmp/athina_empty/Dockerfile", 'w')
-        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
-        f.close()
+        self.create_test_config()
 
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
@@ -318,14 +324,7 @@ class TestFunctions(unittest.TestCase):
         configuration.use_docker = True
         configuration.simulate = False
         # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'w')
-        f.write("#!/bin/bash\ndoesntexist\n")
-        f.close()
-        f = open("/tmp/athina_empty/Dockerfile", 'w')
-        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
-        f.close()
+        self.create_test_config("doesntexist")
 
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
@@ -351,14 +350,7 @@ class TestFunctions(unittest.TestCase):
         configuration.use_docker = True
         configuration.simulate = False
         # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'w')
-        f.write("#!/bin/bash\necho 80\n")
-        f.close()
-        f = open("/tmp/athina_empty/Dockerfile", 'w')
-        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
-        f.close()
+        self.create_test_config()
 
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
@@ -390,14 +382,7 @@ class TestFunctions(unittest.TestCase):
         configuration.simulate = False
         configuration.test_timeout = 10
         # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'w')
-        f.write("#!/bin/bash\necho 'test'\nsleep 20\necho 80\n")
-        f.close()
-        f = open("/tmp/athina_empty/Dockerfile", 'w')
-        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
-        f.close()
+        self.create_test_config("echo 'test'\nsleep 20\necho 80")
 
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
@@ -422,14 +407,7 @@ class TestFunctions(unittest.TestCase):
         configuration.simulate = False
         configuration.test_timeout = 10
         # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'w')
-        f.write("#!/bin/bash\necho 'test'\nsleep 20\necho 80\n")
-        f.close()
-        f = open("/tmp/athina_empty/Dockerfile", 'w')
-        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
-        f.close()
+        self.create_test_config("echo 'test'\nsleep 20\necho 80")
 
         e_learning = Canvas(configuration, logger)
         user_data = self.create_fake_user_db()
