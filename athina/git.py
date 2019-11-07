@@ -10,6 +10,15 @@ import dateutil.parser
 from athina.users import *
 
 
+def get_repo_commit(folder):
+    repo = git.Repo(folder)
+    try:
+        return repo.heads.master.commit.hexsha
+    except AttributeError:
+        # repo with no commits
+        return None
+
+
 class Repository:
     logger = None
     configuration = None
@@ -19,15 +28,6 @@ class Repository:
         self.logger = logger
         self.configuration = configuration
         self.e_learning = e_learning
-
-    @staticmethod
-    def get_repo_commit(folder):
-        repo = git.Repo(folder)
-        try:
-            return repo.heads.master.commit
-        except AttributeError:
-            # repo with no commits
-            return None
 
     def check_error(self, err):
         if err != b'':
