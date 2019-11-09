@@ -24,8 +24,8 @@ class Configuration:
     moss_pattern = "*.c"
     moss_publish = False
     check_plagiarism_hour = 1
-    git_username = ""
-    git_password = ""
+    git_username = "test"
+    git_password = "test"
     same_url_limit = 1
     submit_results_as_file = True
     max_file_size = 1024
