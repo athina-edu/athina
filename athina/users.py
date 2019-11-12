@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from datetime import datetime, timezone
+from datetime import datetime
+from dateutil.tz import tzlocal
 import os
 import peewee
 import time
@@ -142,7 +143,7 @@ class Users(BaseModel):
     commit_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))  # Day of the last commit
     same_url_flag = peewee.BooleanField(default=False)  # Is repo url found to be similar with N other students?
     plagiarism_to_grade = peewee.BooleanField(default=False)  # Signifies if a user received a new grade (plagiarism)
-    last_plagiarism_check = peewee.DateTimeField(default=datetime.now(timezone.utc).replace(tzinfo=None))
+    last_plagiarism_check = peewee.DateTimeField(default=datetime.now(tzlocal()).replace(tzinfo=None))
     last_graded = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))
     changed_state = peewee.BooleanField(default=False)
     last_grade = peewee.SmallIntegerField(null=True)

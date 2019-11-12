@@ -5,6 +5,7 @@ import argparse
 import filelock
 import signal
 import sys
+from dateutil.tz import tzlocal
 from athina.logger import *
 from athina.tester.tester import *
 from athina.configuration import *
@@ -167,7 +168,7 @@ def core_iteration(configuration, user_data):
         tester.start_testing_db()
 
     # Initiate plagiarism checks
-    if datetime.now(timezone.utc).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
+    if datetime.now(tzlocal()).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
         plagiarism_checks_on_users(LOGGER, configuration, e_learning)
 
     # In case this script is run as another user the repo needs to be also set to be editable by anyone
