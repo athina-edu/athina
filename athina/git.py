@@ -6,6 +6,7 @@ import os
 import html
 import git
 from datetime import datetime, timezone
+from dateutil.tz import tzlocal
 import dateutil.parser
 from athina.users import *
 
@@ -70,7 +71,7 @@ class Repository:
 
         if not self.check_error(err):
             # Retrieve, convert to utc and remove timezone info (needed for sqlite3 compatibility)
-            return dateutil.parser.parse(out).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
+            return dateutil.parser.parse(out).astimezone(tzlocal()).replace(tzinfo=None)
         else:
             return None
 
@@ -88,7 +89,7 @@ class Repository:
                 self.e_learning.submit_grade(user_id, user_values, 0,
                                              'The URL is being used by another student'.encode("utf-8"))
             user_values.new_url = False
-            user_values.commit_date = datetime.now(timezone.utc).replace(tzinfo=None)
+            user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
             user_values.save()
             changed_state = False  # do not process anything for this student
         elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL

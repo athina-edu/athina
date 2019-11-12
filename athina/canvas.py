@@ -2,6 +2,7 @@
 # There are built in a general fashion so that e-learning platforms can be easily switched (as long as func names
 # remain the same)
 from datetime import datetime, timedelta
+from dateutil.tz import tzlocal
 import dateutil.parser
 from athina.url import *
 from athina.users import *
@@ -31,12 +32,12 @@ class Canvas:
             self.configuration.due_date = datetime(2050, 1, 1, 0, 0).replace(tzinfo=None)
 
     def update_last_update(self):
-        update_key_in_assignment_data("last_update", datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+        update_key_in_assignment_data("last_update", datetime.now(tzlocal()).replace(tzinfo=None).isoformat())
         update_key_in_assignment_data("due_date", self.configuration.due_date.isoformat())
 
     @property
     def needs_update(self):
-        return self.last_update + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None)
+        return self.last_update + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None)
 
     @property
     def base_url(self):
@@ -103,7 +104,7 @@ class Canvas:
         if not self.validate_response(data):
             return dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
         try:
-            due_date = dateutil.parser.parse(data["due_at"]).astimezone(dateutil.tz.UTC).replace(tzinfo=None)
+            due_date = dateutil.parser.parse(data["due_at"]).astimezone(tzlocal()).replace(tzinfo=None)
         except (TypeError, KeyError):
             self.logger.logger.error(
                 "Type/Key error for due date (probably not specified on elearning platform), using no due date.")
@@ -116,7 +117,7 @@ class Canvas:
         if data["submitted_at"] is None:
             submitted_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
         else:
-            submitted_date = dateutil.parser.parse(data["submitted_at"]).astimezone(dateutil.tz.UTC). \
+            submitted_date = dateutil.parser.parse(data["submitted_at"]).astimezone(tzlocal()). \
                 replace(tzinfo=None)
         try:
             obj = Users.get(Users.user_id == data["user_id"])

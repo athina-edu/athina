@@ -6,6 +6,7 @@ import mosspy
 from athina.users import *
 from athina.url import *
 from datetime import timedelta
+from dateutil.tz import tzlocal
 
 
 def plagiarism_checks_on_users(logger, configuration, e_learning):
@@ -14,7 +15,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
     users_graded = [user_object.user_id for user_object in Users.select()
                     if user_object.plagiarism_to_grade is True and
                     user_object.last_plagiarism_check + timedelta(hours=23) <=
-                    datetime.now(timezone.utc).replace(tzinfo=None)]
+                    datetime.now(tzlocal()).replace(tzinfo=None)]
     logger.logger.info("Checking for plagiarism...")
     logger.logger.debug(users_graded)
 
@@ -61,7 +62,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
             logger.logger.info("> Submitted similarity results for %s: %s/%s" % (
                 user_id, user_max_value, mean_similarity))
             obj = Users.get(Users.user_id == user_id)
-            obj.last_plagiarism_check = datetime.now(timezone.utc).replace(tzinfo=None)
+            obj.last_plagiarism_check = datetime.now(tzlocal()).replace(tzinfo=None)
             obj.moss_max = user_max_value
             obj.moss_average = mean_similarity
             obj.save()

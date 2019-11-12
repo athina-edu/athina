@@ -1,5 +1,6 @@
 from athina.tester.firejail import *
 from datetime import timedelta, datetime, timezone
+from dateutil.tz import tzlocal
 from athina.tester.docker import *
 from athina.users import *
 from random import uniform
@@ -63,7 +64,7 @@ class Tester:
 
     def update_user_db(self, user_object, commit_date_being_tested):
         user_object.plagiarism_to_grade = True
-        user_object.last_graded = datetime.now(timezone.utc).replace(tzinfo=None)
+        user_object.last_graded = datetime.now(tzlocal()).replace(tzinfo=None)
 
         # Update commit date on record
         if self.configuration.no_repo is False:
@@ -84,11 +85,11 @@ class Tester:
     def tester_is_inactive(self, user_id):
         user_object = Users.get(Users.user_id == user_id)
         return user_object.tester_active is False or (
-        user_object.tester_date + timedelta(hours=1) <= datetime.now(timezone.utc).replace(tzinfo=None))
+        user_object.tester_date + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None))
 
     def tester_lock(self, user_id):
         user_object = Users.get(Users.user_id == user_id)
-        Users.update(tester_active=True, tester_date=datetime.now(timezone.utc).replace(tzinfo=None)).where(
+        Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
             Users.repository_url == user_object.repository_url).execute()
 
     def tester_unlock(self, user_id):
@@ -144,14 +145,15 @@ class Tester:
             # If we cannot read a git log time then something is wrong with the repo or it is a nonrepo assignment
             commit_date_being_tested = datetime(1, 1, 1, 0, 0)
 
-        self.logger.logger.debug("Verifying: changed_state - %r, url_date - %s" % (user_object.changed_state, user_object.url_date))
+        self.logger.logger.debug("Verifying: changed_state - %r, url_date - %s" % (user_object.changed_state,
+                                                                                   user_object.url_date))
         repo_mode_conditions = (user_object.changed_state and
                                 user_object.url_date < self.configuration.due_date and
                                 commit_date_being_tested < self.configuration.due_date and
                                 user_object.same_url_flag is not True)
         no_repo_mode_conditions = (self.configuration.no_repo is True and user_object.last_graded +
                                    timedelta(hours=self.configuration.grade_update_frequency) <=
-                                   datetime.now(timezone.utc).replace(tzinfo=None))
+                                   datetime.now(tzlocal()).replace(tzinfo=None))
 
         if user_object.force_test or repo_mode_conditions or forced_testing or no_repo_mode_conditions:
             self.logger.logger.info(">> Testing")
@@ -240,7 +242,7 @@ class Tester:
 
         if self.configuration.pass_extra_params is True:
             self.configuration.extra_params = [user_object.secondary_id,
-                                               self.configuration.due_date.astimezone(timezone.utc).isoformat()]
+                                               self.configuration.due_date.astimezone(tzlocal()).isoformat()]
         else:
             self.configuration.extra_params = [self.configuration.athina_student_code_dir,
                                                self.configuration.athina_test_tmp_dir]
