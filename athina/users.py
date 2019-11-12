@@ -92,6 +92,7 @@ class Database:
         except IndexError:
             return True  # If the database is empty, this is a normal error
 
+    # TODO: Technically this is a tester item, not part of db function
     @staticmethod
     def check_duplicate_url(same_url_limit=1):
         """Checks if there are duplicate urls submitted.
