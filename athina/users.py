@@ -6,6 +6,7 @@ import os
 import peewee
 import time
 import sqlite3
+import re
 
 
 # Overriding peewee's execute to account for database locks and wait until other processes finish.
@@ -94,21 +95,23 @@ class Database:
 
     # TODO: Technically this is a tester item, not part of db function
     @staticmethod
-    def check_duplicate_url(same_url_limit=1):
+    def check_duplicate_url(same_url_limit=1, repo_type=".git"):
         """Checks if there are duplicate urls submitted.
 
         @param same_url_limit: number of occurrences to be found to be considered plagiarism
+        @param repo_type: in case there are variants for urls by a repository. Currently only git is supported
         @return: None
         """
         urls = dict()
         for val in Users.select().where(Users.repository_url != ""):
-            if urls.get(val.repository_url, 0) == 0:
-                urls[val.repository_url] = [val.user_id]
+            truncated_url = re.sub(r"(%s)$" % repo_type, "", val.repository_url)
+            if urls.get(truncated_url, 0) == 0:
+                urls[truncated_url] = [val.user_id]
             else:
-                urls[val.repository_url].append(val.user_id)
+                urls[truncated_url].append(val.user_id)
 
-            if len(urls[val.repository_url]) > same_url_limit:
-                for i in urls[val.repository_url]:
+            if len(urls[truncated_url]) > same_url_limit:
+                for i in urls[truncated_url]:
                     obj = Users.get(Users.user_id == i)
                     if obj.same_url_flag is not True:
                         obj.same_url_flag = True
