@@ -1,7 +1,7 @@
 # ATHINA - An autograder, automated feedback microservice
 
 [![Build Status](https://travis-ci.com/athina-edu/athina.svg?branch=master)](https://travis-ci.com/athina-edu/athina)
-[![Build Status Semaphore](https://athina.semaphoreci.com/badges/athina.svg?style=shields)](https://athina.semaphoreci.com/projects/athina)
+[![Build Status Semaphore](https://athina.semaphoreci.com/badges/athina.svg?key=ed440197-2482-4083-aa51-5a6f53213480&style=shields)](https://athina.semaphoreci.com/projects/athina)
 [![](https://images.microbadger.com/badges/image/athinaedu/athina.svg)](https://microbadger.com/images/athinaedu/athina "Get your own image badge on microbadger.com")
 [![](https://images.microbadger.com/badges/version/athinaedu/athina.svg)](https://microbadger.com/images/athinaedu/athina "Get your own version badge on microbadger.com")
 
