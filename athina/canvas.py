@@ -162,6 +162,7 @@ class Canvas:
         payload = {'submission[posted_grade]': grade}
         if comment_text is not None:
             payload['comment[text_comment]'] = comment_text
+            payload['comment[group_comment]'] = 'true'
         if comment_file is not None:
             payload['comment[file_ids][]'] = comment_file
         request_url("%s/assignments/%d/submissions/%d" % (self.base_url, self.configuration.assignment_id, user_id),
