@@ -23,6 +23,14 @@ def docker_build(configuration, logger):
     logger.logger.debug(" ".join(build_statement))
     process = subprocess.Popen(build_statement, cwd="%s/" % configuration.config_dir, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
+
+    try:
+        process.wait(600)  # A build should typically be ready after 10 minutes
+    except subprocess.TimeoutExpired:
+        # Kill container
+        terminate_all_containers()
+        logger.logger.warning("Terminated build container and any others that may be hanging for more than 600 secs")
+
     out, err = process.communicate()
 
     if process.returncode and err:
@@ -74,4 +82,9 @@ def docker_run(test_script, configuration, logger):
 
 def terminate_container(container_name):
     subprocess.Popen(["docker", "stop", "-t", "1", "%s" % container_name],
+                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def terminate_all_containers():
+    subprocess.Popen(["docker", "stop", "$(docker", "ps", "- a", "- q)"],
                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)

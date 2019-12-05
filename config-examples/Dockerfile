@@ -7,8 +7,8 @@ RUN apt update && apt install -y pylint3 bc
 # You can add files to your image to use, e.g., adding a sql file to a database:
 # ADD empsmall.zip .
 
-# If packages require interactive input, use this:
-# ENV DEBIAN_FRONTEND=noninteractive
+# If packages require interactive input, use this (leave it always enabled just in case):
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Athina passes the following ENV parameters to Docker 
 # $TEST (the test that is to run)
