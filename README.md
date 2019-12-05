@@ -8,6 +8,7 @@
 [![codebeat badge](https://codebeat.co/badges/fda271b0-41ae-4835-9e71-2c54855f7402)](https://codebeat.co/projects/github-com-athina-edu-athina-master)
 [![Maintainability](https://api.codeclimate.com/v1/badges/d2fc5713b775535b5273/maintainability)](https://codeclimate.com/github/athina-edu/athina/maintainability)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/d2fc5713b775535b5273/test_coverage)](https://codeclimate.com/github/athina-edu/athina/test_coverage)
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/athina-edu/athina.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/athina-edu/athina/alerts/)
 
 
 
