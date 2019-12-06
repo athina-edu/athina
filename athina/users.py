@@ -8,6 +8,7 @@ import peewee
 import time
 import sqlite3
 import re
+from random import randrange
 
 
 # Overriding peewee's execute to account for database locks and wait until other processes finish.
@@ -30,7 +31,7 @@ def _execute(self, query, commit=peewee.SENTINEL, **context_options):
             if "locked" in str(es):
                 if trial_counter == 50:
                     DB.close()
-                time.sleep(0.2)
+                time.sleep(randrange(0, 100)/100)
                 trial_counter += 1
                 success = False
             else:
