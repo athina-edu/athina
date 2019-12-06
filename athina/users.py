@@ -29,7 +29,7 @@ def _execute(self, query, commit=peewee.SENTINEL, **context_options):
             return self.execute_sql(sql, params, commit=commit)  # derived from original execute func
         except (peewee.OperationalError, sqlite3.OperationalError) as es:
             if "locked" in str(es):
-                if trial_counter == 50:
+                if trial_counter == 100:
                     DB.close()
                 time.sleep(randrange(0, 100)/100)
                 trial_counter += 1
