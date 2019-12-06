@@ -9,7 +9,7 @@
 [![Maintainability](https://api.codeclimate.com/v1/badges/d2fc5713b775535b5273/maintainability)](https://codeclimate.com/github/athina-edu/athina/maintainability)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/d2fc5713b775535b5273/test_coverage)](https://codeclimate.com/github/athina-edu/athina/test_coverage)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/athina-edu/athina.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/athina-edu/athina/alerts/)
-
+[![PyUp.io](https://pyup.io/repos/github/athina-edu/athina/shield.svg?t=1575602005060)](https://pyup.io/)
 
 
 Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 
