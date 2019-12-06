@@ -30,7 +30,7 @@ def _execute(self, query, commit=peewee.SENTINEL, **context_options):
             if "locked" in str(es):
                 if trial_counter == 50:
                     DB.close()
-                time.sleep(0.1)
+                time.sleep(0.2)
                 trial_counter += 1
                 success = False
             else:
