@@ -73,7 +73,12 @@ class Canvas:
             if upload_result["fileid"] != 0:
                 if upload_result["public"] is False:
                     # Submit grade and comment referencing the file that was just uploaded
-                    self.submit_grade_canvas(user_id=user_id, grade=grade, comment_file=upload_result["fileid"])
+                    # FIXME: Canvas does not display the file from the line below two all students in a group
+                    # FIXME: It has a flag that allows comments to display to all members of a group.
+                    # self.submit_grade_canvas(user_id=user_id, grade=grade, comment_file=upload_result["fileid"])
+                    comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
+                                   (self.configuration.canvas_url, upload_result["fileid"])
+                    self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
                 else:
                     comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
                                    (self.configuration.canvas_url, upload_result["fileid"])
