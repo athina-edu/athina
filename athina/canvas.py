@@ -165,6 +165,7 @@ class Canvas:
             payload['comment[group_comment]'] = 'true'
         if comment_file is not None:
             payload['comment[file_ids][]'] = comment_file
+            payload['comment[group_comment]'] = 'true'
         request_url("%s/assignments/%d/submissions/%d" % (self.base_url, self.configuration.assignment_id, user_id),
                     self.authorization_token, payload=payload, method="put", return_type="json")
 
