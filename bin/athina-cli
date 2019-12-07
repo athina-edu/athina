@@ -39,8 +39,6 @@ def parse_command_line():
                         default=False, action='store_true')
     parser.add_argument('-s', '--service', required=False, help='Run Athina as a service',
                         default=False, action='store_true')
-    parser.add_argument('-S', '--simulate', required=False, help='Simulate but never submit grade',
-                        action='store_true', default=False)
     parser.add_argument('-f', '--forced_testing', metavar='[student name]',
                         required=False, help='Force (re)-grading for a student name', type=str)
     parser.add_argument('-r', '--repo_url_testing', metavar='[repository url]', required=False,
@@ -68,7 +66,7 @@ def main():
             LOGGER.logger.error("Cannot connect to URL: %s" % ARGS.json)
             pass
     elif ARGS.config is not None:
-        run_list.append({'directory': ARGS.config, 'simulate': ARGS.simulate})
+        run_list.append({'directory': ARGS.config})
     else:
         raise SyntaxError("You need to provide either --config or --json.")
 
@@ -82,12 +80,6 @@ def main():
             LOGGER.logger.error("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
                                 "missing or incorrect (e.g., no quotes are necessary for strings).")
             continue  # in case a use forgets and gives empty values in their config
-
-        # Obtain simulation parameters and specify log file
-        assert type(run_record['simulate']) is bool, \
-            "Simulate is not properly read. " \
-            "Either the parameter was passed wrong or the code needs fixing."
-        configuration.simulate = run_record['simulate']
 
         # Starting statement
         LOGGER.logger.info("Processing...")
@@ -158,7 +150,6 @@ def core_iteration(configuration, user_data):
                      commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
         LOGGER.set_verbose(True)
         LOGGER.set_debug(True)
-        configuration.simulate = True
         repository.check_repository_changes(1)
         tester.process_student_assignment(1)
         LOGGER.logger.info("Single repository testing completed.")

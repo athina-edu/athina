@@ -185,7 +185,7 @@ class Tester:
             submitted_once = False
             for current_user_id, current_user_object in user_list:
                 # Submit grade
-                if not self.configuration.simulate and self.configuration.grade_publish and\
+                if self.configuration.grade_publish and\
                         ((self.configuration.group_assignment is True and submitted_once is False) or
                          self.configuration.group_assignment is False):
                     self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
@@ -202,15 +202,13 @@ class Tester:
                 current_user_object.last_grade = grade
                 current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") for test
                                                              in test_reports])
-                if not self.configuration.simulate:
-                    current_user_object.save()
+                current_user_object.save()
                 user_object_list.append(current_user_object)
         else:
             self.logger.logger.info(">> No changes or past due date")
             user_object.changed_state = False
 
-            if not self.configuration.simulate:
-                user_object.save()
+            user_object.save()
             user_object_list = [user_object]  # return list of the current object
 
         # Remove the lock on the record

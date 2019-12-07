@@ -11,7 +11,6 @@ class Configuration:
     logger = None
     config_dir = "/tmp/athina_empty"
     config_filename = "test_assignment"
-    simulate = True
     auth_token = ""
     course_id = 1
     assignment_id = 1

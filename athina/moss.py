@@ -53,7 +53,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
             except (RuntimeWarning, IndexError):
                 user_max_value = 0
 
-            if not configuration.simulate and configuration.moss_publish:
+            if configuration.moss_publish:
                 e_learning.submit_comment(user_id,
                                           """Your highest similarity score with another student: %s
                                           The mean similarity score is: %s""" %

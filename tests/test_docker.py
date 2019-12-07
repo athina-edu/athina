@@ -10,7 +10,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
-        configuration.simulate = False
         # Create fake directories
         create_test_config()
         user_data = create_fake_user_db()

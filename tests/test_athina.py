@@ -110,7 +110,6 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
-        configuration.simulate = False
         e_learning = Canvas(configuration, logger)
         user_data = create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)
@@ -275,7 +274,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
-        configuration.simulate = False
         create_test_config()
 
         e_learning = Canvas(configuration, logger)
@@ -322,7 +320,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
-        configuration.simulate = False
         # Create fake directories
         create_test_config("doesntexist")
 
@@ -348,7 +345,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
-        configuration.simulate = False
         # Create fake directories
         create_test_config()
 
@@ -379,7 +375,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
-        configuration.simulate = False
         configuration.test_timeout = 10
         # Create fake directories
         create_test_config("echo 'test'\nsleep 20\necho 80")
@@ -404,7 +399,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
 
         configuration.use_docker = True
-        configuration.simulate = False
         configuration.test_timeout = 10
         # Create fake directories
         create_test_config("echo 'test'\nsleep 20\necho 80")
