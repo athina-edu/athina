@@ -17,7 +17,7 @@ def docker_build(configuration, logger):
         return False
     update_key_in_assignment_data("repo_commit", repo_commit)
 
-    build_statement = ["docker", "build", "--no-cache", "-t", "%s" % __generate_hash(configuration.config_dir),
+    build_statement = ["docker", "build", "-t", "%s" % __generate_hash(configuration.config_dir),
                        "-f", "Dockerfile", "."]
     # Building the image. This is built once and then things are much faster but the check needs to happen
     logger.logger.debug(" ".join(build_statement))
