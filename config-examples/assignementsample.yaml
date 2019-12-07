@@ -67,6 +67,9 @@ git_url: www.github.com
 git_username: 0
 git_password: 0
 
+# Is this a group assignment?
+group_assignment: false
+
 # The following can allow the same git url to be submitted by two or more students in cases of group assignments
 # value of 1 means individual assignments
 same_url_limit: 1

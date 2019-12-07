@@ -26,6 +26,7 @@ class Configuration:
     check_plagiarism_hour = 1
     git_username = "test"
     git_password = "test"
+    group_assignment = False
     same_url_limit = 1
     submit_results_as_file = True
     max_file_size = 1024
@@ -130,6 +131,7 @@ class Configuration:
 
         self.load_value(config, 'git_username', self.git_username)
         self.load_value(config, 'git_password', self.git_password)
+        self.load_value(config, 'group_assignment', self.group_assignment)
         self.load_value(config, 'same_url_limit', self.same_url_limit)
         self.load_value(config, 'check_plagiarism_hour', self.check_plagiarism_hour)
         self.load_value(config, 'submit_results_as_file', self.submit_results_as_file)

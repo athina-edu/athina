@@ -182,11 +182,15 @@ class Tester:
             user_object_list = []  # Return object for multiple user_objects (important for parallel - testing)
 
             # Submitting grades for as many students that share the repository url (depending on how many are permitted)
+            submitted_once = False
             for current_user_id, current_user_object in user_list:
                 # Submit grade
-                if not self.configuration.simulate and self.configuration.grade_publish:
+                if not self.configuration.simulate and self.configuration.grade_publish and\
+                        ((self.configuration.group_assignment is True and submitted_once is False) or
+                         self.configuration.group_assignment is False):
                     self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
                                                  test_reports=test_reports)
+                    submitted_once = True
                 else:  # print instead
                     for text in test_reports:
                         self.logger.logger.info(text.decode("utf-8", "backslashreplace"))
