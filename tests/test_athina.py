@@ -184,7 +184,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
 
         # Previous user corrects and submits and actual good url
-        obj = Users[5]
+        obj = return_a_student(1, 1, 5)
         obj.repository_url = "https://github.com/git-persistence/git-persistence/"
         obj.url_date = datetime.now(timezone.utc).replace(tzinfo=None)
         obj.new_url = True
@@ -196,8 +196,8 @@ class TestFunctions(unittest.TestCase):
         last_graded = user_object[0].last_graded
 
         # User 5 submit commit after the due date
-        configuration.due_date = Users[5].commit_date - timedelta(hours=24)
-        obj = Users[5]
+        configuration.due_date = return_a_student(1, 1, 5).commit_date - timedelta(hours=24)
+        obj = return_a_student(1, 1, 5)
         obj.changed_state = True
         obj.save()
         user_object = tester.process_student_assignment(5)
@@ -206,7 +206,7 @@ class TestFunctions(unittest.TestCase):
         # Briefly remove due date enforcement
         # Technically enforce_due_date only moves the due date to some extreme future date
         configuration.due_date = datetime.now(timezone.utc).replace(tzinfo=None)
-        obj = Users[5]
+        obj = return_a_student(1, 1, 5)
         obj.changed_state = True
         obj.save()
         user_object = tester.process_student_assignment(5)
@@ -230,7 +230,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object[0].last_graded, last_graded)
 
         # Enough time goes buy
-        obj = Users[7]
+        obj = return_a_student(1, 1, 7)
         obj.last_graded = obj.last_graded - timedelta(hours=24)
         obj.save()
         user_object = tester.process_student_assignment(7)

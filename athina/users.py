@@ -79,15 +79,17 @@ class Database:
 
     # TODO: Technically this is a tester item, not part of db function
     @staticmethod
-    def check_duplicate_url(same_url_limit=1, repo_type=".git"):
+    def check_duplicate_url(same_url_limit=1, repo_type=".git", course_id=1, assignment_id=1):
         """Checks if there are duplicate urls submitted.
 
-        @param same_url_limit: number of occurrences to be found to be considered plagiarism
-        @param repo_type: in case there are variants for urls by a repository. Currently only git is supported
-        @return: None
+        :param same_url_limit: number of occurrences to be found to be considered plagiarism
+        :param repo_type: in case there are variants for urls by a repository. Currently only git is supported
+        :param course_id: course id
+        :param assignment_id: assignment id
+        :return: None
         """
         urls = dict()
-        for val in Users.select().where(Users.repository_url != ""):
+        for val in return_all_students(course_id, assignment_id).where(Users.repository_url != ""):
             truncated_url = re.sub(r"(%s)$" % repo_type, "", val.repository_url)
             if urls.get(truncated_url, 0) == 0:
                 urls[truncated_url] = [val.user_id]
@@ -96,7 +98,7 @@ class Database:
 
             if len(urls[truncated_url]) > same_url_limit:
                 for i in urls[truncated_url]:
-                    obj = Users.get(Users.user_id == i)
+                    obj = return_a_student(course_id, assignment_id, i)
                     if obj.same_url_flag is not True:
                         obj.same_url_flag = True
                         obj.save()
@@ -157,18 +159,29 @@ class AssignmentData(BaseModel):
         primary_key = peewee.CompositeKey('key', 'course_id', 'assignment_id')
 
 
-def update_key_in_assignment_data(key, value):
+def update_key_in_assignment_data(course_id, assignment_id, key, value):
     try:
-        obj = AssignmentData.get(AssignmentData.key == key)
+        obj = AssignmentData.get(AssignmentData.key == key, AssignmentData.course_id == course_id,
+                                 AssignmentData.assignment_id == assignment_id)
         obj.value = value
         obj.save()
     except AssignmentData.DoesNotExist:
         AssignmentData.create(key=key, value=value)
 
 
-def load_key_from_assignment_data(key):
+def load_key_from_assignment_data(course_id, assignment_id, key):
     try:
-        obj = AssignmentData.get(AssignmentData.key == key)
+        obj = AssignmentData.get(AssignmentData.key == key, AssignmentData.course_id == course_id,
+                                 AssignmentData.assignment_id == assignment_id)
         return obj.value
     except AssignmentData.DoesNotExist:
         return None
+
+
+def return_all_students(course_id, assignment_id):
+    return Users.select().where(Users.course_id == course_id, Users.assignment_id == assignment_id)
+
+
+def return_a_student(course_id, assignment_id, user_id):
+    return Users.get(Users.course_id == course_id, Users.assignment_id == assignment_id,
+                                Users.user_id == user_id)

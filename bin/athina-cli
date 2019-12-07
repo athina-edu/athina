@@ -84,7 +84,7 @@ def main():
         # Starting statement
         LOGGER.logger.info("Processing...")
 
-        user_data = Database("%s/%s.sqlite3" % (configuration.config_dir, configuration.assignment_id), logger=LOGGER)
+        user_data = Database(logger=LOGGER)
 
         try:
             core_iteration(configuration, user_data)
@@ -107,7 +107,8 @@ def core_iteration(configuration, user_data):
         LOGGER.logger.debug("Retrieved!")
 
         # Getting additional information from e-learning platform
-        if len(Users.select()) > 0 and e_learning.needs_update:  # this helps reduce API calls
+        if len(return_all_students(configuration.course_id, configuration.assignment_id)) > 0 and \
+                e_learning.needs_update:  # this helps reduce API calls
             LOGGER.logger.debug("Retrieving user info from elearning platform...")
             user_data = e_learning.get_additional_user_info(user_data)
             LOGGER.logger.debug("Retrieved!")
@@ -117,9 +118,11 @@ def core_iteration(configuration, user_data):
                 configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
             e_learning.update_last_update()
         # Check if more than N times the same URL in usrdb
-        elif len(Users.select()) > 0:
+        elif len(return_all_students(configuration.course_id, configuration.assignment_id)) > 0:
             LOGGER.logger.debug("Checking for duplicate urls...")
-            user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit)
+            user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit,
+                                          course_id=configuration.course_id,
+                                          assignment_id=configuration.assignment_id)
             LOGGER.logger.debug("Checked!")
 
     # Build Repository Object
@@ -139,11 +142,13 @@ def core_iteration(configuration, user_data):
         # Creating tmp user and simulating the test for the provided repository
         LOGGER.logger.debug("TEST")
         try:
-            obj = Users[1]
+            obj = return_a_student(configuration.course_id, configuration.assignment_id, 1)
             obj.delete_instance()
         except Users.DoesNotExist:
             pass
         Users.create(user_id=1,
+                     course_id=1,
+                     assignment_id=1,
                      repository_url=ARGS.repo_url_testing,
                      url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
                      new_url=True,
