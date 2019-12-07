@@ -116,7 +116,7 @@ class TestFunctions(unittest.TestCase):
         filename = "user_data.sqlite3"
         if os.path.isfile(filename):
             os.remove(filename)
-        user_data = Database(db_filename=filename)
+        user_data = Database(db_name=filename)
 
         logger = Logger()
         configuration = Configuration(logger=logger)

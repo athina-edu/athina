@@ -307,7 +307,7 @@ class Tester:
             self.logger.logger.error("Database connection closed. Cannot iterate through database records."
                                      "Skipping this round of checks."
                                      "This should be resolved in the next round of checks")
-            self.configuration.db_filename = self.user_data.db_filename
+            self.configuration.db_filename = self.user_data.db_name
             del self.user_data
             self.user_data = Database(self.configuration.db_filename)
             return None
@@ -327,7 +327,7 @@ class Tester:
     def spawn_worker(self, user_ids):
         # For parallel/threaded runs database objects have to be dropped (they cannot be pickled)
         # Same for logger
-        self.configuration.db_filename = self.user_data.db_filename
+        self.configuration.db_filename = self.user_data.db_name
         del self.user_data
         self.logger.delete_logger()
 

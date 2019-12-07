@@ -5,82 +5,63 @@ from datetime import datetime
 from dateutil.tz import tzlocal
 import os
 import peewee
-import time
-import sqlite3
 import re
-from random import randrange
-
-
-# Overriding peewee's execute to account for database locks and wait until other processes finish.
-# This is the cleanest patchy solution. Lines of code from peewee are flagged
-# There are alternative solutions such as using sqlite3 WAL (partially solves the problem for concurrent read-write)
-# Other alternatives:
-# from playhouse.sqliteq import SqliteQueueDatabase
-# import playhouse.apsw_ext as apsw_ext
-# APSW is supposedly portable across threads but it doesn't work with map
-# It may however internally handle lock issues.
-def _execute(self, query, commit=peewee.SENTINEL, **context_options):
-    success = False
-    trial_counter = 0
-    while success is False:
-        try:
-            ctx = self.get_sql_context(**context_options)  # derived from original execute func
-            sql, params = ctx.sql(query).query()  # derived from original execute func
-            return self.execute_sql(sql, params, commit=commit)  # derived from original execute func
-        except (peewee.OperationalError, sqlite3.OperationalError) as es:
-            if "locked" in str(es):
-                if trial_counter == 100:
-                    DB.close()
-                time.sleep(randrange(0, 100)/100)
-                trial_counter += 1
-                success = False
-            else:
-                raise peewee.OperationalError
-
-
-peewee.Database.execute = _execute  # overriding peewee execute
-
+import pymysql
 
 # Global database object
-DB = peewee.SqliteDatabase(None)
+DB = peewee.MySQLDatabase(None)
+ATHINA_MYSQL_HOST = os.environ['ATHINA_MYSQL_HOST']
+ATHINA_MYSQL_PORT = os.environ['ATHINA_MYSQL_PORT']
+ATHINA_MYSQL_USERNAME = os.environ['ATHINA_MYSQL_USERNAME']
+ATHINA_MYSQL_PASSWORD = os.environ['ATHINA_MYSQL_PASSWORD']
 
 
 class Database:
     db = None
     same_url_limit = 1  # Defines how many same urls are allowed, e.g., in cases of group projects this may be 2
     logger = None
-    db_filename = None
 
-    def __init__(self, db_filename='database.sqlite3', logger=None):
+    def __init__(self, logger=None):
         self.db = DB
-        self.db_filename = db_filename
         self.logger = logger
 
         if self.logger is not None:
-            self.logger.logger.debug("Connecting to db file: %s" % db_filename)
+            self.logger.logger.debug("Connecting to mysql on %s:%d" % (ATHINA_MYSQL_HOST, ATHINA_MYSQL_PORT))
 
-        self.connect_to_db(self.db_filename)
+        self.connect_to_db()
         if not self.database_is_healthy:
             if self.logger is not None:
                 self.logger.logger.error("Warning: Cannot load db. Starting from scratch.")
             self.close_db()
-            os.remove(self.db_filename)
-            self.connect_to_db(self.db_filename)
-
-        os.chmod(db_filename, 0o666)
+            self.reset_database()
+            self.connect_to_db()
 
     def __del__(self):
         self.close_db()
 
-    @staticmethod
-    def connect_to_db(db):
-        DB.init(db)
-        DB.connect()
+    def connect_to_db(self):
+        DB.init("athina", user=ATHINA_MYSQL_USERNAME, password=ATHINA_MYSQL_PASSWORD, host=ATHINA_MYSQL_HOST,
+                port=int(ATHINA_MYSQL_PORT))
+        try:
+            DB.connect()
+        except peewee.InternalError as error:
+            if error.args[0] == 1049:
+                # Create the database first (which outside peewee's capabilities
+                self.reset_database()
+                DB.connect()
         DB.create_tables([Users, AssignmentData])
 
     @staticmethod
     def close_db():
         DB.close()
+
+    @staticmethod
+    def reset_database():
+        conn = pymysql.connect(host=ATHINA_MYSQL_HOST, user=ATHINA_MYSQL_USERNAME,
+                               password=ATHINA_MYSQL_PASSWORD, port=int(ATHINA_MYSQL_PORT))
+        conn.cursor().execute('DROP DATABASE IF EXISTS athina')
+        conn.cursor().execute('CREATE DATABASE athina')
+        conn.close()
 
     @property
     def database_is_healthy(self):
@@ -91,6 +72,7 @@ class Database:
         except peewee.OperationalError:
             # Database specifications have changed (e.g., newer athina version)
             # delete old sql file and start a new
+            exit(1)
             return False
         except IndexError:
             return True  # If the database is empty, this is a normal error
@@ -134,8 +116,9 @@ class Users(BaseModel):
     The class containing local information obtained through canvas about each user, assignment status, last commit,
     plagiarism status and other important information for ATHINA to function.
     """
-    user_id = peewee.BigIntegerField(primary_key=True)
-    course_id = peewee.BigIntegerField(default=0)
+    user_id = peewee.BigIntegerField()
+    course_id = peewee.BigIntegerField()
+    assignment_id = peewee.BigIntegerField()
     user_fullname = peewee.TextField(default="")
     secondary_id = peewee.TextField(default="")
     repository_url = peewee.TextField(default="", null=True)
@@ -155,13 +138,23 @@ class Users(BaseModel):
     tester_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))
     force_test = peewee.BooleanField(default=False)
 
+    class Meta:
+        db_table = 'users'
+        primary_key = peewee.CompositeKey('user_id', 'course_id', 'assignment_id')
+
 
 class AssignmentData(BaseModel):
     """
     Key-value database to store extra assignment info
     """
-    key = peewee.TextField(primary_key=True)
+    course_id = peewee.BigIntegerField()
+    assignment_id = peewee.BigIntegerField()
+    key = peewee.CharField(max_length=255)
     value = peewee.TextField(default="", null=True)
+
+    class Meta:
+        db_table = 'assignmentdata'
+        primary_key = peewee.CompositeKey('key', 'course_id', 'assignment_id')
 
 
 def update_key_in_assignment_data(key, value):
