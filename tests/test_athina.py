@@ -3,13 +3,13 @@ import os
 import shutil
 import multiprocessing
 import unittest
-if os.environ['ATHINA_MYSQL_HOST'] is None:
+if os.environ.get('ATHINA_MYSQL_HOST', 0) == 0:
     os.environ['ATHINA_MYSQL_HOST'] = 'localhost'
-if os.environ['ATHINA_MYSQL_PORT'] is None:
+if os.environ.get('ATHINA_MYSQL_PORT', 0) == 0:
     os.environ['ATHINA_MYSQL_PORT'] = '3306'
-if os.environ['ATHINA_MYSQL_USERNAME'] is None:
+if os.environ.get('ATHINA_MYSQL_USERNAME', 0) == 0:
     os.environ['ATHINA_MYSQL_USERNAME'] = 'athina'
-if os.environ['ATHINA_MYSQL_PASSWORD'] is None:
+if os.environ.get('ATHINA_MYSQL_PASSWORD', 0) == 0:
     os.environ['ATHINA_MYSQL_PASSWORD'] = 'password'
 
 from athina.logger import *
