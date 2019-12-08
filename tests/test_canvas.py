@@ -1,5 +1,6 @@
 # TODO: get_additional_user_info() test
 
+from tests.test_athina import create_test_config, create_logger, create_fake_user_db
 import unittest
 from athina.canvas import *
 from athina.logger import *
@@ -113,10 +114,8 @@ class TestFunctions(unittest.TestCase):
 	}]
 }]"""
 
-        filename = "user_data.sqlite3"
-        if os.path.isfile(filename):
-            os.remove(filename)
-        user_data = Database(db_name=filename)
+        create_test_config()
+        user_data = create_fake_user_db()
 
         logger = Logger()
         configuration = Configuration(logger=logger)

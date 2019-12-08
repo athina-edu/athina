@@ -121,7 +121,7 @@ class Tester:
             self.logger.create_logger()
 
         # Acquire DB connection if missing (e.g., parallel run)
-        self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
+        self.user_data = Database() if self.user_data is None else self.user_data
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
 
         # Make sure another fork for the same user is not active
@@ -316,7 +316,7 @@ class Tester:
                                      "This should be resolved in the next round of checks")
             self.configuration.db_filename = self.user_data.db_name
             del self.user_data
-            self.user_data = Database(self.configuration.db_filename)
+            self.user_data = Database()
             return None
 
         processing_list = [[user.user_id, user] for user in
@@ -335,7 +335,6 @@ class Tester:
     def spawn_worker(self, user_ids):
         # For parallel/threaded runs database objects have to be dropped (they cannot be pickled)
         # Same for logger
-        self.configuration.db_filename = self.user_data.db_name
         del self.user_data
         self.logger.delete_logger()
 
@@ -349,5 +348,5 @@ class Tester:
                 os._exit(0)  # Terminating the child (pytest compatible)
 
         self.logger.create_logger()
-        self.user_data = Database(self.configuration.db_filename)
+        self.user_data = Database()
 

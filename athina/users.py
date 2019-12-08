@@ -166,7 +166,7 @@ def update_key_in_assignment_data(course_id, assignment_id, key, value):
         obj.value = value
         obj.save()
     except AssignmentData.DoesNotExist:
-        AssignmentData.create(key=key, value=value)
+        AssignmentData.create(key=key, value=value, assignment_id=assignment_id, course_id=course_id)
 
 
 def load_key_from_assignment_data(course_id, assignment_id, key):
