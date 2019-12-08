@@ -18,15 +18,15 @@ blocks:
           - mysql -h 127.0.0.1 -P 3306 -u root -e "CREATE USER 'athina'@'localhost' IDENTIFIED BY 'password'; GRANT ALL PRIVILEGES ON *.* TO 'athina'@'localhost';"
       env_vars:
         - name: APP_ENV
-          value: prod
+          value: 'prod'
         - name: ATHINA_MYSQL_HOST
-          value: 127.0.0.1
+          value: '127.0.0.1'
         - name: ATHINA_MYSQL_PORT
-          value: 3306
+          value: '3306'
         - name: ATHINA_MYSQL_USERNAME
-          value: athina
+          value: 'athina'
         - name: ATHINA_MYSQL_PASSWORD
-          value: password
+          value: 'password'
       jobs:
       - name: Execute python tests
         commands:
