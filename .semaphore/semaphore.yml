@@ -20,7 +20,7 @@ blocks:
         - name: APP_ENV
           value: "prod"
         - name: ATHINA_MYSQL_HOST
-          value: "127.0.0.1"
+          value: "localhost"
         - name: ATHINA_MYSQL_PORT
           value: "3306"
         - name: ATHINA_MYSQL_USERNAME

@@ -59,6 +59,7 @@ class Database:
     def reset_database():
         conn = pymysql.connect(host=ATHINA_MYSQL_HOST, user=ATHINA_MYSQL_USERNAME,
                                password=ATHINA_MYSQL_PASSWORD, port=int(ATHINA_MYSQL_PORT))
+        print(ATHINA_MYSQL_USERNAME+" "+ATHINA_MYSQL_HOST+" "+ATHINA_MYSQL_PORT)
         conn.cursor().execute('DROP DATABASE IF EXISTS athina')
         conn.cursor().execute('CREATE DATABASE athina')
         conn.close()
