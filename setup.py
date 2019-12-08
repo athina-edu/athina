@@ -1,5 +1,9 @@
 from setuptools import setup, find_packages
 
+# This is the main versioning and package dependency file. Pipeenv and requirements.txt are there for providing
+# compatibility with other components (e.g., pyup.io tracks only using requirements and check when a vulnerability
+# exists for a package that may have become outdated in some dockerized build).
+
 setup(
     name='athina',
     version='0.97',
