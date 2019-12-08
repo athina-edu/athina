@@ -1,0 +1,23 @@
+-i https://pypi.org/simple
+-e .
+beautifulsoup4==4.8.1
+certifi==2019.11.28
+chardet==3.0.4
+filelock==3.0.12
+gitdb2==2.0.6
+gitpython==3.0.5
+idna==2.8
+lxml==4.4.2
+mosspy==1.0.8
+np==1.0.2
+numpy==1.17.4
+peewee==3.13.1
+psutil==5.6.7
+pymysql==0.9.3
+python-dateutil==2.8.1
+pyyaml==5.2
+requests==2.22.0
+six==1.13.0
+smmap2==2.0.5
+soupsieve==1.9.5
+urllib3==1.25.7
