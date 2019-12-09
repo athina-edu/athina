@@ -42,7 +42,6 @@ class Database:
     def connect_to_db(self):
         DB.init("athina", user=ATHINA_MYSQL_USERNAME, password=ATHINA_MYSQL_PASSWORD, host=ATHINA_MYSQL_HOST,
                 port=int(ATHINA_MYSQL_PORT))
-        print(ATHINA_MYSQL_USERNAME + " " + ATHINA_MYSQL_HOST + " " + ATHINA_MYSQL_PORT)
         try:
             DB.connect()
         except peewee.InternalError as error:
@@ -75,6 +74,11 @@ class Database:
             # delete old sql file and start a new
             exit(1)
             return False
+        except peewee.InternalError as error:
+            if error.args[0] == 1054:  # Database fields have changed
+                # Create the database first (which outside peewee's capabilities
+                self.reset_database()
+                DB.connect()
         except IndexError:
             return True  # If the database is empty, this is a normal error
 
@@ -152,29 +156,29 @@ class AssignmentData(BaseModel):
     """
     course_id = peewee.BigIntegerField()
     assignment_id = peewee.BigIntegerField()
-    key = peewee.CharField(max_length=255)
-    value = peewee.TextField(default="", null=True)
+    variable = peewee.CharField(max_length=255)
+    variable_value = peewee.TextField(default="", null=True)
 
     class Meta:
         db_table = 'assignmentdata'
-        primary_key = peewee.CompositeKey('key', 'course_id', 'assignment_id')
+        primary_key = peewee.CompositeKey('variable', 'course_id', 'assignment_id')
 
 
-def update_key_in_assignment_data(course_id, assignment_id, key, value):
+def update_key_in_assignment_data(course_id, assignment_id, variable, variable_value):
     try:
-        obj = AssignmentData.get(AssignmentData.key == key, AssignmentData.course_id == course_id,
+        obj = AssignmentData.get(AssignmentData.variable == variable, AssignmentData.course_id == course_id,
                                  AssignmentData.assignment_id == assignment_id)
-        obj.value = value
+        obj.variable_value = variable_value
         obj.save()
     except AssignmentData.DoesNotExist:
-        AssignmentData.create(key=key, value=value, assignment_id=assignment_id, course_id=course_id)
+        AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id, course_id=course_id)
 
 
-def load_key_from_assignment_data(course_id, assignment_id, key):
+def load_key_from_assignment_data(course_id, assignment_id, variable):
     try:
-        obj = AssignmentData.get(AssignmentData.key == key, AssignmentData.course_id == course_id,
+        obj = AssignmentData.get(AssignmentData.variable == variable, AssignmentData.course_id == course_id,
                                  AssignmentData.assignment_id == assignment_id)
-        return obj.value
+        return obj.variable_value
     except AssignmentData.DoesNotExist:
         return None
 
