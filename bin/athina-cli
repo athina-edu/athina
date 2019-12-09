@@ -86,10 +86,10 @@ def main():
 
         user_data = Database(logger=LOGGER)
 
-        try:
-            core_iteration(configuration, user_data)
-        except sqlite3.ProgrammingError:  # database lock usually, resolves after a new connection is initiated
-            pass
+        #try:
+        core_iteration(configuration, user_data)
+        #except sqlite3.ProgrammingError:  # database lock usually, resolves after a new connection is initiated
+        #    pass
 
         del user_data
         del configuration

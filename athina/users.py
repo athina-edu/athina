@@ -26,7 +26,7 @@ class Database:
         self.logger = logger
 
         if self.logger is not None:
-            self.logger.logger.debug("Connecting to mysql on %s:%d" % (ATHINA_MYSQL_HOST, ATHINA_MYSQL_PORT))
+            self.logger.logger.debug("Connecting to mysql on %s:%s" % (ATHINA_MYSQL_HOST, ATHINA_MYSQL_PORT))
 
         self.connect_to_db()
         if not self.database_is_healthy:
