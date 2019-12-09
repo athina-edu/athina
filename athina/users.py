@@ -8,6 +8,9 @@ import peewee
 import re
 import pymysql
 
+__all__ = ('Database', 'Users', 'AssignmentData', "update_key_in_assignment_data", "load_key_from_assignment_data",
+           "return_all_students", "return_a_student")
+
 # Global database object
 DB = peewee.MySQLDatabase(None)
 ATHINA_MYSQL_HOST = os.environ['ATHINA_MYSQL_HOST']
