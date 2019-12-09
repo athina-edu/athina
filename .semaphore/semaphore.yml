@@ -10,13 +10,23 @@ blocks:
       prologue:
         commands:
           - sem-version python 3.7
+          - sem-service start mysql
           - sudo apt-get install -y firejail git 
           - checkout
           - pip install --upgrade pip
           - pip install .
+          - mysql -h 127.0.0.1 -P 3306 -u root -e "CREATE USER 'athina'@'127.0.0.1' IDENTIFIED BY 'password'; GRANT ALL PRIVILEGES ON *.* TO 'athina'@'127.0.0.1';"
       env_vars:
         - name: APP_ENV
-          value: prod
+          value: "prod"
+        - name: ATHINA_MYSQL_HOST
+          value: "127.0.0.1"
+        - name: ATHINA_MYSQL_PORT
+          value: "3306"
+        - name: ATHINA_MYSQL_USERNAME
+          value: "athina"
+        - name: ATHINA_MYSQL_PASSWORD
+          value: "password"
       jobs:
       - name: Execute python tests
         commands:

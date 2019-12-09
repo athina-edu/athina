@@ -12,10 +12,12 @@ def __generate_hash(string):
 
 def docker_build(configuration, logger):
     repo_commit = get_repo_commit(configuration.config_dir)
-    if repo_commit == load_key_from_assignment_data("repo_commit"):
+    if repo_commit == load_key_from_assignment_data(configuration.course_id,
+                                                    configuration.assignment_id,
+                                                    "repo_commit"):
         logger.logger.info("No changes in the repository, will not re-build dockerfile.")
         return False
-    update_key_in_assignment_data("repo_commit", repo_commit)
+    update_key_in_assignment_data(configuration.course_id, configuration.assignment_id, "repo_commit", repo_commit)
 
     build_statement = ["docker", "build", "-t", "%s" % __generate_hash(configuration.config_dir),
                        "-f", "Dockerfile", "."]

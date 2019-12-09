@@ -19,21 +19,29 @@ class Canvas:
         self.get_last_updated()
 
     def get_last_updated(self):
-        last_update = load_key_from_assignment_data("last_update")
+        last_update = load_key_from_assignment_data(self.configuration.course_id,
+                                                    self.configuration.assignment_id,
+                                                    "last_update")
         if last_update is not None:
             self.last_update = dateutil.parser.parse(last_update)
         else:
             self.last_update = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
 
-        due_date = load_key_from_assignment_data("due_date")
+        due_date = load_key_from_assignment_data(self.configuration.course_id,
+                                                 self.configuration.assignment_id,
+                                                 "due_date")
         if due_date is not None:
             self.configuration.due_date = dateutil.parser.parse(due_date)
         else:
             self.configuration.due_date = datetime(2050, 1, 1, 0, 0).replace(tzinfo=None)
 
     def update_last_update(self):
-        update_key_in_assignment_data("last_update", datetime.now(tzlocal()).replace(tzinfo=None).isoformat())
-        update_key_in_assignment_data("due_date", self.configuration.due_date.isoformat())
+        update_key_in_assignment_data(self.configuration.course_id,
+                                      self.configuration.assignment_id,
+                                      "last_update", datetime.now(tzlocal()).replace(tzinfo=None).isoformat())
+        update_key_in_assignment_data(self.configuration.course_id,
+                                      self.configuration.assignment_id,
+                                      "due_date", self.configuration.due_date.isoformat())
 
     @property
     def needs_update(self):
@@ -117,19 +125,20 @@ class Canvas:
 
         return due_date
 
-    @staticmethod
-    def parse_canvas_submissions(data):
+    def parse_canvas_submissions(self, data):
         if data["submitted_at"] is None:
             submitted_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
         else:
             submitted_date = dateutil.parser.parse(data["submitted_at"]).astimezone(tzlocal()). \
                 replace(tzinfo=None)
         try:
-            obj = Users.get(Users.user_id == data["user_id"])
+            obj = return_a_student(self.configuration.course_id, self.configuration.assignment_id, data["user_id"])
         except Users.DoesNotExist:
             obj = 0
         if obj == 0:
             Users.create(user_id=data["user_id"],
+                         course_id=self.configuration.course_id,
+                         assignment_id=self.configuration.assignment_id,
                          repository_url=data["url"],
                          url_date=submitted_date,
                          new_url=True,
@@ -209,7 +218,7 @@ class Canvas:
             return users
         for record in data:
             try:
-                obj = Users.get(Users.user_id == record["id"])
+                obj = return_a_student(self.configuration.course_id, self.configuration.assignment_id, record["id"])
             except (KeyError, Users.DoesNotExist):
                 continue
             if obj.secondary_id != record["login_id"] or obj.user_fullname != record["name"]:

@@ -26,7 +26,7 @@ class TestFunctions(unittest.TestCase):
         filename = "tests/user_data.sqlite3"
         if os.path.isfile(filename):
             os.remove(filename)
-        user_data = Database(db_filename=filename)
+        user_data = Database(db_name=filename)
         logger = self.create_logger()
         x = Plagiarism(logger=logger,
                        service_type="moss",

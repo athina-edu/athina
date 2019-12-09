@@ -76,7 +76,7 @@ class Repository:
             return None
 
     def check_repository_changes(self, user_id):
-        user_values = Users.get(user_id)
+        user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         changed_state = False
 
         # If nothing has been submitted no point in testing

@@ -64,7 +64,7 @@ class Tester:
 
     def update_user_db(self, user_object, commit_date_being_tested):
         user_object.plagiarism_to_grade = True
-        user_object.last_graded = datetime.now(tzlocal()).replace(tzinfo=None)
+        user_object.last_graded = datetime.now(tzlocal()).replace(tzinfo=None).replace(microsecond=0)
 
         # Update commit date on record
         if self.configuration.no_repo is False:
@@ -83,18 +83,25 @@ class Tester:
             self.logger.logger.error("Could not copy %s to %s" % (source, destination))
 
     def tester_is_inactive(self, user_id):
-        user_object = Users.get(Users.user_id == user_id)
+        user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         return user_object.tester_active is False or (
-        user_object.tester_date + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None))
+                user_object.tester_date + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None))
 
     def tester_lock(self, user_id):
-        user_object = Users.get(Users.user_id == user_id)
+        user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
-            Users.repository_url == user_object.repository_url).execute()
+            Users.repository_url == user_object.repository_url,
+            Users.course_id == user_object.course_id,
+            Users.assignment_id == user_object.assignment_id
+        ).execute()
 
     def tester_unlock(self, user_id):
-        user_object = Users.get(Users.user_id == user_id)
-        Users.update(tester_active=False).where(Users.repository_url == user_object.repository_url).execute()
+        user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        Users.update(tester_active=False).where(
+            Users.repository_url == user_object.repository_url,
+            Users.course_id == user_object.course_id,
+            Users.assignment_id == user_object.assignment_id
+        ).execute()
 
     @staticmethod
     def get_group_user_list(user_object):
@@ -104,7 +111,7 @@ class Tester:
         else:
             # Get group members whose repository url is the same (for group assignments)
             user_list = [(current_user_object.user_id, current_user_object) for current_user_object
-                         in Users.select()
+                         in return_all_students(user_object.course_id, user_object.assignment_id)
                          if current_user_object.repository_url == user_object.repository_url]
         return user_list
 
@@ -114,8 +121,8 @@ class Tester:
             self.logger.create_logger()
 
         # Acquire DB connection if missing (e.g., parallel run)
-        self.user_data = Database(self.configuration.db_filename) if self.user_data is None else self.user_data
-        user_object = Users.get(Users.user_id == user_id)
+        self.user_data = Database() if self.user_data is None else self.user_data
+        user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
 
         # Make sure another fork for the same user is not active
         # FIXME: The code below (if statement) needs to go into the preprocessing, otherwise we will spawn the same
@@ -292,7 +299,7 @@ class Tester:
         reverse_repository_index = dict()
 
         try:
-            for user in Users.select():
+            for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
                 if self.configuration.no_repo is not True:
                     if user.repository_url is not None and self.tester_is_inactive(user.user_id):
                         self.repository.check_repository_changes(user.user_id)
@@ -307,13 +314,14 @@ class Tester:
             self.logger.logger.error("Database connection closed. Cannot iterate through database records."
                                      "Skipping this round of checks."
                                      "This should be resolved in the next round of checks")
-            self.configuration.db_filename = self.user_data.db_filename
+            self.configuration.db_filename = self.user_data.db_name
             del self.user_data
-            self.user_data = Database(self.configuration.db_filename)
+            self.user_data = Database()
             return None
 
-        processing_list = [[user.user_id, user] for user in Users.select() if
-                           user.user_id in reverse_repository_index.values()]
+        processing_list = [[user.user_id, user] for user in
+                           return_all_students(self.configuration.course_id, self.configuration.assignment_id)
+                           if user.user_id in reverse_repository_index.values()]
         del reverse_repository_index
 
         # If we utilize docker we need to pre-build the docker container
@@ -327,7 +335,6 @@ class Tester:
     def spawn_worker(self, user_ids):
         # For parallel/threaded runs database objects have to be dropped (they cannot be pickled)
         # Same for logger
-        self.configuration.db_filename = self.user_data.db_filename
         del self.user_data
         self.logger.delete_logger()
 
@@ -341,5 +348,5 @@ class Tester:
                 os._exit(0)  # Terminating the child (pytest compatible)
 
         self.logger.create_logger()
-        self.user_data = Database(self.configuration.db_filename)
+        self.user_data = Database()
 

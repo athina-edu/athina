@@ -5,8 +5,11 @@ env:
 language: python
 python:
   - "3.7"
+services:
+  - mysql
 before_install:
-  - sudo apt-get install -y firejail git 
+  - sudo apt-get install -y firejail git
+  - mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'athina'@'localhost' IDENTIFIED BY 'password';"
 # command to install dependencies
 install:
   - pip install .

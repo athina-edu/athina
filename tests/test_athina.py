@@ -1,15 +1,23 @@
 # athina_cli_tests.py
-
+import os
+import shutil
+import multiprocessing
 import unittest
+if os.environ.get('ATHINA_MYSQL_HOST', 0) == 0:
+    os.environ['ATHINA_MYSQL_HOST'] = 'localhost'
+if os.environ.get('ATHINA_MYSQL_PORT', 0) == 0:
+    os.environ['ATHINA_MYSQL_PORT'] = '3306'
+if os.environ.get('ATHINA_MYSQL_USERNAME', 0) == 0:
+    os.environ['ATHINA_MYSQL_USERNAME'] = 'athina'
+if os.environ.get('ATHINA_MYSQL_PASSWORD', 0) == 0:
+    os.environ['ATHINA_MYSQL_PASSWORD'] = 'password'
+
 from athina.logger import *
 from athina.git import *
 from athina.configuration import *
 from athina.tester.tester import *
 from athina.canvas import *
 from athina.moss import *
-import os
-import shutil
-import multiprocessing
 
 
 def create_logger():
@@ -38,66 +46,70 @@ def create_fake_user_db():
     This method includes several static user scenarios and should not be changed since multiple tests may depend
     on it. If you want to generate a new scenario just add a new user into the database that this method returns.
 
-    :return: user_data object from users.py
+    :return: user_data database object
     """
-    filename = "tests/user_data.sqlite3"
-    if os.path.isfile(filename):
-        os.remove(filename)
-    user_data = Database(db_filename=filename)
+    user_data = Database()
+    # Resetting for testing, otherwise automatically the call to Database includes a create_tables call
+    user_data.db.drop_tables([Users, AssignmentData])
+    user_data.db.create_tables([Users, AssignmentData])
 
     # Normal student
-    Users.create(user_id=1,
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=1,
                  repository_url="https://github.com/athina-edu/testing.git",
                  url_date=datetime(1, 1, 1, 0, 0),
                  new_url=True,
                  commit_date=datetime(1, 1, 1, 0, 0))
 
     # Student with wrong url
-    Users.create(user_id=2,
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=2,
                  repository_url="https://github.com/athina-edu/testin",
                  url_date=datetime(1, 1, 1, 0, 0),
                  new_url=True,
                  commit_date=datetime(1, 1, 1, 0, 0))
 
     # Students 3 and 4 with same url (note this is different from user 1 by a backslash)
-    Users.create(user_id=3,
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=3,
                  repository_url="https://github.com/athina-edu/testing.git/",
                  url_date=datetime(1, 1, 1, 0, 0),
                  new_url=True,
                  commit_date=datetime(1, 1, 1, 0, 0))
-    Users.create(user_id=4,
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=4,
                  repository_url="https://github.com/athina-edu/testing.git/",
                  url_date=datetime(1, 1, 1, 0, 0),
                  new_url=True,
                  commit_date=datetime(1, 1, 1, 0, 0))
 
     # No URL user
-    Users.create(user_id=5)
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=5)
 
     # Student submitting after the due date (default is set 2100 in configuration module)
-    Users.create(user_id=6,
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=6,
                  repository_url="https://github.com/git-persistence/git-persistence",
                  url_date=datetime(2101, 1, 1, 0, 0),
                  new_url=True,
                  commit_date=datetime(2101, 1, 1, 0, 0))
 
     # No repo user
-    Users.create(user_id=7)
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=7)
 
     return user_data
 
 
 class TestFunctions(unittest.TestCase):
-    def test_create_user_object(self):
-        filename = "tests/user_data.sqlite3"
-        if os.path.isfile(filename):
-            os.remove(filename)
-        user_data = create_fake_user_db()  # This otherwise creates a new object
-
-        # Load identical second object, the file should be already stored.
-        user_data2 = Database(db_filename=filename)
-        self.assertEqual(type(user_data), type(user_data2))
-
     def test_git_tester(self):
         results = []
         logger = create_logger()
@@ -110,8 +122,8 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
-        e_learning = Canvas(configuration, logger)
         user_data = create_fake_user_db()
+        e_learning = Canvas(configuration, logger)
         repository = Repository(logger, configuration, e_learning)
         results.append(repository.check_repository_changes(1))
         results.append(repository.check_repository_changes(2))
@@ -176,7 +188,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
 
         # Previous user corrects and submits and actual good url
-        obj = Users[5]
+        obj = return_a_student(1, 1, 5)
         obj.repository_url = "https://github.com/git-persistence/git-persistence/"
         obj.url_date = datetime.now(timezone.utc).replace(tzinfo=None)
         obj.new_url = True
@@ -188,8 +200,8 @@ class TestFunctions(unittest.TestCase):
         last_graded = user_object[0].last_graded
 
         # User 5 submit commit after the due date
-        configuration.due_date = Users[5].commit_date - timedelta(hours=24)
-        obj = Users[5]
+        configuration.due_date = return_a_student(1, 1, 5).commit_date - timedelta(hours=24)
+        obj = return_a_student(1, 1, 5)
         obj.changed_state = True
         obj.save()
         user_object = tester.process_student_assignment(5)
@@ -198,7 +210,7 @@ class TestFunctions(unittest.TestCase):
         # Briefly remove due date enforcement
         # Technically enforce_due_date only moves the due date to some extreme future date
         configuration.due_date = datetime.now(timezone.utc).replace(tzinfo=None)
-        obj = Users[5]
+        obj = return_a_student(1, 1, 5)
         obj.changed_state = True
         obj.save()
         user_object = tester.process_student_assignment(5)
@@ -222,7 +234,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(user_object[0].last_graded, last_graded)
 
         # Enough time goes buy
-        obj = Users[7]
+        obj = return_a_student(1, 1, 7)
         obj.last_graded = obj.last_graded - timedelta(hours=24)
         obj.save()
         user_object = tester.process_student_assignment(7)
