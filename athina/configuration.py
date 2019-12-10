@@ -41,12 +41,14 @@ class Configuration:
     grade_publish = True
     print_debug_msgs = False
     use_seccomp_on_docker = True
+    use_webhook = True
 
     # Set on the fly
     db_filename = ""
     athina_student_code_dir = ""
     athina_test_tmp_dir = ""
     extra_params = ""
+    athina_web_url = None
 
     def __init__(self, logger):
         self.logger = logger
@@ -148,6 +150,7 @@ class Configuration:
         self.load_value(config, 'grade_publish', self.grade_publish)
         self.load_value(config, 'use_docker', self.use_docker)
         self.load_value(config, 'use_seccomp_on_docker', self.use_seccomp_on_docker)
+        self.load_value(config, 'use_webhook', self.use_webhook)
 
         self.processes = multiprocessing.cpu_count()
 

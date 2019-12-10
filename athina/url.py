@@ -9,7 +9,7 @@ def request_url(url, headers=None, payload=None, method="get", return_type="json
     headers = {} if headers is None else headers
     payload = {} if payload is None else payload
     files = {} if files is None else files
-    print(url)
+
     try:
         if method == "get":
             r = requests.get(url, headers=headers)

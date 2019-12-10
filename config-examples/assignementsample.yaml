@@ -108,3 +108,11 @@ grade_publish: true
 # it is still a sandbox (as much as containers can guarantee a degree of security).
 # For example, if students use gdb, then you will need to disable this.
 use_seccomp_on_docker: true
+
+# Currently this is supported only for gitlab and requires that the personal access token for git
+# that is provided has read/write privileges in the user's repository.
+# Upon git clone, Athina will try once to set the webhook. If successful (requires also the webhook's website
+# to be accessible) then it will monitor repository changes based on push events. If the webhook fails,
+# Athina will git pull on a student's repository every 60 secs (the fallback behavior).
+# If enabled, it can substantially speed up athina's processing of repo changes.
+use_webhook: false

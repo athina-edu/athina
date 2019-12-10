@@ -64,6 +64,7 @@ class Repository:
         subprocess.run(["git", "clone", "%s" % git_url,
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                 self.configuration.assignment_id, user_id)])
+        self.set_webhook(user_object)
 
     def retrieve_last_commit_date(self, user_id):
         try:
@@ -80,7 +81,6 @@ class Repository:
 
     def check_repository_changes(self, user_id):
         user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
-        self.set_webhook(user_values.repository_url)
         changed_state = False
 
         # If nothing has been submitted no point in testing
@@ -107,6 +107,9 @@ class Repository:
                 self.logger.logger.error(">>> Could not clone the repository.")
                 changed_state = False  # invalid copy, couldn't be cloned.
                 # TODO: make the user aware with solutions on how to get their git accessible
+        elif user_values.use_webhook is True and user_values.webhook_event is False:
+            # This will prevent git pull unless and event has arrived or we do not use webhooks.
+            changed_state = False
         else:
             # Pull and see if there is anything that changed,
             # then check date and compare with last  date
@@ -158,11 +161,20 @@ class Repository:
         out, err = process.communicate()
         return out, err
 
-    def set_webhook(self, repository_url):
-        encoded_url = urlquote(urlparse(repository_url).path[1:])
-        print(encoded_url)  # TODO: remove .git from the end of the url
-        data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
-                           headers={"Authorization": "Bearer %s" % self.configuration.git_password},
-                           payload={"id": encoded_url,
-                                    "url": "hookurl.com/json"}, method="post", return_type="json")
-        print(data)
+    def set_webhook(self, user_values):
+        if self.configuration.athina_web_url is not None:
+            self.logger.logger.info("Attempting to set webhook for user %s" % user_values.user_id)
+            encoded_url = urlquote(re.sub('\.git$', '', urlparse(user_values.repository_url).path[1:]))
+            data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
+                               headers={"Authorization": "Bearer %s" % self.configuration.git_password},
+                               payload={"id": encoded_url,
+                                        "url": "https://%s/json" % self.configuration.athina_web_url,
+                                        "push_events": "yes",
+                                        "enable_ssl_verification": "no"
+                                        }, method="post", return_type="json")
+            if data.get("created_at", None) is not None:
+                user_values.use_webhook = True
+                self.logger.logger.info("Webhook was set, will expect event to verify changes in repository.")
+            else:
+                self.logger.logger.warning("Attempt to send webhook failed!")
+                self.logger.logger.debug(data)
