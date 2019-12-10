@@ -71,6 +71,7 @@ def main():
         raise SyntaxError("You need to provide either --config or --json.")
 
     # Iterate through each assignment
+    user_data = Database(logger=LOGGER)
     for run_record in run_list:
         # Build configuration object
         configuration = Configuration(logger=LOGGER)
@@ -84,16 +85,11 @@ def main():
         # Starting statement
         LOGGER.logger.info("Processing...")
 
-        user_data = Database(logger=LOGGER)
-
-        #try:
         core_iteration(configuration, user_data)
-        #except sqlite3.ProgrammingError:  # database lock usually, resolves after a new connection is initiated
-        #    pass
 
-        del user_data
         del configuration
         LOGGER.logger.info("Processing done.")
+    del user_data
 
 
 def core_iteration(configuration, user_data):
