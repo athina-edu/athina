@@ -7,8 +7,11 @@ import html
 import git
 from datetime import datetime, timezone
 from dateutil.tz import tzlocal
+from urllib.parse import urlparse
+from urllib.parse import quote_plus as urlquote
 import dateutil.parser
 from athina.users import *
+from athina.url import *
 
 
 def get_repo_commit(folder):
@@ -77,6 +80,7 @@ class Repository:
 
     def check_repository_changes(self, user_id):
         user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        self.set_webhook(user_values.repository_url)
         changed_state = False
 
         # If nothing has been submitted no point in testing
@@ -154,3 +158,11 @@ class Repository:
         out, err = process.communicate()
         return out, err
 
+    def set_webhook(self, repository_url):
+        encoded_url = urlquote(urlparse(repository_url).path[1:])
+        print(encoded_url)  # TODO: remove .git from the end of the url
+        data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
+                           headers={"Authorization": "Bearer %s" % self.configuration.git_password},
+                           payload={"id": encoded_url,
+                                    "url": "hookurl.com/json"}, method="post", return_type="json")
+        print(data)
