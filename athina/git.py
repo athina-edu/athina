@@ -24,6 +24,12 @@ def get_repo_commit(folder):
         return None
 
 
+def make_proper_git_url(url):
+    if type(url) is str:
+        if url[-4:] != ".git":
+            return url + ".git"
+
+
 class Repository:
     logger = None
     configuration = None
@@ -89,7 +95,7 @@ class Repository:
             # Submit grade
             self.logger.logger.warning("The URL is being used by another student. Will not test.")
             self.e_learning.submit_grade(user_id, user_values, 0,
-                                         'The URL is being used by another student'.encode("utf-8"))
+                                         ['The URL is being used by another student'.encode("utf-8")])
             user_values.new_url = False
             user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
             user_values.save()
@@ -99,14 +105,18 @@ class Repository:
             # Delete dir, create dir and clone repository
             self.clone_git_repo(user_id, user_values)
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
-                                                          self.configuration.assignment_id, user_id)):
+                                                         self.configuration.assignment_id, user_id)):
                 # valid copy cloned successfully, moving on assuming the rest of the checks clear
                 changed_state = self.compare_commit_date_with_due_date(user_id, user_values)
             else:
                 self.logger.logger.error(">>> Could not clone the repository.")
                 changed_state = False  # invalid copy, couldn't be cloned.
-                # TODO: make the user aware with solutions on how to get their git accessible
-        elif user_values.use_webhook is True and user_values.webhook_event is False:
+                self.e_learning.submit_grade(user_id, user_values, 0,
+                                             ['Your git url cannot be cloned. Verify that you have granted permissions'
+                                              'to the instructor of the course and that you have submitted the proper'
+                                              'git url ending in .git (not ../tree/master).'.encode("utf-8")])
+        elif user_values.use_webhook is True and user_values.webhook_event is False and\
+                user_values.force_test is False and self.configuration.use_webhook is True:
             # This will prevent git pull unless and event has arrived or we do not use webhooks.
             changed_state = False
         else:
@@ -129,6 +139,7 @@ class Repository:
 
             changed_state = self.compare_commit_date_with_due_date(user_id, user_values)
 
+        user_values.webhook_event = False  # Either way after processing this should be set to false
         user_values.changed_state = changed_state
         user_values.save()
 
@@ -141,7 +152,9 @@ class Repository:
             commit_date = user_values.commit_date
 
         # If new commit date newer than old commit but smaller than due date
-        self.logger.logger.debug("Checking due > git log commit > db commit: %s %s %s" % (self.configuration.due_date, commit_date, user_values.commit_date))
+        self.logger.logger.debug("Checking due > git log commit > db commit: %s %s %s" % (self.configuration.due_date,
+                                                                                          commit_date,
+                                                                                          user_values.commit_date))
         if self.configuration.due_date > commit_date > user_values.commit_date:
             self.logger.logger.info(">> New commit on repo before due date")
             return True
@@ -167,13 +180,13 @@ class Repository:
             webhook_url = "%s/assignments/webhook/" % self.configuration.athina_web_url
             webhook_token = random.getrandbits(128)
             # Check if hook exists
-            data = request_url("http://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
+            data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
                                headers={"Authorization": "Bearer %s" % self.configuration.git_password},
                                method="get", return_type="json")
             hook_id = [w.get('id') for w in data if w.get('url', '') == webhook_url]
             if len(hook_id) == 0:
                 # Add new webhook
-                data = request_url("http://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
+                data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
                                    headers={"Authorization": "Bearer %s" % self.configuration.git_password},
                                    payload={"id": encoded_url,
                                             "url": webhook_url,
@@ -183,7 +196,7 @@ class Repository:
                                             }, method="post", return_type="json")
             else:
                 # Edit existing webhook
-                data = request_url("http://%s/api/v4/projects/%s/hooks/%s" %
+                data = request_url("https://%s/api/v4/projects/%s/hooks/%s" %
                                    (self.configuration.git_url, encoded_url, hook_id[0]),
                                    headers={"Authorization": "Bearer %s" % self.configuration.git_password},
                                    payload={"id": encoded_url,

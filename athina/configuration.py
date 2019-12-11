@@ -41,7 +41,7 @@ class Configuration:
     grade_publish = True
     print_debug_msgs = False
     use_seccomp_on_docker = True
-    use_webhook = True
+    use_webhook = False
 
     # Set on the fly
     db_filename = ""

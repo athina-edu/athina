@@ -129,9 +129,9 @@ class Users(BaseModel):
     user_id = peewee.BigIntegerField()
     course_id = peewee.BigIntegerField()
     assignment_id = peewee.BigIntegerField()
-    user_fullname = peewee.TextField(default="")
-    secondary_id = peewee.TextField(default="")
-    repository_url = peewee.TextField(default="", null=True)
+    user_fullname = peewee.CharField(max_length=255, default="")
+    secondary_id = peewee.CharField(max_length=255, default="")
+    repository_url = peewee.CharField(max_length=255, default="", null=True)
     url_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))  # When a new url was found
     new_url = peewee.BooleanField(default=False)  # Switched when new url is discovered on e-learning site
     commit_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))  # Day of the last commit
@@ -154,6 +154,12 @@ class Users(BaseModel):
     class Meta:
         db_table = 'users'
         primary_key = peewee.CompositeKey('user_id', 'course_id', 'assignment_id')
+        indexes = (
+            # create a non-unique index, webhook push events get a speed boost
+            (('repository_url', 'webhook_token'), False),
+            # create a non-unique index
+            (('course_id', 'assignment_id'), False),
+        )
 
 
 class AssignmentData(BaseModel):

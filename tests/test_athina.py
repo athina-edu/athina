@@ -240,6 +240,19 @@ class TestFunctions(unittest.TestCase):
         user_object = tester.process_student_assignment(7)
         self.assertGreater(user_object[0].last_graded, last_graded)
 
+        # Configuring user 5 to use webhook's. A push event just came through
+        configuration.due_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        configuration.use_webhook = True
+        obj = return_a_student(1, 1, 5)
+        obj.changed_state = False
+        obj.use_webhook = True
+        obj.webhook_event = True
+        obj.commit_date = obj.commit_date - timedelta(hours=24)  # resetting commit date
+        obj.last_graded = obj.last_graded - timedelta(hours=24)
+        obj.save()
+        user_object = tester.process_student_assignment(5)
+        self.assertGreater(user_object[0].last_graded, last_graded)
+
     @unittest.skip("Does not work and needs to fix. Empty result")
     def test_tester_plagiarism(self):
         logger = create_logger()
