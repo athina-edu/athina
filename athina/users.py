@@ -149,6 +149,7 @@ class Users(BaseModel):
     force_test = peewee.BooleanField(default=False)
     use_webhook = peewee.BooleanField(default=False)
     webhook_event = peewee.BooleanField(default=False)
+    webhook_token = peewee.CharField(max_length=255)
 
     class Meta:
         db_table = 'users'

@@ -12,6 +12,7 @@ from urllib.parse import quote_plus as urlquote
 import dateutil.parser
 from athina.users import *
 from athina.url import *
+import random
 
 
 def get_repo_commit(folder):
@@ -44,17 +45,15 @@ class Repository:
                                                                  self.configuration.assignment_id, user_id)])
         subprocess.run(["mkdir", "-p", "%s/repodata%s/u%s" % (self.configuration.config_dir,
                                                               self.configuration.assignment_id, user_id)])
-        url_matches = re.findall("(.*?)://(.*?)$", user_object.repository_url)
+        parsed_url = urlparse(user_object.repository_url)
         # If the submitted URL is not gitlab then don't submit the password (avoiding a phishing attack)
         # Implementing rule to enforce git_url to comply with what the athina.yaml (ie, what the instructor requested)
         self.logger.logger.debug("Attempting to clone %s" % user_object.repository_url)
-        if re.match(r"^" + re.escape(self.configuration.git_url + "/") + r".*", url_matches[0][1]) and \
-           url_matches[0][0] == 'https':
-            if self.configuration.git_username != "":
-                git_url = "%s://%s:%s@%s" % (url_matches[0][0],
-                                             html.escape(self.configuration.git_username),
-                                             html.escape(self.configuration.git_password),
-                                             url_matches[0][1])
+        if parsed_url.netloc.encode("ascii") == self.configuration.git_url.encode("ascii"):
+            if self.configuration.git_username != "" and parsed_url.scheme == 'https':
+                git_url = "%s://%s:%s@%s%s" % (parsed_url.scheme, html.escape(self.configuration.git_username),
+                                               html.escape(self.configuration.git_password), parsed_url.netloc,
+                                               parsed_url.path)
             else:
                 git_url = user_object.repository_url
         else:
@@ -165,16 +164,39 @@ class Repository:
         if self.configuration.athina_web_url is not None:
             self.logger.logger.info("Attempting to set webhook for user %s" % user_values.user_id)
             encoded_url = urlquote(re.sub('\.git$', '', urlparse(user_values.repository_url).path[1:]))
-            data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
+            webhook_url = "%s/assignments/webhook/" % self.configuration.athina_web_url
+            webhook_token = random.getrandbits(128)
+            # Check if hook exists
+            data = request_url("http://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
                                headers={"Authorization": "Bearer %s" % self.configuration.git_password},
-                               payload={"id": encoded_url,
-                                        "url": "https://%s/json" % self.configuration.athina_web_url,
-                                        "push_events": "yes",
-                                        "enable_ssl_verification": "no"
-                                        }, method="post", return_type="json")
+                               method="get", return_type="json")
+            hook_id = [w.get('id') for w in data if w.get('url', '') == webhook_url]
+            if len(hook_id) == 0:
+                # Add new webhook
+                data = request_url("http://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
+                                   headers={"Authorization": "Bearer %s" % self.configuration.git_password},
+                                   payload={"id": encoded_url,
+                                            "url": webhook_url,
+                                            "push_events": "yes",
+                                            "enable_ssl_verification": "no",
+                                            "token": webhook_token
+                                            }, method="post", return_type="json")
+            else:
+                # Edit existing webhook
+                data = request_url("http://%s/api/v4/projects/%s/hooks/%s" %
+                                   (self.configuration.git_url, encoded_url, hook_id[0]),
+                                   headers={"Authorization": "Bearer %s" % self.configuration.git_password},
+                                   payload={"id": encoded_url,
+                                            "url": webhook_url,
+                                            "push_events": "yes",
+                                            "enable_ssl_verification": "no",
+                                            "token": webhook_token
+                                            }, method="put", return_type="json")
             if data.get("created_at", None) is not None:
                 user_values.use_webhook = True
-                self.logger.logger.info("Webhook was set, will expect event to verify changes in repository.")
+                user_values.webhook_token = webhook_token
+                user_values.save()
+                self.logger.logger.info("Webhook was set successfully.")
             else:
                 self.logger.logger.warning("Attempt to send webhook failed!")
                 self.logger.logger.debug(data)

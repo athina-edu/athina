@@ -99,7 +99,7 @@ class Configuration:
         try:
             with open(self.find_yaml(directory), 'r') as stream:
                 config = yaml.safe_load(stream)
-        except yaml.YAMLError as exc:
+        except (yaml.YAMLError, IsADirectoryError) as exc:
             self.logger.logger.error(exc)
             raise yaml.YAMLError(exc)
 
