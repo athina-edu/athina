@@ -6,6 +6,8 @@ import shutil
 import yaml
 import multiprocessing
 
+__all__ = ('Configuration',)
+
 
 class Configuration:
     logger = None

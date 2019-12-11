@@ -1,6 +1,6 @@
 import unittest
 import shutil
-from athina.moss import *
+from athina.moss import Plagiarism
 from athina.logger import *
 
 

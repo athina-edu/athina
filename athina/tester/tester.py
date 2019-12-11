@@ -14,10 +14,12 @@ import signal
 # Modifiable loading
 from athina.users import Database, Users
 
+__all__ = ('Tester',)
+
 
 # There is extensive forking that occurs for each student testing from the tester
 # We set an async signal handling for terminating zombie processes
-def cleanup_zombie(signum, frame):
+def _cleanup_zombie(signum, frame):
     try:
         os.waitpid(-1, os.WNOHANG)
     except ChildProcessError:
@@ -25,7 +27,7 @@ def cleanup_zombie(signum, frame):
 
 
 # Set the signal for children to call the function
-signal.signal(signal.SIGCHLD, cleanup_zombie)
+signal.signal(signal.SIGCHLD, _cleanup_zombie)
 
 
 class Tester:

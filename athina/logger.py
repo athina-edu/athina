@@ -3,6 +3,8 @@ import logging.handlers
 import os
 from multiprocessing import current_process
 
+__all__ = ('Logger',)
+
 
 class Logger:
     """

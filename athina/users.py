@@ -9,7 +9,7 @@ import re
 import pymysql
 
 __all__ = ('Database', 'Users', 'AssignmentData', "update_key_in_assignment_data", "load_key_from_assignment_data",
-           "return_all_students", "return_a_student")
+           "return_all_students", "return_a_student",)
 
 # Global database object
 DB = peewee.MySQLDatabase(None)
@@ -69,8 +69,8 @@ class Database:
     @property
     def database_is_healthy(self):
         try:
-            user = Users.select().limit(1)[0]
-            assignment = AssignmentData.select().limit(1)[0]
+            dummy = Users.select().limit(1)[0]
+            dummy = AssignmentData.select().limit(1)[0]
             return True
         except peewee.OperationalError:
             # Database specifications have changed (e.g., newer athina version)

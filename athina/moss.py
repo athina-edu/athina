@@ -3,10 +3,13 @@ import re
 import np
 import glob
 import mosspy
+import os
 from athina.users import *
 from athina.url import *
 from datetime import timedelta, datetime
 from dateutil.tz import tzlocal
+
+__all__ = ('plagiarism_checks_on_users',)
 
 
 def plagiarism_checks_on_users(logger, configuration, e_learning):
@@ -102,9 +105,11 @@ class Plagiarism:
                 moss.addFilesByWildcard(folder)
             try:
                 url = moss.send()
-            except:
+            except Exception:
                 self.logger.logger.error("An error occured with the moss script.")
                 return dict()
+            except (SystemExit, KeyboardInterrupt):
+                pass
 
             update_key_in_assignment_data(course_id, assignment_id, "moss_url", url)
 

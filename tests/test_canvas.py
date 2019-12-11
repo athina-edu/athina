@@ -8,6 +8,7 @@ from athina.configuration import *
 from athina.users import *
 import json
 
+
 class TestFunctions(unittest.TestCase):
     def test_canvas_user_list_processing(self):
         canvas_return = """[{

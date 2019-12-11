@@ -14,6 +14,8 @@ from athina.users import *
 from athina.url import *
 import random
 
+__all__ = ('get_repo_commit', 'make_proper_git_url', 'Repository',)
+
 
 def get_repo_commit(folder):
     repo = git.Repo(folder)

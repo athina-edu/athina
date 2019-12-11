@@ -1,8 +1,11 @@
 # athina_cli_tests.py
 import os
 import shutil
-import multiprocessing
 import unittest
+from datetime import datetime, timezone, timedelta
+import time
+import psutil
+
 if os.environ.get('ATHINA_MYSQL_HOST', 0) == 0:
     os.environ['ATHINA_MYSQL_HOST'] = 'localhost'
 if os.environ.get('ATHINA_MYSQL_PORT', 0) == 0:
@@ -18,6 +21,7 @@ from athina.configuration import *
 from athina.tester.tester import *
 from athina.canvas import *
 from athina.moss import *
+from athina.users import *
 
 
 def create_logger():

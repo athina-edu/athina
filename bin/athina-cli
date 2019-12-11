@@ -64,7 +64,6 @@ def main():
             run_list = request_url(ARGS.json, method="get", return_type="json")
         except requests.exceptions.ConnectionError:
             LOGGER.logger.error("Cannot connect to URL: %s" % ARGS.json)
-            pass
     elif ARGS.config is not None:
         run_list.append({'directory': ARGS.config})
     else:
@@ -91,7 +90,6 @@ def main():
 
         del configuration
         LOGGER.logger.info("Processing done.")
-    del user_data
 
 
 def core_iteration(configuration, user_data):

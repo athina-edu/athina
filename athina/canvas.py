@@ -8,6 +8,7 @@ from athina.url import *
 from athina.users import *
 from athina.git import *
 
+__all__ = ('Canvas',)
 
 class Canvas:
     configuration = None

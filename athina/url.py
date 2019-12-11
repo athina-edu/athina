@@ -2,6 +2,8 @@ import requests
 import time
 import json
 
+__all__ = ('request_url',)
+
 
 def request_url(url, headers=None, payload=None, method="get", return_type="json", files=None):
     time.sleep(1)  # artificial delay in case code attempts to spam with requests
@@ -36,8 +38,10 @@ def _return_requested_type(data, return_type):
     elif return_type == "text":
         try:
             return_value = data.text
-        except:
+        except Exception:
             return_value = ""
+        except (SystemExit, KeyboardInterrupt):
+            pass
     else:
         return_value = None
 
