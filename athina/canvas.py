@@ -6,6 +6,7 @@ from dateutil.tz import tzlocal
 import dateutil.parser
 from athina.url import *
 from athina.users import *
+from athina.git import *
 
 
 class Canvas:
@@ -139,14 +140,14 @@ class Canvas:
             Users.create(user_id=data["user_id"],
                          course_id=self.configuration.course_id,
                          assignment_id=self.configuration.assignment_id,
-                         repository_url=data["url"],
+                         repository_url=make_proper_git_url(data["url"]),
                          url_date=submitted_date,
                          new_url=True,
                          commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
         else:
             # New submission will always happen on Canvas on a chronological order
             if obj.url_date < submitted_date:
-                obj.repository_url = data["url"]
+                obj.repository_url = make_proper_git_url(data["url"])
                 obj.url_date = submitted_date
                 obj.new_url = True
                 obj.commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)

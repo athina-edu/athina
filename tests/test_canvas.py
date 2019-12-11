@@ -125,6 +125,7 @@ class TestFunctions(unittest.TestCase):
         for record in canvas_return:
             e_learning.parse_canvas_submissions(record)
         obj = Users.get(Users.user_id == 3476374)
-        self.assertEqual("https://github.com/athina-edu/testing_config", obj.repository_url)
+        # The .git is added by Athina in order to standardize git links
+        self.assertEqual("https://github.com/athina-edu/testing_config.git", obj.repository_url)
 
         return True

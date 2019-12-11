@@ -82,6 +82,8 @@ def main():
                                 "missing or incorrect (e.g., no quotes are necessary for strings).")
             continue  # in case a use forgets and gives empty values in their config
 
+        configuration.athina_web_url = ATHINA_WEB_URL
+
         # Starting statement
         LOGGER.logger.info("Processing...")
 
@@ -173,6 +175,9 @@ def core_iteration(configuration, user_data):
 if __name__ == "__main__":
     # Athina's directory
     DIR_PATH = os.path.dirname(os.path.realpath(__file__))
+
+    # Athina-Web url (one click run passes that when the first time setup occurs)
+    ATHINA_WEB_URL = os.environ.get('ATHINA_WEB_URL', None)
 
     # Get command line parameters
     ARGS = parse_command_line()
