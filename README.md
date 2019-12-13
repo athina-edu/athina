@@ -31,9 +31,9 @@ Need plug-and-play assignments, tests and test configuration for your course? Ch
 # Here is what it does:
 1. Build your tests in your language of choice
 2. Your tests can print anything. The last line is the grade from 0-100
-3. Setup Athina's cfg file and define tests and their weights
-4. Place your files in the tests directory
-5. Set Athina as a cron job. 
+3. Setup Athina's yaml file and define tests and their weights along with other options (e.g., students per assignment)
+4. Place your files in the tests directory and construct your environment (using Dockerfile)
+5. Run athina as a service
 6. Students submit on Canvas their repo urls.
 7. Athina, clones, looks for changes, runs some safety checks, sandboxes the code and then uses your tests.
 8. Then, it submits feedback, grade along with all text printed from the test to the student's Canvas
