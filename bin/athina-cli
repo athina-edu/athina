@@ -10,6 +10,7 @@ from dateutil.tz import tzlocal
 from athina.logger import *
 from athina.tester.tester import *
 from athina.configuration import *
+from athina.users import *
 
 # Variable modules (extensions, e.g., canvas or blackboard)
 from athina.canvas import *
