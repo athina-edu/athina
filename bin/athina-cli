@@ -8,7 +8,10 @@ import sys
 import os
 import yaml
 import requests
+import datetime
+import time
 from dateutil.tz import tzlocal
+import dateutil
 from athina.logger import *
 from athina.tester.tester import *
 from athina.configuration import *
@@ -151,9 +154,9 @@ def core_iteration(configuration, user_data):
                      course_id=1,
                      assignment_id=1,
                      repository_url=ARGS.repo_url_testing,
-                     url_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
+                     url_date=datetime.datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
                      new_url=True,
-                     commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
+                     commit_date=datetime.datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
         LOGGER.set_verbose(True)
         LOGGER.set_debug(True)
         repository.check_repository_changes(1)
@@ -165,7 +168,7 @@ def core_iteration(configuration, user_data):
         tester.start_testing_db()
 
     # Initiate plagiarism checks
-    if datetime.now(tzlocal()).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
+    if datetime.datetime.now(tzlocal()).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
         plagiarism_checks_on_users(LOGGER, configuration, e_learning)
 
     # In case this script is run as another user the repo needs to be also set to be editable by anyone
