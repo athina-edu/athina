@@ -7,6 +7,7 @@ import signal
 import sys
 import os
 import yaml
+import requests
 from dateutil.tz import tzlocal
 from athina.logger import *
 from athina.tester.tester import *
