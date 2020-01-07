@@ -300,7 +300,7 @@ class Tester:
         reverse_repository_index = dict()
 
         for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
-            self.logger.logger.debug("User" % user.user_id)
+            self.logger.logger.debug("User %s" % user.user_id)
             if self.configuration.no_repo is not True:
                 if user.repository_url is not None and self.tester_is_inactive(user.user_id):
                     self.repository.check_repository_changes(user.user_id)
