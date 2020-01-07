@@ -71,7 +71,8 @@ class Repository:
         subprocess.run(["git", "clone", "%s" % git_url,
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                 self.configuration.assignment_id, user_id)])
-        self.set_webhook(user_object)
+        if git_url != "":
+            self.set_webhook(user_object)
 
     def retrieve_last_commit_date(self, user_id):
         try:
@@ -185,7 +186,10 @@ class Repository:
             data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
                                headers={"Authorization": "Bearer %s" % self.configuration.git_password},
                                method="get", return_type="json")
-            hook_id = [w.get('id') for w in data if w.get('url', '') == webhook_url]
+            try:
+                hook_id = [w.get('id') for w in data if w.get('url', '') == webhook_url]
+            except AttributeError:
+                return None
             if len(hook_id) == 0:
                 # Add new webhook
                 data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
