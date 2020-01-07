@@ -305,6 +305,7 @@ class Tester:
                 if self.configuration.no_repo is not True:
                     if user.repository_url is not None and self.tester_is_inactive(user.user_id):
                         self.repository.check_repository_changes(user.user_id)
+                        time.sleep(0.5)
                         # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
                         # Process group assignment will test once and then it identifies and submits a grade for both
                         # groups
