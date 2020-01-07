@@ -10,6 +10,7 @@ from athina.git import *
 
 __all__ = ('Canvas',)
 
+
 class Canvas:
     configuration = None
     logger = None  # athina's logger object for event logging and debugging

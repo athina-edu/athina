@@ -1,4 +1,3 @@
--e git+https://github.com/athina-edu/athina.git@80020337f9d9ad1840dd4224fd7c8bc89190a939#egg=athina
 beautifulsoup4==4.8.2
 certifi==2019.11.28
 chardet==3.0.4
@@ -11,7 +10,6 @@ mosspy==1.0.8
 np==1.0.2
 numpy==1.18.1
 peewee==3.13.1
-pkg-resources==0.0.0
 psutil==5.6.7
 PyMySQL==0.9.3
 python-dateutil==2.8.1
