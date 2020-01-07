@@ -93,6 +93,7 @@ class Repository:
 
         # If nothing has been submitted no point in testing
         if user_values.repository_url is None or user_values.repository_url == "":
+            self.logger.logger.debug("No url for %s" % user_id)
             changed_state = False
         elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
             # Submit grade
@@ -121,6 +122,7 @@ class Repository:
         elif user_values.use_webhook is True and user_values.webhook_event is False and\
                 user_values.force_test is False and self.configuration.use_webhook is True:
             # This will prevent git pull unless and event has arrived or we do not use webhooks.
+            self.logger.logger.debug("Hook is enabled and set for user %s" % user_id)
             changed_state = False
         else:
             # Pull and see if there is anything that changed,
