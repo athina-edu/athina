@@ -88,6 +88,7 @@ class Repository:
             return None
 
     def check_repository_changes(self, user_id):
+        self.logger.logger.debug("Checking user %s" % user_id)
         user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         changed_state = False
 

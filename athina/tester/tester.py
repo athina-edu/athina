@@ -8,7 +8,6 @@ import time
 import shutil
 import os
 import psutil
-import sqlite3
 import signal
 
 # Modifiable loading
@@ -300,27 +299,19 @@ class Tester:
         # user dbs need to be updated later on
         reverse_repository_index = dict()
 
-        try:
-            for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
-                if self.configuration.no_repo is not True:
-                    if user.repository_url is not None and self.tester_is_inactive(user.user_id):
-                        self.repository.check_repository_changes(user.user_id)
-                        time.sleep(0.25)
-                        # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
-                        # Process group assignment will test once and then it identifies and submits a grade for both
-                        # groups
-                        reverse_repository_index[user.repository_url] = user.user_id
-                else:
-                    # When no repo is involved it is 1 to 1 testing (individual assignment)
-                    reverse_repository_index[user.user_id] = user.user_id
-        except sqlite3.ProgrammingError:
-            self.logger.logger.error("Database connection closed. Cannot iterate through database records."
-                                     "Skipping this round of checks."
-                                     "This should be resolved in the next round of checks")
-            self.configuration.db_filename = self.user_data.db_name
-            del self.user_data
-            self.user_data = Database()
-            return None
+        for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
+            self.logger.logger.debug("User" % user.user_id)
+            if self.configuration.no_repo is not True:
+                if user.repository_url is not None and self.tester_is_inactive(user.user_id):
+                    self.repository.check_repository_changes(user.user_id)
+                    time.sleep(0.25)
+                    # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
+                    # Process group assignment will test once and then it identifies and submits a grade for both
+                    # groups
+                    reverse_repository_index[user.repository_url] = user.user_id
+            else:
+                # When no repo is involved it is 1 to 1 testing (individual assignment)
+                reverse_repository_index[user.user_id] = user.user_id
 
         processing_list = [[user.user_id, user] for user in
                            return_all_students(self.configuration.course_id, self.configuration.assignment_id)
