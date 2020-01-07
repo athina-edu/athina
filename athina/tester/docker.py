@@ -27,7 +27,7 @@ def docker_build(configuration, logger):
                                stderr=subprocess.PIPE)
 
     try:
-        process.wait(600)  # A build should typically be ready after 10 minutes
+        process.wait(900)  # A build should typically be ready after 15 minutes
     except subprocess.TimeoutExpired:
         # Kill container
         terminate_all_containers()
