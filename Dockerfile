@@ -7,7 +7,7 @@ RUN apt-get update && echo "37" | apt-get -y install keyboard-configuration \
 ADD . /code
 WORKDIR /code
 RUN pip3 install pip
-RUN pip3 install -r requirements.txt 
+RUN pip3 install .
 
 ENTRYPOINT ["athina-cli"]
 CMD [""]
