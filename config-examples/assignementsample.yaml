@@ -116,3 +116,7 @@ use_seccomp_on_docker: true
 # Athina will git pull on a student's repository every 60 secs (the fallback behavior).
 # If enabled, it can substantially speed up athina's processing of repo changes.
 use_webhook: false
+
+# If you are using gitlab, you can enforce that a repository is private otherwise it won't be graded
+# This is so that others student won't be able to find past or current assignments from other students
+gitlab_check_repo_is_private: false
