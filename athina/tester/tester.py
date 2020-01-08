@@ -300,15 +300,17 @@ class Tester:
         reverse_repository_index = dict()
 
         for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
-            self.logger.logger.debug("User %s" % user.user_id)
             if self.configuration.no_repo is not True:
-                if user.repository_url is not None and self.tester_is_inactive(user.user_id):
-                    self.repository.check_repository_changes(user.user_id)
-                    time.sleep(0.25)
-                    # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
-                    # Process group assignment will test once and then it identifies and submits a grade for both
-                    # groups
-                    reverse_repository_index[user.repository_url] = user.user_id
+                if user.repository_url is not None:
+                    if self.tester_is_inactive(user.user_id):
+                        self.repository.check_repository_changes(user.user_id)
+                        time.sleep(0.25)
+                        # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
+                        # Process group assignment will test once and then it identifies and submits a grade for both
+                        # groups
+                        reverse_repository_index[user.repository_url] = user.user_id
+                    else:
+                        self.logger.logger.warning("Tester active for user %s" % user.user_id)
             else:
                 # When no repo is involved it is 1 to 1 testing (individual assignment)
                 reverse_repository_index[user.user_id] = user.user_id

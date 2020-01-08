@@ -44,6 +44,7 @@ class Configuration:
     print_debug_msgs = False
     use_seccomp_on_docker = True
     use_webhook = False
+    gitlab_check_repo_is_private = False
 
     # Set on the fly
     db_filename = ""
@@ -153,6 +154,7 @@ class Configuration:
         self.load_value(config, 'use_docker', self.use_docker)
         self.load_value(config, 'use_seccomp_on_docker', self.use_seccomp_on_docker)
         self.load_value(config, 'use_webhook', self.use_webhook)
+        self.load_value(config, 'gitlab_check_repo_is_private', self.gitlab_check_repo_is_private)
 
         self.processes = multiprocessing.cpu_count()
 
