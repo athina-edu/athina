@@ -57,14 +57,17 @@ def gitlab_set_webhook(configuration, logger, user_values):
 
 
 def gitlab_check_if_repo_private(configuration, logger, repository_url):
-    logger.logger.info("Checking if repository is private. "
-                       "This can be disable in configuration (gitlab_check_repo_is_private)")
-    encoded_url = gitlab_return_encoded_url(repository_url)
-    data = request_url("https://%s/api/v4/projects/%s" % (configuration.git_url, encoded_url),
-                       headers={"Authorization": "Bearer %s" % configuration.git_password},
-                       method="get", return_type="json")
-    visibility = data.get("visibility", None)
-    if visibility == "private" or visibility is None:  # it is either private or we cannot check if it is
-        return True
+    if configuration.gitlab_check_repo_is_private:
+        logger.logger.info("Checking if repository is private. "
+                           "This can be disable in configuration (gitlab_check_repo_is_private)")
+        encoded_url = gitlab_return_encoded_url(repository_url)
+        data = request_url("https://%s/api/v4/projects/%s" % (configuration.git_url, encoded_url),
+                           headers={"Authorization": "Bearer %s" % configuration.git_password},
+                           method="get", return_type="json")
+        visibility = data.get("visibility", None)
+        if visibility == "private" or visibility is None:  # it is either private or we cannot check if it is
+            return True
+        else:
+            return False
     else:
-        return False
+        return True

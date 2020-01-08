@@ -107,7 +107,7 @@ class Repository:
             user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
             user_values.save()
             changed_state = False  # do not process anything for this student
-        elif user_values.new_url and self.configuration.gitlab_check_repo_is_private and \
+        elif user_values.new_url and \
                 gitlab_check_if_repo_private(self.configuration, self.logger, user_values.repository_url) is False:
             self.logger.logger.warning("The git repository is not private! Aborting checks.")
             self.e_learning.submit_grade(user_id, user_values, 0,
