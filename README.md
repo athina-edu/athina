@@ -17,9 +17,9 @@ Code security:
 [![PyUp.io](https://pyup.io/repos/github/athina-edu/athina/shield.svg?t=1575602005060)](https://pyup.io/repos/github/athina-edu/athina/)
 
 Code Stats:
-[![](https://tokei.rs/b1/github/athina-edu/athina?category=lines)](https://github.com/athina-edu/athina).
-[![](https://tokei.rs/b1/github/athina-edu/athina?category=code)](https://github.com/athina-edu/athina).
-[![](https://tokei.rs/b1/github/athina-edu/athina?category=files)](https://github.com/athina-edu/athina).
+[![](https://tokei.rs/b1/github/athina-edu/athina?category=lines)](https://github.com/athina-edu/athina)
+[![](https://tokei.rs/b1/github/athina-edu/athina?category=code)](https://github.com/athina-edu/athina)
+[![](https://tokei.rs/b1/github/athina-edu/athina?category=files)](https://github.com/athina-edu/athina)
 
 
 Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 
