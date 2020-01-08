@@ -20,7 +20,7 @@ from athina.url import *
 
 # Variable modules (extensions, e.g., canvas or blackboard)
 from athina.canvas import *
-from athina.git import *
+from athina.git.git import *
 from athina.moss import *
 
 

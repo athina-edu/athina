@@ -8,11 +8,9 @@ import git
 from datetime import datetime, timezone
 from dateutil.tz import tzlocal
 from urllib.parse import urlparse
-from urllib.parse import quote_plus as urlquote
 import dateutil.parser
 from athina.users import *
-from athina.url import *
-import random
+from athina.git.gitlab import *
 
 __all__ = ('get_repo_commit', 'make_proper_git_url', 'Repository',)
 
@@ -76,7 +74,7 @@ class Repository:
                         "%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                 self.configuration.assignment_id, user_id)])
         if git_url != "" and self.configuration.use_webhook is True:
-            self.gitlab_set_webhook(user_object)
+            gitlab_set_webhook(self.configuration, self.logger, user_object)
 
     def retrieve_last_commit_date(self, user_id):
         try:
@@ -110,7 +108,7 @@ class Repository:
             user_values.save()
             changed_state = False  # do not process anything for this student
         elif user_values.new_url and self.configuration.gitlab_check_repo_is_private and \
-                self.gitlab_check_if_repo_private(user_values.repository_url) is False:
+                gitlab_check_if_repo_private(self.configuration, self.logger, user_values.repository_url) is False:
             self.logger.logger.warning("The git repository is not private! Aborting checks.")
             self.e_learning.submit_grade(user_id, user_values, 0,
                                          ['The git repository is not private.'
@@ -192,64 +190,3 @@ class Repository:
                                    stderr=subprocess.PIPE)
         out, err = process.communicate()
         return out, err
-
-    @staticmethod
-    def gitlab_return_encoded_url(repository_url):
-        return urlquote(re.sub('\.git$', '', urlparse(repository_url).path[1:]))
-
-    def gitlab_set_webhook(self, user_values):
-        if self.configuration.athina_web_url is not None:
-            self.logger.logger.info("Attempting to set webhook for user %s" % user_values.user_id)
-            encoded_url = self.gitlab_return_encoded_url(user_values.repository_url)
-            webhook_url = "%s/assignments/webhook/" % self.configuration.athina_web_url
-            webhook_token = random.getrandbits(128)
-            # Check if hook exists
-            data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
-                               headers={"Authorization": "Bearer %s" % self.configuration.git_password},
-                               method="get", return_type="json")
-            try:
-                hook_id = [w.get('id') for w in data if w.get('url', '') == webhook_url]
-            except AttributeError:
-                return None
-            if len(hook_id) == 0:
-                # Add new webhook
-                data = request_url("https://%s/api/v4/projects/%s/hooks" % (self.configuration.git_url, encoded_url),
-                                   headers={"Authorization": "Bearer %s" % self.configuration.git_password},
-                                   payload={"id": encoded_url,
-                                            "url": webhook_url,
-                                            "push_events": "yes",
-                                            "enable_ssl_verification": "no",
-                                            "token": webhook_token
-                                            }, method="post", return_type="json")
-            else:
-                # Edit existing webhook
-                data = request_url("https://%s/api/v4/projects/%s/hooks/%s" %
-                                   (self.configuration.git_url, encoded_url, hook_id[0]),
-                                   headers={"Authorization": "Bearer %s" % self.configuration.git_password},
-                                   payload={"id": encoded_url,
-                                            "url": webhook_url,
-                                            "push_events": "yes",
-                                            "enable_ssl_verification": "no",
-                                            "token": webhook_token
-                                            }, method="put", return_type="json")
-            if data.get("created_at", None) is not None:
-                user_values.use_webhook = True
-                user_values.webhook_token = webhook_token
-                user_values.save()
-                self.logger.logger.info("Webhook was set successfully.")
-            else:
-                self.logger.logger.warning("Attempt to send webhook failed!")
-                self.logger.logger.debug(data)
-
-    def gitlab_check_if_repo_private(self, repository_url):
-        self.logger.logger.info("Checking if repository is private. "
-                                "This can be disable in configuration (gitlab_check_repo_is_private)")
-        encoded_url = self.gitlab_return_encoded_url(repository_url)
-        data = request_url("https://%s/api/v4/projects/%s" % (self.configuration.git_url, encoded_url),
-                           headers={"Authorization": "Bearer %s" % self.configuration.git_password},
-                           method="get", return_type="json")
-        visibility = data.get("visibility", None)
-        if visibility == "private" or visibility is None:  # it is either private or we cannot check if it is
-            return True
-        else:
-            return False

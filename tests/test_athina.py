@@ -16,7 +16,7 @@ if os.environ.get('ATHINA_MYSQL_PASSWORD', 0) == 0:
     os.environ['ATHINA_MYSQL_PASSWORD'] = 'password'
 
 from athina.logger import *
-from athina.git import *
+from athina.git.git import *
 from athina.configuration import *
 from athina.tester.tester import *
 from athina.canvas import *

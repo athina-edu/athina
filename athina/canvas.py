@@ -6,7 +6,7 @@ from dateutil.tz import tzlocal
 import dateutil.parser
 from athina.url import *
 from athina.users import *
-from athina.git import *
+from athina.git.git import *
 
 __all__ = ('Canvas',)
 
