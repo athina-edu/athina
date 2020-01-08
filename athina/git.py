@@ -30,6 +30,10 @@ def make_proper_git_url(url):
     if type(url) is str:
         if url[-4:] != ".git":
             return url + ".git"
+        else:
+            return url
+    else:
+        return url
 
 
 class Repository:
