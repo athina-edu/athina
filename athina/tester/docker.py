@@ -27,13 +27,11 @@ def docker_build(configuration, logger):
                                stderr=subprocess.PIPE)
 
     try:
-        process.wait(900)  # A build should typically be ready after 15 minutes
+        out, err = process.communicate(timeout=900)  # A build should typically be ready after 15 minutes
     except subprocess.TimeoutExpired:
         # Kill container
         terminate_all_containers()
-        logger.logger.warning("Terminated build container and any others that may be hanging for more than 600 secs")
-
-    out, err = process.communicate()
+        logger.logger.warning("Terminated build container and any others that may be hanging for more than 900 secs")
 
     if process.returncode and err:
         logger.logger.error("Docker build returned error: %s" % err.decode("utf-8", "backslashreplace"))
