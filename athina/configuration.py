@@ -42,7 +42,8 @@ class Configuration:
     canvas_url = "www.instructure.com"
     grade_publish = True
     print_debug_msgs = False
-    use_seccomp_on_docker = True
+    docker_use_seccomp = True
+    docker_use_net_admin = False
     use_webhook = False
     gitlab_check_repo_is_private = False
 
@@ -152,7 +153,8 @@ class Configuration:
         self.load_value(config, 'canvas_url', self.canvas_url)
         self.load_value(config, 'grade_publish', self.grade_publish)
         self.load_value(config, 'use_docker', self.use_docker)
-        self.load_value(config, 'use_seccomp_on_docker', self.use_seccomp_on_docker)
+        self.load_value(config, 'docker_use_seccomp', self.docker_use_seccomp)
+        self.load_value(config, 'docker_use_net_admin', self.docker_use_net_admin)
         self.load_value(config, 'use_webhook', self.use_webhook)
         self.load_value(config, 'gitlab_check_repo_is_private', self.gitlab_check_repo_is_private)
 

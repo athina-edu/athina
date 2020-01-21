@@ -107,7 +107,13 @@ grade_publish: true
 # I.e., the docker container is less secure for the applications running within it, however,
 # it is still a sandbox (as much as containers can guarantee a degree of security).
 # For example, if students use gdb, then you will need to disable this.
-use_seccomp_on_docker: true
+docker_use_seccomp: true
+
+# This allows for the docker container to run with full net system privileges.
+# Example use: open a vpn tunnel before running a test.
+# You will need to create the tun device in your docketfile:
+# mkdir -p /dev/net && mknod /dev/net/tun c 10 200
+docker_use_net_admin: false
 
 # Currently this is supported only for gitlab and requires that the personal access token for git
 # that is provided has read/write privileges in the user's repository.
