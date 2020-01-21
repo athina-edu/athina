@@ -56,7 +56,7 @@ def docker_run(test_script, configuration, logger):
         run_statement.extend(["--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined"])
 
     if configuration.docker_use_net_admin:
-        run_statement.extend(["--cap-add NET_ADMIN"])
+        run_statement.extend(["--cap-add=NET_ADMIN"])
 
     run_statement.extend(["-v", "%s:%s" % (
         configuration.athina_student_code_dir, configuration.athina_student_code_dir),
