@@ -7,6 +7,7 @@ verify_ssl = true
 
 [packages]
 athina = {editable = true,path = "."}
+pytest = "*"
 
 [requires]
 python_version = "3.6"

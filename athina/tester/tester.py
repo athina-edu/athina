@@ -90,16 +90,24 @@ class Tester:
 
     def tester_lock(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        if user_object.repository_url == "":
+            search_by = "Users.user_id == user_object.user_id"
+        else:
+            search_by = "Users.repository_url == user_object.repository_url"
         Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
-            Users.repository_url == user_object.repository_url,
+            exec(search_by),
             Users.course_id == user_object.course_id,
             Users.assignment_id == user_object.assignment_id
         ).execute()
 
     def tester_unlock(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        if user_object.repository_url == "":
+            search_by = "Users.user_id == user_object.user_id"
+        else:
+            search_by = "Users.repository_url == user_object.repository_url"
         Users.update(tester_active=False).where(
-            Users.repository_url == user_object.repository_url,
+            exec(search_by),
             Users.course_id == user_object.course_id,
             Users.assignment_id == user_object.assignment_id
         ).execute()
