@@ -142,6 +142,7 @@ class Tester:
             self.tester_lock(user_id)
         else:
             self.logger.logger.debug("Tester already active for user_id %d" % user_id)
+            del self.user_data  # Delete in child process the db connection
             os._exit(0)  # Terminating the child (pytest compatible)
 
         # Wait until CPU is available (expand this to check RAM and disk IO availability)
@@ -312,7 +313,6 @@ class Tester:
                 if user.repository_url is not None:
                     if self.tester_is_inactive(user.user_id):
                         self.repository.check_repository_changes(user.user_id)
-                        time.sleep(0.25)
                         # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
                         # Process group assignment will test once and then it identifies and submits a grade for both
                         # groups
@@ -349,6 +349,7 @@ class Tester:
             if new_pid == 0:
                 # Child becomes operational
                 self.process_student_assignment(student_id)
+                del self.user_data  # Delete in child process the db connection
                 os._exit(0)  # Terminating the child (pytest compatible)
 
         self.logger.create_logger()

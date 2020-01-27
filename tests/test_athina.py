@@ -468,3 +468,28 @@ class TestFunctions(unittest.TestCase):
         children = cprocess.children(recursive=True)
         self.assertLessEqual(len(children), 4,
                              msg="Processes needs to be less than user records (no duplicate processes)")
+
+    def test_lock_unlock(self):
+        logger = create_logger()
+        configuration = Configuration(logger=logger)
+
+        configuration.use_docker = True
+        configuration.test_timeout = 10
+        # Create fake directories
+        create_test_config("echo 'test'\nsleep 20\necho 80")
+
+        e_learning = Canvas(configuration, logger)
+        user_data = create_fake_user_db()
+        repository = Repository(logger, configuration, e_learning)
+        tester = Tester(user_data, logger, configuration, e_learning, repository)
+
+        tester.tester_lock(user_id=1)
+        student_object = return_a_student(1, 1, 1)
+        self.assertLessEqual(student_object.tester_active, True, msg="Checking that tester locks for user with repo")
+        tester.tester_unlock(user_id=1)
+
+        tester.tester_lock(user_id=7)
+        student_object = return_a_student(1, 1, 7)
+        self.assertLessEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
+        tester.tester_unlock(user_id=7)
+
