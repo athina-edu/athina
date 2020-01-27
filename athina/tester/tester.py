@@ -1,16 +1,16 @@
-from athina.tester.firejail import *
-from datetime import timedelta, datetime, timezone
-from dateutil.tz import tzlocal
-from athina.tester.docker import *
-from athina.users import *
-from random import uniform
-import time
-import shutil
 import os
-import psutil
+import shutil
 import signal
+import time
+from datetime import timedelta, datetime
+from random import uniform
 
-# Modifiable loading
+import psutil
+from dateutil.tz import tzlocal
+
+from athina.tester.docker import *
+from athina.tester.firejail import *
+from athina.users import *
 from athina.users import Database, Users
 
 __all__ = ('Tester',)
@@ -43,7 +43,7 @@ class Tester:
         self.e_learning = e_learning
         self.repository = repository
 
-    def trim_test_output(self, out):
+    def _trim_test_output(self, out):
         if len(out) > self.configuration.max_file_size:
             # Adding the last three lines just in case (the score should be in one of these)
             lines = out.split(b"\n")[-3] + b"\n" + out.split(b"\n")[-2] + b"\n" + out.split(b"\n")[-1]
@@ -63,7 +63,7 @@ class Tester:
         except FileNotFoundError:
             pass
 
-    def update_user_db(self, user_object, commit_date_being_tested):
+    def _update_user_db(self, user_object, commit_date_being_tested):
         user_object.plagiarism_to_grade = True
         user_object.last_graded = datetime.now(tzlocal()).replace(tzinfo=None).replace(microsecond=0)
 
@@ -88,7 +88,7 @@ class Tester:
         return user_object.tester_active is False or (
                 user_object.tester_date + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None))
 
-    def tester_lock(self, user_id):
+    def _tester_lock(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         if user_object.repository_url == "":
             search_by = "Users.user_id == user_object.user_id"
@@ -100,7 +100,7 @@ class Tester:
             Users.assignment_id == user_object.assignment_id
         ).execute()
 
-    def tester_unlock(self, user_id):
+    def _tester_unlock(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         if user_object.repository_url == "":
             search_by = "Users.user_id == user_object.user_id"
@@ -113,7 +113,7 @@ class Tester:
         ).execute()
 
     @staticmethod
-    def get_group_user_list(user_object):
+    def _get_group_user_list(user_object):
         # Check if the user that was just graded had a url (Participation assignments won't have this
         if user_object.repository_url is None:
             user_list = [(user_object.user_id, user_object)]
@@ -139,7 +139,7 @@ class Tester:
         if self.tester_is_inactive(user_id):
             # Make this tester the primary tester
             # Mark all users that use the same repository (i.e., groups) as being actively tested
-            self.tester_lock(user_id)
+            self._tester_lock(user_id)
         else:
             self.logger.logger.debug("Tester already active for user_id %d" % user_id)
             del self.user_data  # Delete in child process the db connection
@@ -186,7 +186,7 @@ class Tester:
 
             for x in range(0, len(self.configuration.test_scripts)):
                 # Run individual test, add results in test_reports and test_grades
-                self.run_test(x, test_reports, test_grades, user_object)
+                self._run_test(x, test_reports, test_grades, user_object)
 
             # sum and scale grades from tests
             grade = round((sum(test_grades)) * self.configuration.total_points)
@@ -194,7 +194,7 @@ class Tester:
                 b"\nNote: Maximum possible grade is %d, the rest is graded manually by the instructor.\n" %
                 self.configuration.total_points)
 
-            user_list = self.get_group_user_list(user_object)
+            user_list = self._get_group_user_list(user_object)
 
             user_object_list = []  # Return object for multiple user_objects (important for parallel - testing)
 
@@ -214,7 +214,7 @@ class Tester:
                 self.logger.logger.info(">>> Submitting new grade for %s: %s" % (current_user_id, grade))
 
                 # Update the user db that grades have been submitted
-                self.update_user_db(current_user_object, commit_date_being_tested)
+                self._update_user_db(current_user_object, commit_date_being_tested)
                 current_user_object.changed_state = False
                 current_user_object.last_grade = grade
                 current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") for test
@@ -229,12 +229,12 @@ class Tester:
             user_object_list = [user_object]  # return list of the current object
 
         # Remove the lock on the record
-        self.tester_unlock(user_id)
+        self._tester_unlock(user_id)
         self.logger.logger.info("Testing Completed for %d" % user_object.user_id)
 
         return user_object_list  # return the list of all updated objects
 
-    def run_test(self, x, test_reports, test_grades, user_object):
+    def _run_test(self, x, test_reports, test_grades, user_object):
         test_reports.append(("Test %d with weight %.2f" %
                              (x + 1, self.configuration.test_weights[x])).encode("utf-8"))
         test_script = self.configuration.test_scripts[x]
@@ -285,7 +285,7 @@ class Tester:
         except (IndexError, UnicodeDecodeError, ValueError):  # generated when errors exist in the test script
             score = None
 
-        out = self.trim_test_output(out)
+        out = self._trim_test_output(out)
         test_reports.append(out)
         if self.repository.check_error(err) and score is None:
             test_grades.append(0.0)
@@ -334,9 +334,9 @@ class Tester:
             docker_build(configuration=self.configuration, logger=self.logger)
 
         user_ids = [key for key, value in processing_list]
-        self.spawn_worker(user_ids)
+        self._spawn_worker(user_ids)
 
-    def spawn_worker(self, user_ids):
+    def _spawn_worker(self, user_ids):
         # For parallel/threaded runs database objects have to be dropped (they cannot be pickled)
         # Same for logger
         del self.user_data

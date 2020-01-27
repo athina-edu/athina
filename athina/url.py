@@ -1,6 +1,7 @@
-import requests
-import time
 import json
+import time
+
+import requests
 
 __all__ = ('request_url',)
 

@@ -1,12 +1,13 @@
 # TODO: get_additional_user_info() test
 
-from tests.test_athina import create_test_config, create_logger, create_fake_user_db
-import unittest
-from athina.canvas import *
-from athina.logger import *
-from athina.configuration import *
-from athina.users import *
 import json
+import unittest
+
+from athina.canvas import *
+from athina.configuration import *
+from athina.logger import *
+from athina.users import *
+from tests.test_athina import create_test_config, create_fake_user_db
 
 
 class TestFunctions(unittest.TestCase):

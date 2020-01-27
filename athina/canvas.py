@@ -2,11 +2,13 @@
 # There are built in a general fashion so that e-learning platforms can be easily switched (as long as func names
 # remain the same)
 from datetime import datetime, timedelta
-from dateutil.tz import tzlocal
+
 import dateutil.parser
+from dateutil.tz import tzlocal
+
+from athina.git.git import *
 from athina.url import *
 from athina.users import *
-from athina.git.git import *
 
 __all__ = ('Canvas',)
 

@@ -1,9 +1,10 @@
 # athina_cli_tests.py
 import os
 import shutil
+import time
 import unittest
 from datetime import datetime, timezone, timedelta
-import time
+
 import psutil
 
 if os.environ.get('ATHINA_MYSQL_HOST', 0) == 0:
@@ -331,7 +332,7 @@ class TestFunctions(unittest.TestCase):
 
         # Parallel process
         configuration.processes = 5
-        tester.spawn_worker([1, 2, 3, 4, 5])
+        tester._spawn_worker([1, 2, 3, 4, 5])
         time.sleep(40)
         obj = Users.get(Users.user_id == 1)
         self.assertEqual(obj.new_url, False)
@@ -461,7 +462,7 @@ class TestFunctions(unittest.TestCase):
         user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
         user_object.save()
 
-        tester.spawn_worker([1, 3, 4])
+        tester._spawn_worker([1, 3, 4])
         time.sleep(5)
 
         cprocess = psutil.Process()
@@ -483,13 +484,13 @@ class TestFunctions(unittest.TestCase):
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
 
-        tester.tester_lock(user_id=1)
+        tester._tester_lock(user_id=1)
         student_object = return_a_student(1, 1, 1)
         self.assertLessEqual(student_object.tester_active, True, msg="Checking that tester locks for user with repo")
-        tester.tester_unlock(user_id=1)
+        tester._tester_unlock(user_id=1)
 
-        tester.tester_lock(user_id=7)
+        tester._tester_lock(user_id=7)
         student_object = return_a_student(1, 1, 7)
         self.assertLessEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
-        tester.tester_unlock(user_id=7)
+        tester._tester_unlock(user_id=7)
 

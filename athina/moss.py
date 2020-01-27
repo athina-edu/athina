@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
-import re
-import np
 import glob
-import mosspy
 import os
-from athina.users import *
-from athina.url import *
+import re
 from datetime import timedelta, datetime
+
+import mosspy
+import np
 from dateutil.tz import tzlocal
 
-__all__ = ('plagiarism_checks_on_users',)
+from athina.url import *
+from athina.users import *
+
+__all__ = ('plagiarism_checks_on_users', 'Plagiarism',)
 
 
 def plagiarism_checks_on_users(logger, configuration, e_learning):

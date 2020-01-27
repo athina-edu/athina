@@ -2,26 +2,27 @@
 
 # Required modules
 import argparse
-import filelock
+import datetime
+import os
 import signal
 import sys
-import os
-import yaml
-import requests
-import datetime
 import time
-from dateutil.tz import tzlocal
+
 import dateutil
-from athina.logger import *
-from athina.tester.tester import *
-from athina.configuration import *
-from athina.users import *
-from athina.url import *
+import filelock
+import requests
+import yaml
+from dateutil.tz import tzlocal
 
 # Variable modules (extensions, e.g., canvas or blackboard)
 from athina.canvas import *
+from athina.configuration import *
 from athina.git.git import *
+from athina.logger import *
 from athina.moss import *
+from athina.tester.tester import *
+from athina.url import *
+from athina.users import *
 
 
 def lock_process():

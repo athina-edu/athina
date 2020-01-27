@@ -1,10 +1,11 @@
 # Hyper object that retains all execution parameters shared between modules
-from datetime import datetime
-import os
 import glob
-import shutil
-import yaml
 import multiprocessing
+import os
+import shutil
+from datetime import datetime
+
+import yaml
 
 __all__ = ('Configuration',)
 

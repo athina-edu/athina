@@ -1,7 +1,10 @@
-import unittest
+import os
 import shutil
-from athina.moss import Plagiarism
+import unittest
+
 from athina.logger import *
+from athina.moss import Plagiarism
+from athina.users import *
 
 
 class TestFunctions(unittest.TestCase):
@@ -26,7 +29,7 @@ class TestFunctions(unittest.TestCase):
         filename = "tests/user_data.sqlite3"
         if os.path.isfile(filename):
             os.remove(filename)
-        user_data = Database(db_name=filename)
+        user_data = Database()
         logger = self.create_logger()
         x = Plagiarism(logger=logger,
                        service_type="moss",

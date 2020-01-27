@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from datetime import datetime
-from dateutil.tz import tzlocal
 import os
-import peewee
 import re
+from datetime import datetime
+
+import peewee
 import pymysql
+from dateutil.tz import tzlocal
 
 __all__ = ('Database', 'Users', 'AssignmentData', "update_key_in_assignment_data", "load_key_from_assignment_data",
            "return_all_students", "return_a_student",)

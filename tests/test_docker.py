@@ -1,7 +1,8 @@
 import unittest
-from tests.test_athina import create_test_config, create_logger, create_fake_user_db
-from athina.tester.docker import docker_build
+
 from athina.configuration import Configuration
+from athina.tester.docker import docker_build
+from tests.test_athina import create_test_config, create_logger, create_fake_user_db
 
 
 class TestFunctions(unittest.TestCase):

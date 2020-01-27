@@ -1,17 +1,18 @@
 # Module for handling git repositories. The functions in this modules are meant to be copied over in order to extend
 # support to other version control programs, e.g., svn
-import subprocess
-import re
-import os
 import html
-import git
+import os
+import subprocess
 import time
-from datetime import datetime, timezone
-from dateutil.tz import tzlocal
+from datetime import datetime
 from urllib.parse import urlparse
+
 import dateutil.parser
-from athina.users import *
+import git
+from dateutil.tz import tzlocal
+
 from athina.git.gitlab import *
+from athina.users import *
 
 __all__ = ('get_repo_commit', 'make_proper_git_url', 'Repository',)
 
@@ -51,7 +52,7 @@ class Repository:
             return True
 
     # TODO: change some of these commands to appropriate module commands, e.g., shutils, os etc.
-    def clone_git_repo(self, user_id, user_object):
+    def _clone_git_repo(self, user_id, user_object):
         time.sleep(0.5)  # Delay so that requests won't be rejected by github or gitlab
         subprocess.run(["rm", "-r", "-f", "%s/repodata%s/u%s" % (self.configuration.config_dir,
                                                                  self.configuration.assignment_id, user_id)])
@@ -80,7 +81,7 @@ class Repository:
 
     def retrieve_last_commit_date(self, user_id):
         try:
-            out, err = self.retrieve_git_log(user_id)
+            out, err = self._retrieve_git_log(user_id)
         except FileNotFoundError:
             self.logger.logger.debug("Error: file not found when obtaining commit date through git log.")
             return None
@@ -122,11 +123,11 @@ class Repository:
         elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
             self.logger.logger.info("> New URL Submission: %s - %d" % (user_values.user_fullname, user_id))
             # Delete dir, create dir and clone repository
-            self.clone_git_repo(user_id, user_values)
+            self._clone_git_repo(user_id, user_values)
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
                                                          self.configuration.assignment_id, user_id)):
                 # valid copy cloned successfully, moving on assuming the rest of the checks clear
-                changed_state = self.compare_commit_date_with_due_date(user_id, user_values)
+                changed_state = self._compare_commit_date_with_due_date(user_id, user_values)
             else:
                 self.logger.logger.error(">>> Could not clone the repository.")
                 changed_state = False  # invalid copy, couldn't be cloned.
@@ -142,13 +143,13 @@ class Repository:
         else:
             # Pull and see if there is anything that changed,
             # then check date and compare with last date
-            out, err = self.pull_git_repo(user_id)
+            out, err = self._pull_git_repo(user_id)
 
             if b"unresolved conflict" in err:
                 self.logger.logger.warning("Cannot pull due to unresolved conflicts...initiating git clone...")
-                self.clone_git_repo(user_id, user_values)
+                self._clone_git_repo(user_id, user_values)
 
-            changed_state = self.compare_commit_date_with_due_date(user_id, user_values)
+            changed_state = self._compare_commit_date_with_due_date(user_id, user_values)
 
         user_values.webhook_event = False  # Either way after processing this should be set to false
         user_values.changed_state = changed_state
@@ -156,7 +157,7 @@ class Repository:
 
         return changed_state
 
-    def pull_git_repo(self, user_id):
+    def _pull_git_repo(self, user_id):
         time.sleep(0.5)  # Delay so that requests won't be rejected by github or gitlab
         try:
             process = subprocess.Popen(["git", "pull"],
@@ -171,7 +172,7 @@ class Repository:
             err = b"unresolved conflict"
         return out, err
 
-    def compare_commit_date_with_due_date(self, user_id, user_values):
+    def _compare_commit_date_with_due_date(self, user_id, user_values):
         commit_date = self.retrieve_last_commit_date(user_id)
         self.logger.logger.debug("Retrieving latest git commit date from git log: %s" % commit_date)
         if commit_date is None:  # no repo or commit cannot be obtained
@@ -190,7 +191,7 @@ class Repository:
         else:
             return False
 
-    def retrieve_git_log(self, user_id):
+    def _retrieve_git_log(self, user_id):
         process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
                                    cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
                                                                self.configuration.assignment_id, user_id),

@@ -1,7 +1,8 @@
 import hashlib
-import subprocess
 import os
+import subprocess
 import time
+
 from athina.git.git import get_repo_commit
 from athina.users import load_key_from_assignment_data, update_key_in_assignment_data
 

@@ -2,6 +2,7 @@ import random
 import re
 from urllib.parse import quote_plus as urlquote
 from urllib.parse import urlparse
+
 from athina.url import *
 
 __all__ = ('gitlab_set_webhook', 'gitlab_check_if_repo_private',)
