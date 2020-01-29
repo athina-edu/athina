@@ -83,7 +83,7 @@ class Tester:
         except FileNotFoundError:
             self.logger.logger.error("Could not copy %s to %s" % (source, destination))
 
-    def tester_is_inactive(self, user_id):
+    def _tester_is_inactive(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         return user_object.tester_active is False or (
                 user_object.tester_date + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None))
@@ -91,14 +91,18 @@ class Tester:
     def _tester_lock(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         if user_object.repository_url == "":
-            search_by = "Users.user_id == user_object.user_id"
+            Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
+                Users.user_id == user_object.user_id,
+                Users.course_id == user_object.course_id,
+                Users.assignment_id == user_object.assignment_id
+            ).execute()
         else:
-            search_by = "Users.repository_url == user_object.repository_url"
-        Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
-            exec(search_by),
-            Users.course_id == user_object.course_id,
-            Users.assignment_id == user_object.assignment_id
-        ).execute()
+            Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
+                Users.repository_url == user_object.repository_url,
+                Users.course_id == user_object.course_id,
+                Users.assignment_id == user_object.assignment_id
+            ).execute()
+
 
     def _tester_unlock(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
@@ -136,7 +140,7 @@ class Tester:
         # Make sure another fork for the same user is not active
         # FIXME: The code below (if statement) needs to go into the preprocessing, otherwise we will spawn the same
         # process every minute
-        if self.tester_is_inactive(user_id):
+        if self._tester_is_inactive(user_id):
             # Make this tester the primary tester
             # Mark all users that use the same repository (i.e., groups) as being actively tested
             self._tester_lock(user_id)
@@ -311,7 +315,7 @@ class Tester:
         for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
             if self.configuration.no_repo is not True:
                 if user.repository_url is not None:
-                    if self.tester_is_inactive(user.user_id):
+                    if self._tester_is_inactive(user.user_id):
                         self.repository.check_repository_changes(user.user_id)
                         # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
                         # Process group assignment will test once and then it identifies and submits a grade for both

@@ -118,6 +118,7 @@ class TestFunctions(unittest.TestCase):
     def test_git_tester(self):
         results = []
         logger = create_logger()
+        user_data = create_fake_user_db()
 
         configuration = Configuration(logger=logger)
         # Create fake directories
@@ -127,7 +128,6 @@ class TestFunctions(unittest.TestCase):
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
-        user_data = create_fake_user_db()
         e_learning = Canvas(configuration, logger)
         repository = Repository(logger, configuration, e_learning)
         results.append(repository.check_repository_changes(1))
@@ -473,6 +473,7 @@ class TestFunctions(unittest.TestCase):
     def test_lock_unlock(self):
         logger = create_logger()
         configuration = Configuration(logger=logger)
+        user_data = create_fake_user_db()
 
         configuration.use_docker = True
         configuration.test_timeout = 10
@@ -480,17 +481,19 @@ class TestFunctions(unittest.TestCase):
         create_test_config("echo 'test'\nsleep 20\necho 80")
 
         e_learning = Canvas(configuration, logger)
-        user_data = create_fake_user_db()
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
 
         tester._tester_lock(user_id=1)
         student_object = return_a_student(1, 1, 1)
-        self.assertLessEqual(student_object.tester_active, True, msg="Checking that tester locks for user with repo")
+        self.assertEqual(student_object.tester_active, True, msg="Checking that tester locks for user with repo")
+        student_object = return_a_student(1, 1, 2)
+        self.assertEqual(student_object.tester_active, False, msg="Random other user should not be locked")
+        self.assertEqual(tester._tester_is_inactive(1), False, msg="Tester should be active")
         tester._tester_unlock(user_id=1)
 
         tester._tester_lock(user_id=7)
         student_object = return_a_student(1, 1, 7)
-        self.assertLessEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
+        self.assertEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
         tester._tester_unlock(user_id=7)
 
