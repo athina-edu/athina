@@ -114,10 +114,6 @@ can be retrieved from your canvas' personal settings.
 3. Copy your tests inside your new folder's tests directory (e.g., [tests](config-examples/tests)).
 
 4. Run athina via command line (if you are not using the one-click-run variant).
-    * Testing your config assignment for a specific student:
-    `athina-cli --config /path/to/config/folder --verbose forced_testing="Michail Tsikerdekis"`
-    * Testing your config assignment for the test student on Canvas (it has an empty name):
-    `athina-cli --config /path/to/config/folder --verbose forced_testing=`
     * Running your config assignment but still receiving the log message on terminal (this will send grades to canvas for assignments that have submitted URLs):
     `athina-cli --config /path/to/config/folder --verbose`
     * Running your config assignment and getting a log file inside config directory:
