@@ -491,6 +491,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(student_object.tester_active, False, msg="Random other user should not be locked")
         self.assertEqual(tester._tester_is_inactive(1), False, msg="Tester should be active")
         tester._tester_unlock(user_id=1)
+        self.assertEqual(tester._tester_is_inactive(1), True, msg="Tester should be inactive")
 
         tester._tester_lock(user_id=7)
         student_object = return_a_student(1, 1, 7)
