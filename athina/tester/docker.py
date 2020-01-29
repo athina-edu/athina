@@ -46,7 +46,7 @@ def docker_build(configuration, logger):
 def docker_run(test_script, configuration, logger):
     container_name = __generate_hash("%s-%s" % (time.time(), os.getpid()))
     run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
-                     "--stop-timeout", "1",
+                     "--stop-timeout", "1", "--rm",
                      "-e", "STUDENT_DIR=%s" % configuration.athina_student_code_dir,
                      "-e", "TEST_DIR=%s" % configuration.athina_test_tmp_dir,
                      "-e", "EXTRA_PARAMS=%s" % " ".join(configuration.extra_params)]
