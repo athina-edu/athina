@@ -88,36 +88,21 @@ class Tester:
         return user_object.tester_active is False or (
                 user_object.tester_date + timedelta(hours=1) <= datetime.now(tzlocal()).replace(tzinfo=None))
 
-    def _tester_lock(self, user_id):
+    def _tester_lock_unlock(self, user_id, lock=True):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         if user_object.repository_url == "":
-            Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
+            Users.update(tester_active=lock, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
                 Users.user_id == user_object.user_id,
                 Users.course_id == user_object.course_id,
                 Users.assignment_id == user_object.assignment_id
             ).execute()
         else:
-            Users.update(tester_active=True, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
+            Users.update(tester_active=lock, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
                 Users.repository_url == user_object.repository_url,
                 Users.course_id == user_object.course_id,
                 Users.assignment_id == user_object.assignment_id
             ).execute()
-
-    def _tester_unlock(self, user_id):
-        user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
-        if user_object.repository_url == "":
-            Users.update(tester_active=False).where(
-                Users.user_id == user_object.user_id,
-                Users.course_id == user_object.course_id,
-                Users.assignment_id == user_object.assignment_id
-            ).execute()
-        else:
-            Users.update(tester_active=False).where(
-                Users.repository_url == user_object.repository_url,
-                Users.course_id == user_object.course_id,
-                Users.assignment_id == user_object.assignment_id
-            ).execute()
-
+        return user_id
 
     @staticmethod
     def _get_group_user_list(user_object):
@@ -139,18 +124,6 @@ class Tester:
         # Acquire DB connection if missing (e.g., parallel run)
         self.user_data = Database() if self.user_data is None else self.user_data
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
-
-        # Make sure another fork for the same user is not active
-        # FIXME: The code below (if statement) needs to go into the preprocessing, otherwise we will spawn the same
-        # process every minute
-        if self._tester_is_inactive(user_id):
-            # Make this tester the primary tester
-            # Mark all users that use the same repository (i.e., groups) as being actively tested
-            self._tester_lock(user_id)
-        else:
-            self.logger.logger.debug("Tester already active for user_id %d" % user_id)
-            del self.user_data  # Delete in child process the db connection
-            os._exit(0)  # Terminating the child (pytest compatible)
 
         # Wait until CPU is available (expand this to check RAM and disk IO availability)
         while psutil.cpu_percent() > 85 or psutil.virtual_memory()[2] > 85:
@@ -235,8 +208,6 @@ class Tester:
             user_object.save()
             user_object_list = [user_object]  # return list of the current object
 
-        # Remove the lock on the record
-        self._tester_unlock(user_id)
         self.logger.logger.info("Testing Completed for %d" % user_object.user_id)
 
         return user_object_list  # return the list of all updated objects
@@ -344,18 +315,21 @@ class Tester:
         self._spawn_worker(user_ids)
 
     def _spawn_worker(self, user_ids):
-        # For parallel/threaded runs database objects have to be dropped (they cannot be pickled)
-        # Same for logger
+        # Lock all userids. Mark all users that use the same repository (i.e., groups) as being actively tested
+        user_ids = [self._tester_lock_unlock(student_id, lock=True) for student_id in user_ids
+                    if self._tester_is_inactive(student_id)]
+
+        # For parallel/threaded runs database objects have to be dropped. Same for logger
         del self.user_data
         self.logger.delete_logger()
 
-        # FORK implementation for asynchronous testing (multithreaded)
-        # Loop through each student in list and fork (main continues)
+        # fork(). Loop through each student in list and fork (main routine continues)
         for student_id in user_ids:
             new_pid = os.fork()
             if new_pid == 0:
                 # Child becomes operational
                 self.process_student_assignment(student_id)
+                self._tester_lock_unlock(student_id, lock=False)  # Release the lock for user
                 del self.user_data  # Delete in child process the db connection
                 os._exit(0)  # Terminating the child (pytest compatible)
 

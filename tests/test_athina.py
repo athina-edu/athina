@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import unittest
+from dateutil.tz import tzlocal
 from datetime import datetime, timezone, timedelta
 
 import psutil
@@ -195,7 +196,7 @@ class TestFunctions(unittest.TestCase):
         # Previous user corrects and submits and actual good url
         obj = return_a_student(1, 1, 5)
         obj.repository_url = "https://github.com/git-persistence/git-persistence/"
-        obj.url_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        obj.url_date = datetime.now(tzlocal()).replace(tzinfo=None)
         obj.new_url = True
         obj.save()
         repository.check_repository_changes(5)
@@ -214,7 +215,7 @@ class TestFunctions(unittest.TestCase):
 
         # Briefly remove due date enforcement
         # Technically enforce_due_date only moves the due date to some extreme future date
-        configuration.due_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        configuration.due_date = datetime.now(tzlocal()).replace(tzinfo=None)
         obj = return_a_student(1, 1, 5)
         obj.changed_state = True
         obj.save()
@@ -246,7 +247,7 @@ class TestFunctions(unittest.TestCase):
         self.assertGreater(user_object[0].last_graded, last_graded)
 
         # Configuring user 5 to use webhook's. A push event just came through
-        configuration.due_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        configuration.due_date = datetime.now(tzlocal()).replace(tzinfo=None)
         configuration.use_webhook = True
         obj = return_a_student(1, 1, 5)
         obj.changed_state = False
@@ -443,24 +444,15 @@ class TestFunctions(unittest.TestCase):
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
         configuration.processes = 2
-        repository.check_repository_changes(1)
-        repository.check_repository_changes(2)
-        repository.check_repository_changes(3)
-        repository.check_repository_changes(4)
+        for uid in [1, 2, 3, 4]:
+            repository.check_repository_changes(uid)
 
         # Pretend that the tester is already running for these users
-        user_object = Users.get(Users.user_id == 1)
-        user_object.tester_active = True
-        user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
-        user_object.save()
-        user_object = Users.get(Users.user_id == 3)
-        user_object.tester_active = True
-        user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
-        user_object.save()
-        user_object = Users.get(Users.user_id == 4)
-        user_object.tester_active = True
-        user_object.tester_date = datetime.now(timezone.utc).replace(tzinfo=None)
-        user_object.save()
+        for uid in [1, 3, 4]:
+            user_object = Users.get(Users.user_id == uid)
+            user_object.tester_active = True
+            user_object.tester_date = datetime.now(tzlocal()).replace(tzinfo=None)
+            user_object.save()
 
         tester._spawn_worker([1, 3, 4])
         time.sleep(5)
@@ -484,17 +476,17 @@ class TestFunctions(unittest.TestCase):
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
 
-        tester._tester_lock(user_id=1)
+        tester._tester_lock_unlock(user_id=1, lock=True)
         student_object = return_a_student(1, 1, 1)
         self.assertEqual(student_object.tester_active, True, msg="Checking that tester locks for user with repo")
         student_object = return_a_student(1, 1, 2)
         self.assertEqual(student_object.tester_active, False, msg="Random other user should not be locked")
         self.assertEqual(tester._tester_is_inactive(1), False, msg="Tester should be active")
-        tester._tester_unlock(user_id=1)
+        tester._tester_lock_unlock(user_id=1, lock=False)
         self.assertEqual(tester._tester_is_inactive(1), True, msg="Tester should be inactive")
 
-        tester._tester_lock(user_id=7)
+        tester._tester_lock_unlock(user_id=7, lock=True)
         student_object = return_a_student(1, 1, 7)
         self.assertEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
-        tester._tester_unlock(user_id=7)
+        tester._tester_lock_unlock(user_id=7, lock=False)
 
