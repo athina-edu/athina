@@ -36,7 +36,8 @@ class TestFunctions(unittest.TestCase):
         text = self.read_file_into_text('logs/tests.log')
         self.check_text_in_log(text)
 
-        import tests.logger_script
+        import tests.helper_files.logger_script
+        tests.helper_files.logger_script.start_logger()
 
         text = self.read_file_into_text('logs/tests.log')
         self.assertEqual("test1" in text, True, "import logger, check if logger settings are available globally")
