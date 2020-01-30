@@ -18,8 +18,10 @@ class TestFunctions(unittest.TestCase):
         return text
 
     def test_logger_create(self):
-        os.remove('logs/athina.log')
-        os.remove('logs/tests.log')
+        for file_name in {'logs/athina.log', 'logs/tests.log'}:
+            if os.path.exists(file_name):
+                os.remove(file_name)
+
         logger = athina.logger.Logger()
         logger.set_verbose(True)
         logger.set_debug(True)
