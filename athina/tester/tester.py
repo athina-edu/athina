@@ -8,6 +8,7 @@ from random import uniform
 import psutil
 from dateutil.tz import tzlocal
 
+from athina.file_functions import *
 from athina.tester.docker import *
 from athina.tester.firejail import *
 from athina.users import *
@@ -54,15 +55,6 @@ class Tester:
         else:
             return out
 
-    def rm_dir(self, folder):
-        try:
-            shutil.rmtree(folder)
-        except PermissionError:
-            self.logger.logger.error("Cannot delete %s. Likely permissions error." % folder)
-            raise PermissionError(folder)
-        except FileNotFoundError:
-            pass
-
     def _update_user_db(self, user_object, commit_date_being_tested):
         user_object.plagiarism_to_grade = True
         user_object.last_graded = datetime.now(tzlocal()).replace(tzinfo=None).replace(microsecond=0)
@@ -76,12 +68,6 @@ class Tester:
                 user_object.new_url = False
 
         return user_object  # returning the user object
-
-    def copy_dir(self, source, destination):
-        try:
-            shutil.copytree(source, destination)
-        except FileNotFoundError:
-            self.logger.logger.error("Could not copy %s to %s" % (source, destination))
 
     def _tester_is_inactive(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
@@ -223,19 +209,19 @@ class Tester:
         self.configuration.athina_test_tmp_dir = "/tmp/athina-test%s" % time_field
 
         # Copy student repo to tmp directory for testing (omit hidden files for security purposes, e.g., .git)
-        self.rm_dir(self.configuration.athina_student_code_dir)
+        rm_dir(self.configuration.athina_student_code_dir)
         if self.configuration.no_repo is False:
-            self.copy_dir('%s/repodata%s/u%s' % (self.configuration.config_dir, self.configuration.assignment_id,
-                                                 user_object.user_id),
-                          '%s' % self.configuration.athina_student_code_dir)
+            copy_dir('%s/repodata%s/u%s' % (self.configuration.config_dir, self.configuration.assignment_id,
+                                            user_object.user_id),
+                     '%s' % self.configuration.athina_student_code_dir)
         else:
             # Docker tends to create mount points which result in root folders that then cannot be deleted
             # The code below solves this problem.
             os.mkdir('%s' % self.configuration.athina_student_code_dir, mode=0o777)
 
         # Copy tests in tmp folder
-        self.rm_dir(self.configuration.athina_test_tmp_dir)
-        self.copy_dir('%s/tests' % self.configuration.config_dir, '%s' % self.configuration.athina_test_tmp_dir)
+        rm_dir(self.configuration.athina_test_tmp_dir)
+        copy_dir('%s/tests' % self.configuration.config_dir, '%s' % self.configuration.athina_test_tmp_dir)
 
         if self.configuration.pass_extra_params is True:
             self.configuration.extra_params = [user_object.secondary_id,
@@ -254,8 +240,8 @@ class Tester:
             out, err = execute_with_firejail(self.configuration, test_script, self.logger)
 
         # Clear temp directories
-        self.rm_dir(self.configuration.athina_test_tmp_dir)
-        self.rm_dir(self.configuration.athina_student_code_dir)
+        rm_dir(self.configuration.athina_test_tmp_dir)
+        rm_dir(self.configuration.athina_student_code_dir)
 
         # If we cannot find a number returned at the end of this list
         try:
@@ -335,4 +321,3 @@ class Tester:
 
         self.logger.create_logger()
         self.user_data = Database()
-

@@ -4,7 +4,7 @@ import os
 import sys
 from multiprocessing import current_process
 
-__all__ = ('Logger',)
+__all__ = ('Logger', 'logger',)
 
 # this is a pointer to the module object instance itself.
 this = sys.modules[__name__]
