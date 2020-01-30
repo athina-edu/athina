@@ -98,24 +98,24 @@ class Repository:
         changed_state = False
 
         # If nothing has been submitted no point in testing
-        if user_values.repository_url is None or user_values.repository_url == "":
+        if user_values.repository_url in {None, ""}:
             self.logger.logger.debug("No url for %s" % user_id)
             changed_state = False
         elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
             # Submit grade
-            self.logger.logger.warning("The URL is being used by another student. Will not test.")
+            msg = "The URL is being used by another student. Will not test."
+            self.logger.logger.warning(msg)
             self.e_learning.submit_grade(user_id, user_values, 0,
-                                         ['The URL is being used by another student'.encode("utf-8")])
+                                         [msg.encode("utf-8")])
             user_values.new_url = False
             user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
             user_values.save()
             changed_state = False  # do not process anything for this student
         elif user_values.new_url and \
                 gitlab_check_if_repo_private(self.configuration, self.logger, user_values.repository_url) is False:
-            self.logger.logger.warning("The git repository is not private! Aborting checks.")
-            self.e_learning.submit_grade(user_id, user_values, 0,
-                                         ['The git repository is not private.'
-                                          'Set it to private and resubmit.'.encode("utf-8")])
+            msg = "The git repository is not private! Aborting checks."
+            self.logger.logger.warning(msg)
+            self.e_learning.submit_grade(user_id, user_values, 0, [msg.encode("utf-8")])
             user_values.new_url = False
             user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
             user_values.save()
