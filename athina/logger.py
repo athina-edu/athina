@@ -1,9 +1,16 @@
 import logging
 import logging.handlers
 import os
+import sys
 from multiprocessing import current_process
 
 __all__ = ('Logger',)
+
+# this is a pointer to the module object instance itself.
+this = sys.modules[__name__]
+
+# we can explicitly make assignments on it
+this.logger = None
 
 
 class Logger:
@@ -30,6 +37,7 @@ class Logger:
 
         logging_state = logging.DEBUG if self._debug else logging.INFO
         self.logger = logging.getLogger('athina')
+        this.logger = self.logger  # setting a reference for the module wide logger
         self.logger.setLevel(logging_state)
         formatter = logging.Formatter('%(asctime)s - %(process)d - %(levelname)s - %(message)s')
 
@@ -69,6 +77,7 @@ class Logger:
                 self.logger.removeHandler(handler)
                 handler.close()
             self.logger = None
+            this.logger = self.logger  # setting the module wide reference (just in case)
 
     def set_verbose(self, state):
         self._verbose = state
