@@ -76,9 +76,9 @@ class Tester:
 
     def _tester_lock_unlock(self, user_id, lock=True):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
-        if user_object.repository_url == "":
+        if user_object.repository_url in {"", None}:
             Users.update(tester_active=lock, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
-                Users.user_id == user_object.user_id,
+                Users.user_id == user_id,
                 Users.course_id == user_object.course_id,
                 Users.assignment_id == user_object.assignment_id
             ).execute()

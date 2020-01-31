@@ -65,8 +65,11 @@ class Logger:
     def __safe_add_handler(self, handler):
         handler_found = False
         for single_handler in self.logger.handlers:
-            if single_handler.stream.name == handler.stream.name:
-                handler_found = True
+            try:
+                if single_handler.stream.name == handler.stream.name:
+                    handler_found = True
+            except AttributeError:
+                handler_found = False
         if not handler_found:
             self.logger.addHandler(handler)
 

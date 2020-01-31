@@ -112,6 +112,11 @@ def create_fake_user_db():
                  assignment_id=1,
                  user_id=7)
 
+    Users.create(course_id=1,
+                 assignment_id=1,
+                 user_id=8,
+                 repository_url=None)
+
     return user_data
 
 
@@ -488,5 +493,6 @@ class TestFunctions(unittest.TestCase):
         tester._tester_lock_unlock(user_id=7, lock=True)
         student_object = return_a_student(1, 1, 7)
         self.assertEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
+        student_object = return_a_student(1, 1, 8)
+        self.assertEqual(student_object.tester_active, False, msg="Checking that tester locks another user w no repo")
         tester._tester_lock_unlock(user_id=7, lock=False)
-
