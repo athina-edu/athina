@@ -86,9 +86,7 @@ class Database:
         except IndexError:
             return True  # If the database is empty, this is a normal error
 
-    # TODO: Technically this is a tester item, not part of db function
-    @staticmethod
-    def check_duplicate_url(same_url_limit=1, repo_type=".git", course_id=1, assignment_id=1):
+    def check_duplicate_url(self, same_url_limit=1, repo_type=".git", course_id=1, assignment_id=1):
         """Checks if there are duplicate urls submitted.
 
         :param same_url_limit: number of occurrences to be found to be considered plagiarism
@@ -108,13 +106,15 @@ class Database:
             if len(urls[truncated_url]) > same_url_limit:
                 for i in urls[truncated_url]:
                     obj = return_a_student(course_id, assignment_id, i)
-                    if obj.same_url_flag is not True:
-                        obj.same_url_flag = True
-                        obj.save()
+                    self._set_same_url_flag(obj, True)
             else:
-                if val.same_url_flag is not False:
-                    val.same_url_flag = False
-                    val.save()
+                self._set_same_url_flag(val, False)
+
+    @staticmethod
+    def _set_same_url_flag(user_object, result=True):
+        if user_object.same_url_flag is not result:
+            user_object.same_url_flag = result
+            user_object.save()
 
 
 class BaseModel(peewee.Model):
@@ -184,7 +184,8 @@ def update_key_in_assignment_data(course_id, assignment_id, variable, variable_v
         obj.variable_value = variable_value
         obj.save()
     except AssignmentData.DoesNotExist:
-        AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id, course_id=course_id)
+        AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id,
+                              course_id=course_id)
 
 
 def load_key_from_assignment_data(course_id, assignment_id, variable):
@@ -201,5 +202,4 @@ def return_all_students(course_id, assignment_id):
 
 
 def return_a_student(course_id, assignment_id, user_id):
-    return Users.get(Users.course_id == course_id, Users.assignment_id == assignment_id,
-                                Users.user_id == user_id)
+    return Users.get(Users.course_id == course_id, Users.assignment_id == assignment_id, Users.user_id == user_id)

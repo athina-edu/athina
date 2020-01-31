@@ -92,6 +92,14 @@ class Repository:
         else:
             return None
 
+    def _submit_will_not_process(self, user_values, msg=""):
+        self.logger.logger.warning(msg)
+        self.e_learning.submit_grade(user_values.user_id, user_values, 0,
+                                     [msg.encode("utf-8")])
+        user_values.new_url = False
+        user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
+        user_values.save()
+
     def check_repository_changes(self, user_id):
         self.logger.logger.debug("Checking user %s" % user_id)
         user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
@@ -102,27 +110,14 @@ class Repository:
             self.logger.logger.debug("No url for %s" % user_id)
             changed_state = False
         elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
-            # Submit grade
-            msg = "The URL is being used by another student. Will not test."
-            self.logger.logger.warning(msg)
-            self.e_learning.submit_grade(user_id, user_values, 0,
-                                         [msg.encode("utf-8")])
-            user_values.new_url = False
-            user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
-            user_values.save()
+            self._submit_will_not_process(user_values, "The URL is being used by another student. Will not test.")
             changed_state = False  # do not process anything for this student
         elif user_values.new_url and \
                 gitlab_check_if_repo_private(self.configuration, self.logger, user_values.repository_url) is False:
-            msg = "The git repository is not private! Aborting checks."
-            self.logger.logger.warning(msg)
-            self.e_learning.submit_grade(user_id, user_values, 0, [msg.encode("utf-8")])
-            user_values.new_url = False
-            user_values.commit_date = datetime.now(tzlocal()).replace(tzinfo=None)
-            user_values.save()
+            self._submit_will_not_process(user_values, "The git repository is not private! Aborting checks.")
             changed_state = False  # do not process anything for this student
         elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
             self.logger.logger.info("> New URL Submission: %s - %d" % (user_values.user_fullname, user_id))
-            # Delete dir, create dir and clone repository
             self._clone_git_repo(user_id, user_values)
             if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
                                                          self.configuration.assignment_id, user_id)):
