@@ -302,8 +302,10 @@ class Tester:
 
     def _spawn_worker(self, user_ids):
         # Lock all userids. Mark all users that use the same repository (i.e., groups) as being actively tested
+        self.logger.logger.debug("Processing the following users: %s" % user_ids)
         user_ids = [self._tester_lock_unlock(student_id, lock=True) for student_id in user_ids
                     if self._tester_is_inactive(student_id)]
+        self.logger.logger.debug("The following users do not have active testers: %s" % user_ids)
 
         # For parallel/threaded runs database objects have to be dropped. Same for logger
         del self.user_data
