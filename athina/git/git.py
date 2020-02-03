@@ -124,12 +124,12 @@ class Repository:
                 # valid copy cloned successfully, moving on assuming the rest of the checks clear
                 changed_state = self._compare_commit_date_with_due_date(user_id, user_values)
             else:
-                self.logger.logger.error(">>> Could not clone the repository.")
+                msg = """Your git url cannot be cloned. Verify that you have granted permissions
+                      to the instructor of the course and that you have submitted the proper'
+                      git url ending in .git (not ../tree/master). Check the assignment instructions
+                      and make sure you use the right git hosting platform (%s).""" % self.configuration.git_url
+                self._submit_will_not_process(user_values, msg)
                 changed_state = False  # invalid copy, couldn't be cloned.
-                self.e_learning.submit_grade(user_id, user_values, 0,
-                                             ['Your git url cannot be cloned. Verify that you have granted permissions'
-                                              'to the instructor of the course and that you have submitted the proper'
-                                              'git url ending in .git (not ../tree/master).'.encode("utf-8")])
         elif user_values.use_webhook is True and user_values.webhook_event is False and\
                 user_values.force_test is False and self.configuration.use_webhook is True:
             # This will prevent git pull unless and event has arrived or we do not use webhooks.

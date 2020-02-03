@@ -173,10 +173,14 @@ class TestFunctions(unittest.TestCase):
         # Second student incorrect url, run double to verify that behavior won't change due to variable flip
         user_object = tester.process_student_assignment(2)
         self.assertEqual(user_object[0].plagiarism_to_grade, False)
-        self.assertEqual(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(user_object[0].new_url, False)
+        self.assertEqual(user_object[0].last_grade, None)
+        self.assertGreater(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
         user_object = tester.process_student_assignment(2)
         self.assertEqual(user_object[0].plagiarism_to_grade, False)
-        self.assertEqual(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(user_object[0].last_grade, None)
+        self.assertEqual(user_object[0].new_url, False)
+        self.assertGreater(user_object[0].commit_date, datetime(1, 1, 1, 0, 0))
 
         # Third student submitted the same url like the 4th. Test the case that this is not allowed.
         user_data.check_duplicate_url(same_url_limit=1)
@@ -346,7 +350,8 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(obj.last_grade, 80)
         obj = Users.get(Users.user_id == 2)
         self.assertEqual(obj.plagiarism_to_grade, False)
-        self.assertEqual(obj.commit_date, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, None)
+        self.assertGreater(obj.commit_date, datetime(1, 1, 1, 0, 0))
         # Group assignment
         obj = Users.get(Users.user_id == 3)
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
@@ -402,7 +407,8 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(obj.last_grade, 80)
         obj = Users.get(Users.user_id == 2)
         self.assertEqual(obj.plagiarism_to_grade, False)
-        self.assertEqual(obj.commit_date, datetime(1, 1, 1, 0, 0))
+        self.assertGreater(obj.commit_date, datetime(1, 1, 1, 0, 0))
+        self.assertEqual(obj.last_grade, None)
         # Group assignment
         obj = Users.get(Users.user_id == 3)
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
