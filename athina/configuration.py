@@ -114,7 +114,7 @@ class Configuration:
 
         # Global variables through environment
         # Global memory limit in percentage that forked processes must obey.
-        self.global_memory_limit = os.environ.get('GLOBAL_MEMORY_LIMIT', 80)
+        self.global_memory_limit = int(os.environ.get('GLOBAL_MEMORY_LIMIT', 80))
 
         # Max memory that can be used by docker in docker notation, 1m, 2g etc.
         self.docker_max_memory = os.environ.get('DOCKER_MAX_MEMORY', "2g")
