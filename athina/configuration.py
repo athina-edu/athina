@@ -57,7 +57,7 @@ class Configuration:
 
     # global configs read through environment vars
     global_memory_limit = 80
-    docker_max_memory = "2g"
+    docker_memory_limit = "2g"
 
     def __init__(self, logger):
         self.logger = logger
@@ -117,7 +117,7 @@ class Configuration:
         self.global_memory_limit = int(os.environ.get('GLOBAL_MEMORY_LIMIT', 80))
 
         # Max memory that can be used by docker in docker notation, 1m, 2g etc.
-        self.docker_max_memory = os.environ.get('DOCKER_MAX_MEMORY', "2g")
+        self.docker_memory_limit = os.environ.get('DOCKER_MEMORY_LIMIT', "2g")
 
         # Read Configuration file
         self.config_dir = os.path.dirname(directory)
