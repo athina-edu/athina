@@ -55,6 +55,10 @@ class Configuration:
     extra_params = ""
     athina_web_url = None
 
+    # global configs read through environment vars
+    global_memory_limit = 80
+    docker_max_memory = "2g"
+
     def __init__(self, logger):
         self.logger = logger
         self.default_dir()
@@ -107,6 +111,13 @@ class Configuration:
         except (yaml.YAMLError, IsADirectoryError) as exc:
             self.logger.logger.error(exc)
             raise yaml.YAMLError(exc)
+
+        # Global variables through environment
+        # Global memory limit in percentage that forked processes must obey.
+        self.global_memory_limit = os.environ.get('GLOBAL_MEMORY_LIMIT', 80)
+
+        # Max memory that can be used by docker in docker notation, 1m, 2g etc.
+        self.docker_max_memory = os.environ.get('DOCKER_MAX_MEMORY', "2g")
 
         # Read Configuration file
         self.config_dir = os.path.dirname(directory)

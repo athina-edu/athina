@@ -112,7 +112,7 @@ class Tester:
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
 
         # Wait until CPU is available (expand this to check RAM and disk IO availability)
-        while psutil.cpu_percent() > 85 or psutil.virtual_memory()[2] > 80:
+        while psutil.cpu_percent() > 85 or psutil.virtual_memory()[2] > self.configuration.global_memory_limit:
             time.sleep(uniform(0.5, 1))
 
         self.logger.logger.info("> Checking %s - %d" % (user_object.user_fullname, user_id))

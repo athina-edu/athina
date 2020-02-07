@@ -33,6 +33,8 @@ def docker_build(configuration, logger):
         # Kill container
         terminate_all_containers()
         logger.logger.warning("Terminated build container and any others that may be hanging for more than 900 secs")
+        err = True
+        out = ""
 
     if process.returncode and err:
         logger.logger.error("Docker build returned error: %s" % err.decode("utf-8", "backslashreplace"))
@@ -46,7 +48,8 @@ def docker_build(configuration, logger):
 def docker_run(test_script, configuration, logger):
     container_name = __generate_hash("%s-%s" % (time.time(), os.getpid()))
     run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
-                     "--stop-timeout", "1", "--rm",
+                     "--stop-timeout", "1", "--rm", "--memory-swap", configuration.docker_max_memory,
+                     "--memory", configuration.docker_max_memory,
                      "-e", "STUDENT_DIR=%s" % configuration.athina_student_code_dir,
                      "-e", "TEST_DIR=%s" % configuration.athina_test_tmp_dir,
                      "-e", "EXTRA_PARAMS=%s" % " ".join(configuration.extra_params)]
