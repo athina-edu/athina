@@ -77,13 +77,15 @@ class Tester:
     def _tester_lock_unlock(self, user_id, lock=True):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         if user_object.repository_url in {"", None}:
-            Users.update(tester_active=lock, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
+            Users.update(tester_active=lock,
+                         tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
                 Users.user_id == user_id,
                 Users.course_id == user_object.course_id,
                 Users.assignment_id == user_object.assignment_id
             ).execute()
         else:
-            Users.update(tester_active=lock, tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
+            Users.update(tester_active=lock,
+                         tester_date=datetime.now(tzlocal()).replace(tzinfo=None)).where(
                 Users.repository_url == user_object.repository_url,
                 Users.course_id == user_object.course_id,
                 Users.assignment_id == user_object.assignment_id
@@ -142,6 +144,7 @@ class Tester:
             self.logger.logger.info(">> Testing")
 
             # Disable force testing just in case it was active
+            # FIXME: this is also closed below. Ideally you need to close force testing for the whole user group here
             if user_object.force_test:
                 user_object.force_test = False
                 user_object.save()
@@ -182,6 +185,7 @@ class Tester:
                 # Update the user db that grades have been submitted
                 self._update_user_db(current_user_object, commit_date_being_tested)
                 current_user_object.changed_state = False
+                current_user_object.force_test = False
                 current_user_object.last_grade = grade
                 current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") for test
                                                              in test_reports])
@@ -190,6 +194,7 @@ class Tester:
         else:
             self.logger.logger.info(">> No changes or past due date")
             user_object.changed_state = False
+            user_object.force_test = False
 
             user_object.save()
             user_object_list = [user_object]  # return list of the current object
