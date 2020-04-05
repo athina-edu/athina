@@ -1,7 +1,7 @@
 -e git+https://github.com/athina-edu/athina.git@7003ec4e28412acb12321e345815208e58b19d5a#egg=athina
 attrs==19.3.0
 beautifulsoup4==4.8.2
-certifi==2019.11.28
+certifi==2020.4.5
 chardet==3.0.4
 filelock==3.0.12
 idna==2.9
