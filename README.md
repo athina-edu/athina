@@ -15,6 +15,7 @@ Code security:
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/athina-edu/athina.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/athina-edu/athina/alerts/)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/athina-edu/athina.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/athina-edu/athina/context:python)
 [![PyUp.io](https://pyup.io/repos/github/athina-edu/athina/shield.svg?t=1575602005060)](https://pyup.io/repos/github/athina-edu/athina/)
+[ ~ Dependencies scanned by PyUp.io ~ ]
 
 Code Stats:
 [![](https://tokei.rs/b1/github/athina-edu/athina?category=lines)](https://github.com/athina-edu/athina)
