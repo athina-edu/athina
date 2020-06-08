@@ -4,6 +4,7 @@ import html
 import os
 import subprocess
 import time
+import abc
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -194,3 +195,29 @@ class Repository:
                                    stderr=subprocess.PIPE)
         out, err = process.communicate()
         return out, err
+
+    # Chain of Responsibility Pattern (below)
+
+    # A sort of factory method to pass the outer class to the inner classes (so that functions and vars are available)
+    def _create_handler(self, class_name, successor=None):
+        return class_name(successor, self)
+
+    # Abstract method for generating the if/else handlers
+    class Handler(metaclass=abc.ABCMeta):
+        def __init__(self, successor=None, repository_ref=None):
+            self._successor = successor
+            self._repository_ref = repository_ref
+
+        @abc.abstractmethod
+        def handle_request(self):
+            pass
+
+    # TODO: specify user_values, user_id variables in Repository
+    class EmptyRepositoryHandler(Handler):
+        def handle_request(self):
+            if self._repository_ref.user_values.repository_url in {None, ""}:
+                self._repository_ref.logger.logger.debug("No url for %s" % self._repository_ref.user_id)
+                return False
+            elif self._successor is not None:
+                self._successor.handle_request()
+
