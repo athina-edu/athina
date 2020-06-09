@@ -6,6 +6,8 @@ import time
 from athina.git.git import get_repo_commit
 from athina.users import load_key_from_assignment_data, update_key_in_assignment_data
 
+__all__ = ('docker_build', 'docker_run',)
+
 
 def __generate_hash(string):
     return hashlib.md5(string.encode("ascii")).hexdigest()
@@ -31,7 +33,7 @@ def docker_build(configuration, logger):
         out, err = process.communicate(timeout=900)  # A build should typically be ready after 15 minutes
     except subprocess.TimeoutExpired:
         # Kill container
-        terminate_all_containers()
+        _terminate_all_containers()
         logger.logger.warning("Terminated build container and any others that may be hanging for more than 900 secs")
         err = True
         out = ""
@@ -77,22 +79,41 @@ def docker_run(test_script, configuration, logger):
         process.wait(configuration.test_timeout)
     except subprocess.TimeoutExpired:
         # Kill container
-        terminate_container(container_name)
+        _terminate_container(container_name)
         logger.logger.warning("Terminated container %s due to timeout." % container_name)
 
     out, err = process.communicate()
     logger.logger.debug("Docker output:\n %s" % out.decode("utf-8", "backslashreplace"))
     logger.logger.debug("Docker errors:\n %s" % err.decode("utf-8", "backslashreplace"))
-    terminate_container(container_name)
+    _terminate_container(container_name)
+
+    # The chown below needs to run just in case there were files that created with docker's user
+    _docker_chown(configuration, logger, configuration.athina_test_tmp_dir)
+    _docker_chown(configuration, logger, configuration.athina_student_code_dir)
 
     return out, err
 
 
-def terminate_container(container_name):
+def _terminate_container(container_name):
     subprocess.Popen(["docker", "stop", "-t", "1", "%s" % container_name],
                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def terminate_all_containers():
+def _terminate_all_containers():
     subprocess.Popen(["docker", "stop", "$(docker", "ps", "- a", "- q)"],
                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+# This function will change permissions for any files created by docker that are not owned by the user running athina
+def _docker_chown(configuration, logger, directory):
+    container_name = __generate_hash("%s-%s" % (time.time(), os.getpid()))
+    run_statement = ["docker", "run", "--rm", "-v",
+                     "%s:%s" % (directory, directory),
+                     "ubuntu", "chown", "-R", "%s" % os.getuid(), directory]
+    logger.logger.debug(" ".join(run_statement))
+    process = subprocess.Popen(run_statement, cwd="%s/" % configuration.config_dir,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+    out, err = process.communicate()
+    logger.logger.debug("Docker output:\n %s" % out.decode("utf-8", "backslashreplace"))
+    logger.logger.debug("Docker errors:\n %s" % err.decode("utf-8", "backslashreplace"))
+    return out, err

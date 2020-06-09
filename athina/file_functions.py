@@ -13,16 +13,16 @@ def copy_dir(source, destination):
     try:
         shutil.copytree(source, destination, symlinks=True, ignore_dangling_symlinks=True)
     except FileNotFoundError:
-        logger.error("Could not copy %s to %s" % (source, destination))
+        logger.logger.error("Could not copy %s to %s" % (source, destination))
     except shutil.Error:
-        logger.error("Could not copy %s to %s" % (source, destination))
+        logger.logger.error("Could not copy %s to %s" % (source, destination))
 
 
 def rm_dir(folder):
     try:
         shutil.rmtree(folder)
     except PermissionError:
-        logger.error("Cannot delete %s. Likely permissions error." % folder)
-        raise PermissionError(folder)
+        logger.logger.error("Cannot delete %s. Likely permissions error." % folder)
+        raise PermissionError(folder)  # This is supposed to still be raised to alert of serious issues
     except FileNotFoundError:
         pass
