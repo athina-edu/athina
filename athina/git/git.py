@@ -41,6 +41,7 @@ class Repository:
     logger = None
     configuration = None
     e_learning = None
+    user_values = None
 
     def __init__(self, logger, configuration, e_learning):
         self.logger = logger
@@ -53,7 +54,7 @@ class Repository:
             return True
 
     # TODO: change some of these commands to appropriate module commands, e.g., shutils, os etc.
-    def _clone_git_repo(self, user_id, user_object):
+    def clone_git_repo(self, user_id, user_object):
         time.sleep(0.5)  # Delay so that requests won't be rejected by github or gitlab
         subprocess.run(["rm", "-r", "-f", "%s/repodata%s/u%s" % (self.configuration.config_dir,
                                                                  self.configuration.assignment_id, user_id)])
@@ -93,7 +94,7 @@ class Repository:
         else:
             return None
 
-    def _submit_will_not_process(self, user_values, msg=""):
+    def submit_will_not_process(self, user_values, msg=""):
         self.logger.logger.warning(msg)
         self.e_learning.submit_grade(user_values.user_id, user_values, 0,
                                      [msg.encode("utf-8")])
@@ -103,57 +104,26 @@ class Repository:
 
     def check_repository_changes(self, user_id):
         self.logger.logger.debug("Checking user %s" % user_id)
-        user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        self.user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         changed_state = False
 
-        # If nothing has been submitted no point in testing
-        if user_values.repository_url in {None, ""}:
-            self.logger.logger.debug("No url for %s" % user_id)
-            changed_state = False
-        elif user_values.new_url and user_values.same_url_flag and user_values.repository_url != "":  # Duplicate url
-            self._submit_will_not_process(user_values, "The URL is being used by another student. Will not test.")
-            changed_state = False  # do not process anything for this student
-        elif user_values.new_url and \
-                gitlab_check_if_repo_private(self.configuration, self.logger, user_values.repository_url) is False:
-            self._submit_will_not_process(user_values, "The git repository is not private! Aborting checks.")
-            changed_state = False  # do not process anything for this student
-        elif user_values.new_url is True and user_values.same_url_flag is False:  # If record has changed -> new URL
-            self.logger.logger.info("> New URL Submission: %s - %d" % (user_values.user_fullname, user_id))
-            self._clone_git_repo(user_id, user_values)
-            if os.path.isdir("%s/repodata%s/u%s/.git" % (self.configuration.config_dir,
-                                                         self.configuration.assignment_id, user_id)):
-                # valid copy cloned successfully, moving on assuming the rest of the checks clear
-                changed_state = self._compare_commit_date_with_due_date(user_id, user_values)
-            else:
-                msg = """Your git url cannot be cloned. Verify that you have granted permissions
-                      to the instructor of the course and that you have submitted the proper'
-                      git url ending in .git (not ../tree/master). Check the assignment instructions
-                      and make sure you use the right git hosting platform (%s).""" % self.configuration.git_url
-                self._submit_will_not_process(user_values, msg)
-                changed_state = False  # invalid copy, couldn't be cloned.
-        elif user_values.use_webhook is True and user_values.webhook_event is False and\
-                user_values.force_test is False and self.configuration.use_webhook is True:
-            # This will prevent git pull unless and event has arrived or we do not use webhooks.
-            self.logger.logger.debug("Hook is enabled and set for user %s" % user_id)
-            changed_state = False
-        else:
-            # Pull and see if there is anything that changed,
-            # then check date and compare with last date
-            out, err = self._pull_git_repo(user_id)
+        # Chain of responsibility from last to first
+        pull_repo_handler = self._create_handler(self.PullRepoHandler, None)
+        gitlab_webhook_handler = self._create_handler(self.GitlabWebhookHandler, pull_repo_handler)
+        new_url_handler = self._create_handler(self.NewURLHandler, gitlab_webhook_handler)
+        check_if_gitlab_private_handler = self._create_handler(self.CheckIfGitlabPrivateHandler, new_url_handler)
+        duplicate_repository_url_handler = self._create_handler(self.DuplicateRepositoryURLHandler,
+                                                                check_if_gitlab_private_handler)
+        empty_repository_handler = self._create_handler(self.EmptyRepositoryHandler, duplicate_repository_url_handler)
+        changed_state = empty_repository_handler.handle_request()
 
-            if b"unresolved conflict" in err:
-                self.logger.logger.warning("Cannot pull due to unresolved conflicts...initiating git clone...")
-                self._clone_git_repo(user_id, user_values)
-
-            changed_state = self._compare_commit_date_with_due_date(user_id, user_values)
-
-        user_values.webhook_event = False  # Either way after processing this should be set to false
-        user_values.changed_state = changed_state
-        user_values.save()
+        self.user_values.webhook_event = False  # Either way after processing this should be set to false
+        self.user_values.changed_state = changed_state
+        self.user_values.save()
 
         return changed_state
 
-    def _pull_git_repo(self, user_id):
+    def pull_git_repo(self, user_id):
         time.sleep(0.5)  # Delay so that requests won't be rejected by github or gitlab
         try:
             process = subprocess.Popen(["git", "pull"],
@@ -168,7 +138,7 @@ class Repository:
             err = b"unresolved conflict"
         return out, err
 
-    def _compare_commit_date_with_due_date(self, user_id, user_values):
+    def compare_commit_date_with_due_date(self, user_id, user_values):
         commit_date = self.retrieve_last_commit_date(user_id)
         self.logger.logger.debug("Retrieving latest git commit date from git log: %s" % commit_date)
         if commit_date is None:  # no repo or commit cannot be obtained
@@ -212,12 +182,90 @@ class Repository:
         def handle_request(self):
             pass
 
-    # TODO: specify user_values, user_id variables in Repository
     class EmptyRepositoryHandler(Handler):
         def handle_request(self):
             if self._repository_ref.user_values.repository_url in {None, ""}:
-                self._repository_ref.logger.logger.debug("No url for %s" % self._repository_ref.user_id)
+                self._repository_ref.logger.logger.debug("No url for %s" % self._repository_ref.user_values.user_id)
                 return False
             elif self._successor is not None:
-                self._successor.handle_request()
+                return self._successor.handle_request()
 
+    # Technically what is duplicate is defined by the same_url_flag
+    class DuplicateRepositoryURLHandler(Handler):
+        def handle_request(self):
+            if self._repository_ref.user_values.new_url and self._repository_ref.user_values.same_url_flag and \
+                    self._repository_ref.user_values.repository_url != "":  # Duplicate url
+                self._repository_ref.submit_will_not_process(self._repository_ref.user_values,
+                                                             "The URL is being used by another student."
+                                                             "Will not test.")
+                return False  # do not process anything for this student
+            elif self._successor is not None:
+                return self._successor.handle_request()
+
+    class CheckIfGitlabPrivateHandler(Handler):
+        def handle_request(self):
+            if self._repository_ref.user_values.new_url and \
+                    gitlab_check_if_repo_private(self._repository_ref.configuration,
+                                                 self._repository_ref.logger,
+                                                 self._repository_ref.user_values.repository_url) is False:
+                self._repository_ref.submit_will_not_process(self._repository_ref.user_values,
+                                                             "The git repository is not private! Aborting checks.")
+                return False  # do not process anything for this student
+            elif self._successor is not None:
+                return self._successor.handle_request()
+
+    class NewURLHandler(Handler):
+        def handle_request(self):
+            if self._repository_ref.user_values.new_url is True and \
+                    self._repository_ref.user_values.same_url_flag is False:  # If record has changed -> new URL
+                self._repository_ref.logger.logger.info("> New URL Submission: %s - %d" %
+                                                        (self._repository_ref.user_values.user_fullname,
+                                                         self._repository_ref.user_values.user_id))
+                self._repository_ref.clone_git_repo(self._repository_ref.user_values.user_id,
+                                                    self._repository_ref.user_values)
+                if os.path.isdir("%s/repodata%s/u%s/.git" % (self._repository_ref.configuration.config_dir,
+                                                             self._repository_ref.configuration.assignment_id,
+                                                             self._repository_ref.user_values.user_id)):
+                    # valid copy cloned successfully, moving on assuming the rest of the checks clear
+                    return self._repository_ref.compare_commit_date_with_due_date(self._repository_ref.user_values.
+                                                                                  user_id,
+                                                                                  self._repository_ref.user_values)
+                else:
+                    msg = """Your git url cannot be cloned. Verify that you have granted permissions
+                              to the instructor of the course and that you have submitted the proper'
+                              git url ending in .git (not ../tree/master). Check the assignment instructions
+                              and make sure you use the right git hosting platform (%s).""" % \
+                          self._repository_ref.configuration.git_url
+                    self._repository_ref.submit_will_not_process(self._repository_ref.user_values, msg)
+                    return False  # invalid copy, couldn't be cloned.
+            elif self._successor is not None:
+                return self._successor.handle_request()
+
+    class GitlabWebhookHandler(Handler):
+        def handle_request(self):
+            if self._repository_ref.user_values.use_webhook is True and \
+                    self._repository_ref.user_values.webhook_event is False and \
+                    self._repository_ref.user_values.force_test is False and \
+                    self._repository_ref.configuration.use_webhook is True:
+                # This will prevent git pull unless and event has arrived or we do not use webhooks.
+                self._repository_ref.logger.logger.debug("Hook is enabled and set for user %s" %
+                                                         self._repository_ref.user_values.user_id)
+                return False
+            elif self._successor is not None:
+                return self._successor.handle_request()
+
+    # Terminal node in the chain
+    class PullRepoHandler(Handler):
+        def handle_request(self):
+            # Pull and see if there is anything that changed,
+            # then check date and compare with last date
+            out, err = self._repository_ref.pull_git_repo(self._repository_ref.user_values.user_id)
+
+            if b"unresolved conflict" in err:
+                self._repository_ref.logger.logger.warning("Cannot pull due to unresolved conflicts..."
+                                                           "initiating git clone...")
+                self._repository_ref.clone_git_repo(self._repository_ref.user_values.user_id,
+                                                    self._repository_ref.user_values)
+
+            return self._repository_ref.compare_commit_date_with_due_date(self._repository_ref.user_values.user_id,
+                                                                          self._repository_ref.user_values)
