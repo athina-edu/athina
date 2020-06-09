@@ -287,7 +287,10 @@ class Tester:
                         # groups
                         reverse_repository_index[user.repository_url] = user.user_id
                     else:
-                        self.logger.logger.warning("Tester active for user %s" % user.user_id)
+                        self.logger.logger.warning("Tester active for user %s - %s - %s" %
+                                                   (user.user_id, user.user_fullname, user.tester_date))
+                else:
+                    self.logger.logger.debug("User %s has not repository url." % user.user_fullname)
             else:
                 # When no repo is involved it is 1 to 1 testing (individual assignment)
                 reverse_repository_index[user.user_id] = user.user_id

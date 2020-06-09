@@ -501,4 +501,13 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(student_object.tester_active, True, msg="Checking that tester locks for user with no repo")
         student_object = return_a_student(1, 1, 8)
         self.assertEqual(student_object.tester_active, False, msg="Checking that tester locks another user w no repo")
+
+        student_object = return_a_student(1, 1, 7)
+        student_object.tester_date = datetime.now(tzlocal()).replace(tzinfo=None)
+        student_object.save()
+        self.assertEqual(tester._tester_is_inactive(user_id=7), False, msg="Tester is running, return active")
+        student_object.tester_date = datetime.now(tzlocal()).replace(tzinfo=None) - timedelta(hours=1, minutes=1)
+        student_object.save()
+        self.assertEqual(tester._tester_is_inactive(user_id=7), True, msg="If lock is more than an hour, ignore it")
+
         tester._tester_lock_unlock(user_id=7, lock=False)

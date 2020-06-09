@@ -103,8 +103,9 @@ class Repository:
         user_values.save()
 
     def check_repository_changes(self, user_id):
-        self.logger.logger.debug("Checking user %s" % user_id)
         self.user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        self.logger.logger.debug("Checking user %s - %s" % (user_id, self.user_values.user_fullname))
+
         changed_state = False
 
         # Chain of responsibility from last to first
