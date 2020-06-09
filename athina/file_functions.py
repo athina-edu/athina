@@ -11,8 +11,10 @@ __all__ = ('copy_dir', 'rm_dir',)
 
 def copy_dir(source, destination):
     try:
-        shutil.copytree(source, destination)
+        shutil.copytree(source, destination, symlinks=True, ignore_dangling_symlinks=True)
     except FileNotFoundError:
+        logger.error("Could not copy %s to %s" % (source, destination))
+    except shutil.Error:
         logger.error("Could not copy %s to %s" % (source, destination))
 
 

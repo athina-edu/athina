@@ -101,8 +101,8 @@ class Repository:
         user_values.save()
 
     def check_repository_changes(self, user_id):
-        self.logger.logger.debug("Checking user %s" % user_id)
         user_values = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
+        self.logger.logger.debug("Checking user %s - %s" % (user_id, user_values.user_fullname))
         changed_state = False
 
         # If nothing has been submitted no point in testing
