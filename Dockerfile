@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 # Things that our test scripts use and need to have installed
 RUN apt-get update && echo "37" | apt-get -y install keyboard-configuration \
