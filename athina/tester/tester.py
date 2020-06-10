@@ -3,7 +3,7 @@ import shutil
 import signal
 import time
 from datetime import timedelta, datetime
-from random import uniform
+from secrets import randbelow
 
 import psutil
 from dateutil.tz import tzlocal
@@ -104,6 +104,18 @@ class Tester:
                          if current_user_object.repository_url == user_object.repository_url]
         return user_list
 
+    def _check_commit_date_tested(self, user_object):
+        commit_date_being_tested = self.repository.retrieve_last_commit_date(user_object.user_id)
+        if commit_date_being_tested is not None:
+            self.logger.logger.debug("Commit Due Date Comparison: %s < %s ?" % (
+                commit_date_being_tested.strftime("%Y-%m-%d %H:%M:%S"),
+                self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
+        else:
+            self.logger.logger.debug("Commit Due Date Comparison: no commit date on repo")
+            # If we cannot read a git log time then something is wrong with the repo or it is a nonrepo assignment
+            commit_date_being_tested = datetime(1, 1, 1, 0, 0)
+        return commit_date_being_tested
+
     def process_student_assignment(self, user_id, forced_testing=False):
         # Reconnect logger if missing (e.g., parallel run)
         if self.logger.logger is None:
@@ -115,23 +127,14 @@ class Tester:
 
         # Wait until CPU is available (expand this to check RAM and disk IO availability)
         while psutil.cpu_percent() > 85 or psutil.virtual_memory()[2] > self.configuration.global_memory_limit:
-            time.sleep(uniform(0.5, 1))
+            time.sleep(randbelow(5)/10+0.5)  # 0.5-1 sec
 
         self.logger.logger.info("> Checking %s - %d" % (user_object.user_fullname, user_id))
-
-        # Boolean arguments broken up into logical components to reduce the size of if statement below
-        commit_date_being_tested = self.repository.retrieve_last_commit_date(user_object.user_id)
-        if commit_date_being_tested is not None:
-            self.logger.logger.debug("Commit Due Date Comparison: %s < %s ?" % (
-                commit_date_being_tested.strftime("%Y-%m-%d %H:%M:%S"),
-                self.configuration.due_date.strftime("%Y-%m-%d %H:%M:%S")))
-        else:
-            self.logger.logger.debug("Commit Due Date Comparison: no commit date on repo")
-            # If we cannot read a git log time then something is wrong with the repo or it is a nonrepo assignment
-            commit_date_being_tested = datetime(1, 1, 1, 0, 0)
-
+        commit_date_being_tested = self._check_commit_date_tested(user_object)
         self.logger.logger.debug("Verifying: changed_state - %r, url_date - %s" % (user_object.changed_state,
                                                                                    user_object.url_date))
+
+        # Boolean arguments broken up into logical components to reduce the size of if statement below
         repo_mode_conditions = (user_object.changed_state and
                                 user_object.url_date < self.configuration.due_date and
                                 commit_date_being_tested < self.configuration.due_date and
