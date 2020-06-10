@@ -8,7 +8,7 @@ chardet==3.0.4
 colorama==0.4.3
 contextlib2==0.6.0
 distlib==0.3.0
-distro==1.4.0
+distro==1.5.0
 filelock==3.0.12
 gitdb==4.0.5
 GitPython==3.1.3
