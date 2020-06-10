@@ -4,7 +4,7 @@ env:
     - CC_TEST_REPORTER_ID=f13d5219d65452677a74596d599d700188acad999283dc6d1d6cacd55c7ede0c
 language: python
 python:
-  - "3.7"
+  - "3.8"
 services:
   - mysql
 before_install:
