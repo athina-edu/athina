@@ -28,7 +28,7 @@ class Logger:
         # This solves race conditions with log rotation when multiple processes are running
         # We defer rotation after the children finish running
         if current_process().name == 'MainProcess':
-            return logging.handlers.RotatingFileHandler(logfile, maxBytes=1000000, backupCount=3)
+            return logging.handlers.RotatingFileHandler(logfile, maxBytes=10000000, backupCount=3)
         else:
             return logging.handlers.RotatingFileHandler(logfile, maxBytes=0, backupCount=0)
 
