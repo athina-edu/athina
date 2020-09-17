@@ -226,8 +226,8 @@ class Canvas:
                 obj = return_a_student(self.configuration.course_id, self.configuration.assignment_id, record["id"])
             except (KeyError, Users.DoesNotExist):
                 continue
-            if obj.secondary_id != record["login_id"] or obj.user_fullname != record["name"]:
-                obj.secondary_id = record["login_id"]
+            if obj.secondary_id != record["email"] or obj.user_fullname != record["name"]:
+                obj.secondary_id = record["email"]
                 obj.user_fullname = record["name"]
                 obj.save()
         return users
