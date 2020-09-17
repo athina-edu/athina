@@ -9,6 +9,7 @@ services:
   - mysql
 before_install:
   - sudo apt-get install -y firejail git
+  - mysql -e "CREATE DATABASE athina;"
   - mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'athina'@'localhost' IDENTIFIED BY 'password';"
 # command to install dependencies
 install:
