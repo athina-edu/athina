@@ -23,7 +23,7 @@ msgpack==1.0.2
 np==1.0.2
 packaging==20.8
 numpy==1.19.5
-packaging==20.4
+packaging==20.8
 peewee==3.14.0
 pep517==0.9.1
 pluggy==0.13.1
