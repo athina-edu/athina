@@ -19,7 +19,6 @@ ATHINA_MYSQL_PORT = os.environ['ATHINA_MYSQL_PORT']
 ATHINA_MYSQL_USERNAME = os.environ['ATHINA_MYSQL_USERNAME']
 ATHINA_MYSQL_PASSWORD = os.environ['ATHINA_MYSQL_PASSWORD']
 
-
 class Database:
     db = None
     same_url_limit = 1  # Defines how many same urls are allowed, e.g., in cases of group projects this may be 2
