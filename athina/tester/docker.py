@@ -63,6 +63,9 @@ def docker_run(test_script, configuration, logger):
     if configuration.docker_use_net_admin:
         run_statement.extend(["--cap-add=NET_ADMIN"])
 
+    if configuration.docker_no_internet:
+        run_statement.extend(["--network", "none"])
+
     run_statement.extend(["-v", "%s:%s" % (
         configuration.athina_student_code_dir, configuration.athina_student_code_dir),
                           "-v",
