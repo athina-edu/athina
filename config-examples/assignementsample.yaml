@@ -115,6 +115,10 @@ docker_use_seccomp: true
 # mkdir -p /dev/net && mknod /dev/net/tun c 10 200
 docker_use_net_admin: false
 
+# This allows for the docker containers to use the internet. If you set this to true
+# only the loopback interface will be available.
+docker_no_internet: false
+
 # Currently this is supported only for gitlab and requires that the personal access token for git
 # that is provided has read/write privileges in the user's repository.
 # Upon git clone, Athina will try once to set the webhook. If successful (requires also the webhook's website

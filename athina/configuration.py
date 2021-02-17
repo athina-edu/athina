@@ -47,6 +47,7 @@ class Configuration:
     docker_use_net_admin = False
     use_webhook = False
     gitlab_check_repo_is_private = False
+    docker_no_internet = False
 
     # Set on the fly
     db_filename = ""
@@ -167,6 +168,7 @@ class Configuration:
         self.load_value(config, 'use_docker', self.use_docker)
         self.load_value(config, 'docker_use_seccomp', self.docker_use_seccomp)
         self.load_value(config, 'docker_use_net_admin', self.docker_use_net_admin)
+        self.load_value(config, 'docker_no_internet', self.docker_no_internet)
         self.load_value(config, 'use_webhook', self.use_webhook)
         self.load_value(config, 'gitlab_check_repo_is_private', self.gitlab_check_repo_is_private)
 

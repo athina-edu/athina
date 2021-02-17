@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import unittest
+import psutil
 from dateutil.tz import tzlocal
 from datetime import datetime, timezone, timedelta
 
@@ -25,6 +26,21 @@ from athina.canvas import *
 from athina.moss import *
 from athina.users import *
 
+
+def wait_for_children_processes():
+    current_process = psutil.Process()
+    time.sleep(5)
+    loop = True
+    while loop:
+        children = current_process.children(recursive=True)
+        if len(children) < 2:
+            # loop = False
+            # check one more time
+            time.sleep(10)
+            children = current_process.children(recursive=True)
+            loop = False if len(children) < 2 else True
+        time.sleep(5)
+    time.sleep(5)
 
 def create_logger():
     logger = Logger()
@@ -316,8 +332,8 @@ class TestFunctions(unittest.TestCase):
         configuration.use_docker = True
         create_test_config()
 
-        e_learning = Canvas(configuration, logger)
         user_data = create_fake_user_db()
+        e_learning = Canvas(configuration, logger)
         repository = Repository(logger, configuration, e_learning)
         results.append(repository.check_repository_changes(1))
         time.sleep(0.5)
@@ -343,7 +359,7 @@ class TestFunctions(unittest.TestCase):
         # Parallel process
         configuration.processes = 5
         tester._spawn_worker([1, 2, 3, 4, 5])
-        time.sleep(40)
+        wait_for_children_processes()
         obj = Users.get(Users.user_id == 1)
         self.assertEqual(obj.new_url, False)
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
@@ -369,8 +385,8 @@ class TestFunctions(unittest.TestCase):
         # Create fake directories
         create_test_config("doesntexist")
 
-        e_learning = Canvas(configuration, logger)
         user_data = create_fake_user_db()
+        e_learning = Canvas(configuration, logger)
         repository = Repository(logger, configuration, e_learning)
         results.append(repository.check_repository_changes(1))
         results.append(repository.check_repository_changes(2))
@@ -394,13 +410,13 @@ class TestFunctions(unittest.TestCase):
         # Create fake directories
         create_test_config()
 
-        e_learning = Canvas(configuration, logger)
         user_data = create_fake_user_db()
+        e_learning = Canvas(configuration, logger)
         repository = Repository(logger, configuration, e_learning)
         tester = Tester(user_data, logger, configuration, e_learning, repository)
         configuration.processes = 2
         tester.start_testing_db()
-        time.sleep(40)
+        wait_for_children_processes()
         obj = Users.get(Users.user_id == 1)
         self.assertEqual(obj.new_url, False)
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
