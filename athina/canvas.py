@@ -58,14 +58,20 @@ class Canvas:
 
     @property
     def authorization_token(self):
-        return {"Authorization": "Bearer %s" % self.configuration.auth_token}
+        if self.configuration.auth_token != '':
+            return {"Authorization": "Bearer %s" % self.configuration.auth_token}
+        else:
+            return None
 
     def get_all_submissions(self):
         """
         Get all users (except test student)
         """
-        data = request_url("%s/assignments/%d/submissions/?per_page=150" %
-                           (self.base_url, self.configuration.assignment_id), self.authorization_token, method="get")
+        data = {"status": "unauthenticated"}
+        if self.authorization_token is not None:
+            data = request_url("%s/assignments/%d/submissions/?per_page=150" %
+                               (self.base_url, self.configuration.assignment_id),
+                               self.authorization_token, method="get")
         if not self.validate_response(data):
             return False
         for record in data:
@@ -74,8 +80,9 @@ class Canvas:
         return True
 
     def submit_comment(self, user_id, comment):
-        request_url("%s/assignments/%d/submissions/%d" % (self.base_url, self.configuration.assignment_id, user_id),
-                    self.authorization_token, payload={'comment[text_comment]': comment}, method="put")
+        if self.authorization_token is not None:
+            request_url("%s/assignments/%d/submissions/%d" % (self.base_url, self.configuration.assignment_id, user_id),
+                        self.authorization_token, payload={'comment[text_comment]': comment}, method="put")
 
     def submit_grade(self, user_id, user_values, grade, test_reports):
         if self.configuration.submit_results_as_file:
@@ -117,8 +124,10 @@ class Canvas:
         """
         Get assignment due date
         """
-        data = request_url("%s/assignments/%d" % (self.base_url, self.configuration.assignment_id),
-                           self.authorization_token, method="get")
+        data = {"status": "unauthenticated"}
+        if self.authorization_token is not None:
+            data = request_url("%s/assignments/%d" % (self.base_url, self.configuration.assignment_id),
+                               self.authorization_token, method="get")
         if not self.validate_response(data):
             return dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
         try:
@@ -158,9 +167,11 @@ class Canvas:
                 obj.save()
 
     def upload_params_for_comment_upload(self, filename, user_id):
-        link_url = request_url("%s/assignments/%d/submissions/%d/comments/files" %
-                               (self.base_url, self.configuration.assignment_id, user_id), self.authorization_token,
-                               payload={'name': filename}, method="post")
+        link_url = {}
+        if self.authorization_token is not None:
+            link_url = request_url("%s/assignments/%d/submissions/%d/comments/files" %
+                                   (self.base_url, self.configuration.assignment_id, user_id), self.authorization_token,
+                                   payload={'name': filename}, method="post")
         return link_url
 
     def upload_file_to_canvas(self, filename, user_id, file_contents):
@@ -185,12 +196,15 @@ class Canvas:
         if comment_file is not None:
             payload['comment[file_ids][]'] = comment_file
             payload['comment[group_comment]'] = 'true'
-        request_url("%s/assignments/%d/submissions/%d" % (self.base_url, self.configuration.assignment_id, user_id),
-                    self.authorization_token, payload=payload, method="put", return_type="json")
+        if self.authorization_token is not None:
+            request_url("%s/assignments/%d/submissions/%d" % (self.base_url, self.configuration.assignment_id, user_id),
+                        self.authorization_token, payload=payload, method="put", return_type="json")
 
     def upload_params_for_folder_upload(self, filename):
-        link_url = request_url("%s/files" % self.base_url, self.authorization_token,
-                               payload={'name': filename, "parent_folder_path": "athina.py"}, method="post")
+        link_url = {}
+        if self.authorization_token is not None:
+            link_url = request_url("%s/files" % self.base_url, self.authorization_token,
+                                   payload={'name': filename, "parent_folder_path": "athina.py"}, method="post")
         return link_url
 
     def upload(self, link_url, file_contents):
@@ -206,19 +220,23 @@ class Canvas:
         for param, content in link_url["upload_params"].items():
             payload[param] = content
 
-        return_url = request_url(
-            link_url["upload_url"],
-            payload=payload,
-            files={'file': file_contents},
-            method="post",
-            return_type="json")
+        return_url = {}
+        if self.authorization_token is not None:
+            return_url = request_url(
+                link_url["upload_url"],
+                payload=payload,
+                files={'file': file_contents},
+                method="post",
+                return_type="json")
         return return_url
 
     def get_additional_user_info(self, users):
         """
         Obtain additional user information
         """
-        data = request_url("%s/users/?per_page=150" % self.base_url, self.authorization_token, method="get")
+        data = {"status": "unauthenticated"}
+        if self.authorization_token is not None:
+            data = request_url("%s/users/?per_page=150" % self.base_url, self.authorization_token, method="get")
         if not self.validate_response(data):
             return users
         for record in data:

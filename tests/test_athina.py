@@ -7,7 +7,6 @@ import psutil
 from dateutil.tz import tzlocal
 from datetime import datetime, timezone, timedelta
 
-import psutil
 
 if os.environ.get('ATHINA_MYSQL_HOST', 0) == 0:
     os.environ['ATHINA_MYSQL_HOST'] = 'localhost'
@@ -41,6 +40,7 @@ def wait_for_children_processes():
             loop = False if len(children) < 2 else True
         time.sleep(5)
     time.sleep(5)
+
 
 def create_logger():
     logger = Logger()
@@ -244,6 +244,7 @@ class TestFunctions(unittest.TestCase):
         obj = return_a_student(1, 1, 5)
         obj.changed_state = True
         obj.save()
+        time.sleep(1)  # Artificially adding some delay
         user_object = tester.process_student_assignment(5)
         self.assertGreater(user_object[0].last_graded, last_graded)
 
@@ -255,6 +256,7 @@ class TestFunctions(unittest.TestCase):
         # NO REPO operations, first run of script
         configuration.no_repo = True
         configuration.grade_update_frequency = 24
+        time.sleep(1)  # Artificially adding some delay
         user_object = tester.process_student_assignment(7)
         self.assertGreater(user_object[0].last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(user_object[0].last_grade, 80)
@@ -268,6 +270,7 @@ class TestFunctions(unittest.TestCase):
         obj = return_a_student(1, 1, 7)
         obj.last_graded = obj.last_graded - timedelta(hours=24)
         obj.save()
+        time.sleep(1)  # Artificially adding some delay
         user_object = tester.process_student_assignment(7)
         self.assertGreater(user_object[0].last_graded, last_graded)
 
@@ -281,6 +284,7 @@ class TestFunctions(unittest.TestCase):
         obj.commit_date = obj.commit_date - timedelta(hours=24)  # resetting commit date
         obj.last_graded = obj.last_graded - timedelta(hours=24)
         obj.save()
+        time.sleep(1)  # Artificially adding some delay
         user_object = tester.process_student_assignment(5)
         self.assertGreater(user_object[0].last_graded, last_graded)
 
