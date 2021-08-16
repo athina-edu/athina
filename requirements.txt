@@ -22,7 +22,7 @@ mosspy==1.0.8
 msgpack==1.0.2
 np==1.0.2
 peewee==3.14.4
-numpy==1.21.1
+numpy==1.21.2
 packaging==21.0
 pep517==0.10.0
 pluggy==0.13.1
