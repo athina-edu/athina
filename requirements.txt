@@ -1,7 +1,7 @@
 appdirs==1.4.4
 -e git+https://github.com/athina-edu/athina.git@b4f8a6cb97d65309cf299417d6c0d7ced34be573#egg=athina
 attrs==21.2.0
-beautifulsoup4==4.9.3
+beautifulsoup4==4.10.0
 CacheControl==0.12.6
 chardet==4.0.0
 certifi==2021.5.30
