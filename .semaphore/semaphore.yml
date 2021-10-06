@@ -36,8 +36,6 @@ blocks:
           - out=$(bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git)
           - echo $out |grep 3.33 | if [ $(wc -l) > 0 ]; then exit 0; else exit 1; fi
             - name: Build Go executable
-    task:
-      jobs:
       - name: Docker Hub
         commands:
           - checkout
