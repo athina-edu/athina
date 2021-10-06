@@ -4,6 +4,9 @@ agent:
   machine:
     type: e1-standard-2
     os_image: ubuntu1804
+global_job_config:
+  secrets:
+    - name: docker-hub
 blocks:
   - name: "Build"
     task:
@@ -42,5 +45,3 @@ blocks:
           - docker build -t latest .
           - docker tag latest athinaedu/athina:latest
           - docker push athinaedu/athina:latest
-      secrets:
-      - name: docker-hub
