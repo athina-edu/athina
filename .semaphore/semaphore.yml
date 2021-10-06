@@ -6,7 +6,7 @@ agent:
     os_image: ubuntu1804
 global_job_config:
   secrets:
-    - name: docker-hub1
+    - name: docker-hub
 blocks:
   - name: "Build"
     task:
