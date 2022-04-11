@@ -31,7 +31,7 @@ py==1.11.0
 psutil==5.9.0
 PyMySQL==1.0.2
 pytest==7.1.1
-pyparsing==3.0.7
+pyparsing==3.0.8
 python-dateutil==2.8.2
 pytoml==0.1.21
 PyYAML==6.0
