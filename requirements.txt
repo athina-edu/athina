@@ -4,7 +4,7 @@ attrs==21.4.0
 beautifulsoup4==4.11.1
 CacheControl==0.12.11
 chardet==5.0.0
-colorama==0.4.5
+colorama==0.4.6
 certifi==2022.9.24
 contextlib2==21.6.0
 distlib==0.3.6
