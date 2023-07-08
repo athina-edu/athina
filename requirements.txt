@@ -21,7 +21,7 @@ more-itertools==9.1.0
 mosspy==1.0.8
 msgpack==1.0.5
 np==1.0.2
-numpy==1.25.0
+numpy==1.25.1
 peewee==3.16.0
 packaging==23.1
 pep517==0.12.0
