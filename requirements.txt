@@ -3,7 +3,7 @@ appdirs==1.4.4
 attrs==23.1.0
 beautifulsoup4==4.12.2
 CacheControl==0.13.1
-chardet==5.1.0
+chardet==5.2.0
 colorama==0.4.6
 certifi==2023.7.22
 contextlib2==21.6.0
