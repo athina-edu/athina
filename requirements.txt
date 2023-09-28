@@ -19,7 +19,7 @@ lockfile==0.12.2
 lxml==4.9.2
 more-itertools==10.1.0
 mosspy==1.0.8
-msgpack==1.0.6
+msgpack==1.0.7
 np==1.0.2
 numpy==1.26.0
 peewee==3.16.3
