@@ -175,11 +175,11 @@ class Canvas:
         return link_url
 
     def upload_file_to_canvas(self, filename, user_id, file_contents):
-        public = True  # overriden. Canvas changed the config and the other option doesnt work
-        self.logger.logger.info("Attempting to upload file size: %d" % len(file_contents))
-        link_url = self.upload_params_for_comment_upload(filename, user_id)
-        return_url = self.upload(link_url, file_contents)
-        if return_url.get("message", 0) == 'file size exceeds quota limits':
+        # public = True  # overriden. Canvas changed the config and the other option doesnt work
+        # self.logger.logger.info("Attempting to upload file size: %d" % len(file_contents))
+        # link_url = self.upload_params_for_comment_upload(filename, user_id)
+        # return_url = self.upload(link_url, file_contents)
+        if True: # return_url.get("message", 0) == 'file size exceeds quota limits':
             # Try uploading to canvas generic folder instead (public)
             public = True
             link_url = self.upload_params_for_folder_upload(filename)
