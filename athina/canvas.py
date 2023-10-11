@@ -175,7 +175,7 @@ class Canvas:
         return link_url
 
     def upload_file_to_canvas(self, filename, user_id, file_contents):
-        public = False
+        public = True  # overriden. Canvas changed the config and the other option doesnt work
         self.logger.logger.info("Attempting to upload file size: %d" % len(file_contents))
         link_url = self.upload_params_for_comment_upload(filename, user_id)
         return_url = self.upload(link_url, file_contents)
