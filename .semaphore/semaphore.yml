@@ -15,7 +15,7 @@ blocks:
           - sem-version python 3.12
           - sem-service start mysql
           - sudo apt-get install -y firejail git 
-          - checkout
+          - git clone --depth=50 https://github.com/athina-edu/athina.git . || true
           - pip install --upgrade pip
           - pip install .
           - mysql -h 127.0.0.1 -P 3306 -u root -e "CREATE DATABASE athina; CREATE USER 'athina'@'127.0.0.1' IDENTIFIED BY 'password'; GRANT ALL PRIVILEGES ON *.* TO 'athina'@'127.0.0.1';"
@@ -40,7 +40,6 @@ blocks:
           - echo $out |grep 3.33 | if [ $(wc -l) > 0 ]; then exit 0; else exit 1; fi
       - name: Docker Hub
         commands:
-          - checkout
           - echo $DOCKER_PASSWORD | docker login --username "$DOCKER_USERNAME" --password-stdin
           - docker build -t latest .
           - docker tag latest athinaedu/athina:latest
