@@ -3,10 +3,18 @@
 Build status:
 [![Build Status Semaphore](https://athina.semaphoreci.com/badges/athina.svg?key=ed440197-2482-4083-aa51-5a6f53213480&style=shields)](https://athina.semaphoreci.com/projects/athina)
 
-Code Quality:
+Code Quality Metrics:
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=coverage)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=bugs)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Duplicated Lines Density](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 
 
 Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 
