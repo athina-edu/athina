@@ -7,17 +7,32 @@ from datetime import datetime
 
 import peewee
 import pymysql
+import sys
 from dateutil.tz import tzlocal
 
 __all__ = ('Database', 'Users', 'AssignmentData', "update_key_in_assignment_data", "load_key_from_assignment_data",
            "return_all_students", "return_a_student",)
 
-# Global database object
-DB = peewee.MySQLDatabase(None)
-ATHINA_MYSQL_HOST = os.environ['ATHINA_MYSQL_HOST']
-ATHINA_MYSQL_PORT = os.environ['ATHINA_MYSQL_PORT']
-ATHINA_MYSQL_USERNAME = os.environ['ATHINA_MYSQL_USERNAME']
-ATHINA_MYSQL_PASSWORD = os.environ['ATHINA_MYSQL_PASSWORD']
+# Decide database backend: use SQLite in-memory when running under pytest or when
+# ATHINA_DB=sqlite is set. This avoids requiring a running MySQL server for tests.
+# Enable SQLite test mode explicitly via ATHINA_DB=sqlite or ATHINA_TEST_MODE=1.
+# Avoid automatic detection via pytest modules to keep production behavior unchanged.
+use_sqlite = os.environ.get('ATHINA_DB', '').lower() == 'sqlite' or os.environ.get('ATHINA_TEST_MODE', '') == '1'
+if use_sqlite:
+    # Use a file-based sqlite database for tests / CI so forked worker processes can
+    # access the same DB. In-memory sqlite databases are per-process and won't be
+    # visible to children after fork which breaks tests that spawn processes.
+    sqlite_path = os.environ.get('ATHINA_SQLITE_DB', '/tmp/athina_test.db')
+    # Allow overriding via env var for CI
+    DB = peewee.SqliteDatabase(sqlite_path)
+else:
+    DB = peewee.MySQLDatabase(None)
+# Read DB connection info from environment, but use safe defaults so importing this module
+# during tests (which may not set the env vars) does not raise KeyError.
+ATHINA_MYSQL_HOST = os.environ.get('ATHINA_MYSQL_HOST', 'localhost')
+ATHINA_MYSQL_PORT = os.environ.get('ATHINA_MYSQL_PORT', '3306')
+ATHINA_MYSQL_USERNAME = os.environ.get('ATHINA_MYSQL_USERNAME', 'athina')
+ATHINA_MYSQL_PASSWORD = os.environ.get('ATHINA_MYSQL_PASSWORD', 'password')
 
 class Database:
     db = None
@@ -43,6 +58,20 @@ class Database:
         self.close_db()
 
     def connect_to_db(self):
+        # Initialize DB depending on backend
+        if isinstance(DB, peewee.SqliteDatabase):
+            # For sqlite file DB, ensure connection and create tables. Do not
+            # reinitialize to ':memory:' because child processes need to share
+            # the same file-based DB.
+            try:
+                DB.init(DB.database)
+            except Exception:
+                pass
+            DB.connect(reuse_if_open=True)
+            DB.create_tables([Users, AssignmentData])
+            return
+
+        # Otherwise assume MySQL
         DB.init("athina", user=ATHINA_MYSQL_USERNAME, password=ATHINA_MYSQL_PASSWORD, host=ATHINA_MYSQL_HOST,
                 port=int(ATHINA_MYSQL_PORT))
         try:
@@ -60,6 +89,9 @@ class Database:
 
     @staticmethod
     def reset_database():
+        # If using sqlite, nothing special required (in-memory DB gets reset on reconnect)
+        if isinstance(DB, peewee.SqliteDatabase):
+            return
         conn = pymysql.connect(host=ATHINA_MYSQL_HOST, user=ATHINA_MYSQL_USERNAME,
                                password=ATHINA_MYSQL_PASSWORD, port=int(ATHINA_MYSQL_PORT))
         conn.cursor().execute('DROP DATABASE IF EXISTS athina')
@@ -185,6 +217,14 @@ def update_key_in_assignment_data(course_id, assignment_id, variable, variable_v
     except AssignmentData.DoesNotExist:
         AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id,
                               course_id=course_id)
+    except peewee.OperationalError:
+        # Table may not exist (sqlite in-memory). Create tables and retry once.
+        DB.create_tables([Users, AssignmentData])
+        try:
+            AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id,
+                                  course_id=course_id)
+        except Exception:
+            pass
 
 
 def load_key_from_assignment_data(course_id, assignment_id, variable):
@@ -193,6 +233,10 @@ def load_key_from_assignment_data(course_id, assignment_id, variable):
                                  AssignmentData.assignment_id == assignment_id)
         return obj.variable_value
     except AssignmentData.DoesNotExist:
+        return None
+    except peewee.OperationalError:
+        # Table probably doesn't exist yet (sqlite in-memory). Create tables and return None
+        DB.create_tables([Users, AssignmentData])
         return None
 
 

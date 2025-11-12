@@ -6,8 +6,10 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-athina = {editable = true,path = "."}
-pytest = "*"
+athina = {editable = true, path = ".", extras = ["test"]}
+pytest = ">=7.0"
+pytest-timeout = ">=2.0"
+docker = ">=6.0"
 
 [requires]
-python_version = "3.8"
+python_version = "3.14"

@@ -1,0 +1,30 @@
+version: '3'
+services:
+  nginx:
+    ports:
+      - "8080:80"
+      - "8443:443"
+    networks:
+      - athina_dev_net
+
+  athina-web:
+    ports:
+      - "8002:8001"
+    volumes:
+      # Ensure dev settings and DB are mounted into the container (absolute paths)
+      - "/mnt/local_data/athina-dev/athina/athina-web/athinaweb/settings_secret_local.py:/code/athinaweb/settings_secret.py:ro"
+      - "/mnt/local_data/athina-dev/athina/athina-web/db.sqlite3:/code/db.sqlite3"
+    networks:
+      - athina_dev_net
+
+  athina:
+    networks:
+      - athina_dev_net
+
+  db:
+    networks:
+      - athina_dev_net
+
+networks:
+  athina_dev_net:
+    driver: bridge

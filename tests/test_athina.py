@@ -25,6 +25,10 @@ from athina.canvas import *
 from athina.moss import *
 from athina.users import *
 
+# Allow overriding the test temp dir to avoid collisions/permission issues on CI/hosts.
+# Default to a per-user tmp dir so tests don't conflict with root-owned /tmp/athina_empty.
+TEST_TMP_DIR = os.environ.get('ATHINA_TEST_TMPDIR', f"/tmp/athina_empty_{os.getuid()}")
+
 
 def wait_for_children_processes():
     current_process = psutil.Process()
@@ -50,17 +54,18 @@ def create_logger():
 
 
 def create_test_config(msg="echo 80"):
-    # Create fake directories
-    shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-    shutil.rmtree("/tmp/athina_empty/.git", ignore_errors=True)
-    os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-    f = open("/tmp/athina_empty/tests/test", 'w')
+    # Create fake directories in the test tmp dir
+    shutil.rmtree(f"{TEST_TMP_DIR}/tests", ignore_errors=True)
+    shutil.rmtree(f"{TEST_TMP_DIR}/.git", ignore_errors=True)
+    os.makedirs(f"{TEST_TMP_DIR}/tests", exist_ok=True)
+    f = open(f"{TEST_TMP_DIR}/tests/test", 'w')
     f.write("#!/bin/bash\n%s\n" % msg)
     f.close()
-    f = open("/tmp/athina_empty/Dockerfile", 'w')
+    f = open(f"{TEST_TMP_DIR}/Dockerfile", 'w')
     f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
     f.close()
-    shutil.copytree("tests/git", "/tmp/athina_empty/.git")
+    # copy a local test git repo into the tmp dir
+    shutil.copytree("tests/git", f"{TEST_TMP_DIR}/.git")
 
 
 def create_fake_user_db():
@@ -143,10 +148,9 @@ class TestFunctions(unittest.TestCase):
         user_data = create_fake_user_db()
 
         configuration = Configuration(logger=logger)
-        # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'a')
+        # Create fake directories (use helper so tmp dir is per-user)
+        create_test_config()
+        f = open(f"{TEST_TMP_DIR}/tests/test", 'a')
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 
@@ -292,10 +296,9 @@ class TestFunctions(unittest.TestCase):
     def test_tester_plagiarism(self):
         logger = create_logger()
         configuration = Configuration(logger=logger)
-        # Create fake directories
-        shutil.rmtree("/tmp/athina_empty/tests", ignore_errors=True)
-        os.makedirs("/tmp/athina_empty/tests", exist_ok=True)
-        f = open("/tmp/athina_empty/tests/test", 'a')
+        # Create fake directories (use helper so tmp dir is per-user)
+        create_test_config()
+        f = open(f"{TEST_TMP_DIR}/tests/test", 'a')
         f.write("#!/bin/bash\necho 80\n")
         f.close()
 

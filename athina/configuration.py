@@ -12,7 +12,8 @@ __all__ = ('Configuration',)
 
 class Configuration:
     logger = None
-    config_dir = "/tmp/athina_empty"
+    # Allow tests to override the temp directory to avoid permission issues on some hosts
+    config_dir = os.environ.get('ATHINA_TEST_TMPDIR', f"/tmp/athina_empty_{os.getuid()}")
     config_filename = "test_assignment"
     auth_token = ""
     course_id = 1
@@ -79,8 +80,20 @@ class Configuration:
     @staticmethod
     def default_dir():
         # mainly used for testing
-        os.makedirs("/tmp/athina_empty", exist_ok=True)
-        os.chmod("/tmp/athina_empty", 0o777)
+        os.makedirs(Configuration.config_dir, exist_ok=True)
+        try:
+            os.chmod(Configuration.config_dir, 0o777)
+        except PermissionError:
+            # Some test environments disallow chmod on /tmp; ignore in that case.
+            pass
+        # Ensure old .git from previous tests is removed to allow copytree
+        try:
+            git_dir = f"{Configuration.config_dir}/.git"
+            if os.path.isdir(git_dir):
+                import shutil as _sh
+                _sh.rmtree(git_dir)
+        except Exception:
+            pass
 
     @staticmethod
     def in_docker():

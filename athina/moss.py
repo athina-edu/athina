@@ -5,7 +5,7 @@ import re
 from datetime import timedelta, datetime
 
 import mosspy
-import np
+import numpy as np
 from dateutil.tz import tzlocal
 
 from athina.url import *

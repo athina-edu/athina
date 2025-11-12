@@ -1,10 +1,13 @@
-FROM ubuntu:20.04
+FROM python:3.14-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Things that our test scripts use and need to have installed
-RUN apt-get update && echo "37" | apt-get -y install keyboard-configuration \
-&& apt-get -y install python3 python3-pip git-core docker.io firejail ca-certificates
+RUN apt-get update && apt-get -y install \
+    git \
+    docker.io \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 ADD . /code
 WORKDIR /code

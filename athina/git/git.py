@@ -19,11 +19,14 @@ __all__ = ('get_repo_commit', 'make_proper_git_url', 'Repository',)
 
 
 def get_repo_commit(folder):
-    repo = git.Repo(folder)
+    try:
+        repo = git.Repo(folder)
+    except (git.exc.InvalidGitRepositoryError, git.exc.NoSuchPathError):
+        return None
     try:
         return repo.heads.master.commit.hexsha
-    except AttributeError:
-        # repo with no commits
+    except (AttributeError, ValueError):
+        # repo with no commits or other issues
         return None
 
 

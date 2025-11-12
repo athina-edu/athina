@@ -3,8 +3,6 @@
 Build statuses:
 [![Build Status](https://travis-ci.com/athina-edu/athina.svg?branch=master)](https://travis-ci.com/athina-edu/athina)
 [![Build Status Semaphore](https://athina.semaphoreci.com/badges/athina.svg?key=ed440197-2482-4083-aa51-5a6f53213480&style=shields)](https://athina.semaphoreci.com/projects/athina)
-[![](https://images.microbadger.com/badges/image/athinaedu/athina.svg)](https://microbadger.com/images/athinaedu/athina "Get your own image badge on microbadger.com")
-[![](https://images.microbadger.com/badges/version/athinaedu/athina.svg)](https://microbadger.com/images/athinaedu/athina "Get your own version badge on microbadger.com")
 
 Code clarity:
 [![codebeat badge](https://codebeat.co/badges/fda271b0-41ae-4835-9e71-2c54855f7402)](https://codebeat.co/projects/github-com-athina-edu-athina-master)
@@ -14,8 +12,6 @@ Code clarity:
 Code security:
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/athina-edu/athina.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/athina-edu/athina/alerts/)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/athina-edu/athina.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/athina-edu/athina/context:python)
-[![PyUp.io](https://pyup.io/repos/github/athina-edu/athina/shield.svg?t=1575602005060)](https://pyup.io/repos/github/athina-edu/athina/)
-[ ~ Dependencies scanned by PyUp.io ~ ]
 
 Code Stats:
 [![](https://tokei.rs/b1/github/athina-edu/athina?category=lines)](https://github.com/athina-edu/athina)
@@ -52,6 +48,41 @@ submission page (as a comment or file attachment containing the text).
 * Git authentication only happens under the specified domain url (e.g., github.com)
 * Git credentials and configuration cannot be obtained through student code execution
 * Tests are forcefully timed out after a certain period of time (e.g., in case of infinite loops)
+
+# Testing
+
+Athina includes a comprehensive test suite that can run in both local development and production environments.
+
+## Quick Start
+
+```bash
+# Install dependencies
+pipenv install --dev
+
+# Run all tests (uses SQLite, no database setup needed)
+pipenv run pytest
+
+# Or use the convenient test runner script
+./run_tests.sh
+```
+
+For more details, see [TESTING.md](TESTING.md).
+
+## Test Modes
+
+- **Local Development** (default): Uses SQLite - no database configuration needed
+- **Production/CI**: Uses MySQL with automatic Docker container management
+
+```bash
+# Run with MySQL in Docker (like production)
+ATHINA_USE_DOCKER_MYSQL=1 pipenv run pytest
+```
+
+## Requirements
+
+- Python 3.14+ (local development)
+- Docker (for MySQL tests and production)
+- pipenv (for dependency management)
 
 # Installation
 ## One click run/install
@@ -107,7 +138,7 @@ are passed as environmental variables to the [Dockerfile](config-examples/Docker
 ![test-script](docs/img/test-script.png "Test-Script")
 ![test-script-result](docs/img/test-script-result.png "Test-Script-Result")
 
-2. Setup the [configuration file](config-examples/assignementsample.cfg) for athina with your settings. Canvas' access token
+2. Setup the [configuration file](config-examples/assignementsample.yaml) for athina with your settings. Canvas' access token
 can be retrieved from your canvas' personal settings.
 ![config](docs/img/config.png "Config")
 ![canvas-access](docs/img/canvas-access.png "Canvas-Access")
