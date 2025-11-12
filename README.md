@@ -70,7 +70,8 @@ ATHINA_USE_DOCKER_MYSQL=1 pipenv run pytest
 
 ## Requirements
 
-- Python 3.14+ (local development)
+- Python 3.14+ (local development with pipenv)
+- Python 3.12+ (CI/CD testing with Semaphore — 3.14 not yet available on Semaphore)
 - Docker (for MySQL tests and production)
 - pipenv (for dependency management)
 

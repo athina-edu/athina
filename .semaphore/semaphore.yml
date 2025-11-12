@@ -12,7 +12,7 @@ blocks:
     task:
       prologue:
         commands:
-          - sem-version python 3.14
+          - sem-version python 3.12
           - sem-service start mysql
           - sudo apt-get install -y firejail git 
           - checkout
