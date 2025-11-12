@@ -3,10 +3,10 @@
 Build status:
 [![Build Status Semaphore](https://athina.semaphoreci.com/badges/athina.svg?key=ed440197-2482-4083-aa51-5a6f53213480&style=shields)](https://athina.semaphoreci.com/projects/athina)
 
-Code Stats:
-[![](https://tokei.rs/b1/github/athina-edu/athina?category=lines)](https://github.com/athina-edu/athina)
-[![](https://tokei.rs/b1/github/athina-edu/athina?category=code)](https://github.com/athina-edu/athina)
-[![](https://tokei.rs/b1/github/athina-edu/athina?category=files)](https://github.com/athina-edu/athina)
+Code Quality:
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=coverage)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 
 
 Athina is a formative assessment microservice for programming assignments. There is also an optional associated web interface 

@@ -14,7 +14,7 @@ setup(
     install_requires=['filelock', 'python-dateutil', 'requests', 'numpy', 'peewee', 'mosspy', 'pyyaml',
                       'psutil', 'gitpython', 'pymysql', 'beautifulsoup4', 'lxml'],
     extras_require={
-        'test': ['pytest>=7.0', 'docker>=6.0', 'pytest-timeout>=2.0'],
+        'test': ['pytest>=7.0', 'docker>=6.0', 'pytest-timeout>=2.0', 'pytest-cov>=4.0'],
     },
     url='https://github.com/athina-edu/athina',
     license='MIT',

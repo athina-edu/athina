@@ -7,6 +7,7 @@ agent:
 global_job_config:
   secrets:
     - name: docker-hub
+    - name: sonarcloud
 blocks:
   - name: "Build"
     task:
@@ -31,9 +32,17 @@ blocks:
         - name: ATHINA_MYSQL_PASSWORD
           value: "password"
       jobs:
-      - name: Execute python tests
+      - name: Execute python tests with coverage
         commands:
-          - pytest
+          - pytest --cov=athina --cov-report=xml --cov-branch
+      - name: SonarCloud Scan
+        commands:
+          - curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip
+          - unzip -q /tmp/sonar-scanner.zip -d /tmp/sonar-scanner-dir
+          - /tmp/sonar-scanner-dir/sonar-scanner-6.2.1.4610-linux-x64/bin/sonar-scanner -Dsonar.login=$SONAR_LOGIN
+        env_vars:
+          - name: SONAR_HOST_URL
+            value: "https://sonarcloud.io"
       - name: Athina test using repo_url_testing parameter
         commands:
           - out=$(bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git)
