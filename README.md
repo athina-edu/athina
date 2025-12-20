@@ -5,7 +5,6 @@ Build status:
 
 Code Quality Metrics:
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=coverage)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=athina-edu_athina&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=athina-edu_athina)
