@@ -16,7 +16,7 @@ packaging==25.0
 peewee==3.18.3
 pluggy==1.6.0
 psutil==7.2.1
-Pygments==2.19.2
+Pygments==2.20.0
 PyMySQL==1.1.2
 pytest==9.0.2
 pytest-cov==7.0.0
