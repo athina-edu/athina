@@ -1,9 +1,8 @@
 # TODO: get_additional_user_info() test
 
 import json
-import unittest
 from datetime import datetime
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.canvas import *
 from athina.configuration import *
@@ -13,7 +12,7 @@ from tests.test_athina import create_test_config, create_fake_user_db
 from tests.helpers import make_config
 
 
-class TestFunctions(unittest.TestCase):
+class TestFunctions(TestCase):
     def test_canvas_user_list_processing(self):
         canvas_return = """[{
 	"id": 101417508,
@@ -136,7 +135,7 @@ class TestFunctions(unittest.TestCase):
         return True
 
 
-class TestCanvas(unittest.TestCase):
+class TestCanvas(TestCase):
     def setUp(self):
         self.configuration, self.logger = make_config()
         self.configuration.auth_token = "token"

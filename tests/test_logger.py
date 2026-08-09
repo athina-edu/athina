@@ -11,11 +11,9 @@ class TestFunctions(unittest.TestCase):
 
     @staticmethod
     def read_file_into_text(logfile):
-        f = open(logfile, "r")
-        lines = f.readlines()
-        text = "\n".join(lines)
-        f.close()
-        return text
+        with open(logfile, "r") as f:
+            lines = f.readlines()
+        return "\n".join(lines)
 
     def test_logger_create(self):
         for file_name in {'logs/athina.log', 'logs/tests.log'}:

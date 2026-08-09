@@ -58,12 +58,10 @@ def create_test_config(msg="echo 80"):
     shutil.rmtree(f"{TEST_TMP_DIR}/tests", ignore_errors=True)
     shutil.rmtree(f"{TEST_TMP_DIR}/.git", ignore_errors=True)
     os.makedirs(f"{TEST_TMP_DIR}/tests", exist_ok=True)
-    f = open(f"{TEST_TMP_DIR}/tests/test", 'w')
-    f.write("#!/bin/bash\n%s\n" % msg)
-    f.close()
-    f = open(f"{TEST_TMP_DIR}/Dockerfile", 'w')
-    f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
-    f.close()
+    with open(f"{TEST_TMP_DIR}/tests/test", 'w') as f:
+        f.write("#!/bin/bash\n%s\n" % msg)
+    with open(f"{TEST_TMP_DIR}/Dockerfile", 'w') as f:
+        f.write("FROM ubuntu:18.04\nENTRYPOINT cd $TEST_DIR && ls && $TEST $STUDENT_DIR $TEST_DIR")
     # copy a local test git repo into the tmp dir
     shutil.copytree("tests/git", f"{TEST_TMP_DIR}/.git")
 
@@ -150,9 +148,8 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
         # Create fake directories (use helper so tmp dir is per-user)
         create_test_config()
-        f = open(f"{TEST_TMP_DIR}/tests/test", 'a')
-        f.write("#!/bin/bash\necho 80\n")
-        f.close()
+        with open(f"{TEST_TMP_DIR}/tests/test", 'a') as f:
+            f.write("#!/bin/bash\necho 80\n")
 
         e_learning = Canvas(configuration, logger)
         repository = Repository(logger, configuration, e_learning)
@@ -298,9 +295,8 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
         # Create fake directories (use helper so tmp dir is per-user)
         create_test_config()
-        f = open(f"{TEST_TMP_DIR}/tests/test", 'a')
-        f.write("#!/bin/bash\necho 80\n")
-        f.close()
+        with open(f"{TEST_TMP_DIR}/tests/test", 'a') as f:
+            f.write("#!/bin/bash\necho 80\n")
 
         e_learning = Canvas(configuration, logger)
         user_data = create_fake_user_db()

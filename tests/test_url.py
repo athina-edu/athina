@@ -1,15 +1,13 @@
 # Tests for athina.url (HTTP request helper).
 import json
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 import requests
 
 from athina.url import request_url, _return_requested_type
-from tests.helpers import make_config
 
 
-class TestUrl(unittest.TestCase):
+class TestUrl(TestCase):
     def test_request_url_get_json(self):
         with mock.patch('athina.url.time.sleep'), \
                 mock.patch('athina.url.requests.get') as mock_get:

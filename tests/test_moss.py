@@ -2,7 +2,7 @@ import os
 import shutil
 import unittest
 from datetime import datetime
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.logger import *
 from athina.moss import Plagiarism, plagiarism_checks_on_users
@@ -11,7 +11,7 @@ from tests.helpers import make_config
 from tests.test_athina import create_logger
 
 
-class TestFunctions(unittest.TestCase):
+class TestFunctions(TestCase):
     @unittest.skip("Moss service hangs for too long. Implement timeouts in moss.py")
     def test_moss(self):
         shutil.rmtree("/tmp/u1", ignore_errors=True)
@@ -52,7 +52,7 @@ class TestFunctions(unittest.TestCase):
         return logger
 
 
-class TestPlagiarism(unittest.TestCase):
+class TestPlagiarism(TestCase):
     def test_plagiarism_init_moss(self):
         logger = create_logger()
         p = Plagiarism(logger=logger, service_type="moss", moss_id=123, moss_lang="python")

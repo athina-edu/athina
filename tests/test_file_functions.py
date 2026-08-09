@@ -1,13 +1,12 @@
 # Tests for athina.file_functions (copy_dir / rm_dir helpers).
 import os
 import shutil
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.file_functions import copy_dir, rm_dir
 
 
-class TestFileFunctions(unittest.TestCase):
+class TestFileFunctions(TestCase):
     def test_copy_dir_success(self):
         src = "/tmp/cov_src"
         dst = "/tmp/cov_dst"

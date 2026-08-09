@@ -1,12 +1,11 @@
 # Tests for athina.cli (CLI entry point).
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.cli import lock_process, signal_handler, parse_command_line, main, core_iteration, run
 from tests.helpers import make_config
 
 
-class TestCli(unittest.TestCase):
+class TestCli(TestCase):
     def test_run(self):
         with mock.patch('athina.cli.parse_command_line') as mock_parse, \
                 mock.patch('athina.cli.lock_process') as mock_lock, \
@@ -15,7 +14,6 @@ class TestCli(unittest.TestCase):
                 mock.patch('athina.cli.main') as mock_main:
             mock_parse.return_value.service = False
             mock_parse.return_value.verbose = False
-            logger_instance = mock_logger_cls.return_value
             run()
             mock_main.assert_called_once()
             mock_lock.return_value.release.assert_called_once()
@@ -29,7 +27,6 @@ class TestCli(unittest.TestCase):
                 mock.patch('athina.cli.time.sleep', side_effect=KeyboardInterrupt):
             mock_parse.return_value.service = True
             mock_parse.return_value.verbose = False
-            logger_instance = mock_logger_cls.return_value
             with self.assertRaises(KeyboardInterrupt):
                 run()
 
@@ -72,7 +69,6 @@ class TestCli(unittest.TestCase):
                 mock.patch('athina.cli.core_iteration') as mock_core:
             mock_args.json = None
             mock_args.config = '/tmp/config'
-            config_instance = mock_config.return_value
             main()
             mock_core.assert_called_once()
 
@@ -195,7 +191,7 @@ class TestCli(unittest.TestCase):
                 mock.patch('athina.cli.Tester') as mock_tester, \
                 mock.patch('athina.cli.return_a_student', side_effect=peewee.DoesNotExist), \
                 mock.patch('athina.cli.Users') as mock_users, \
-                mock.patch('athina.cli.exit') as mock_exit:
+                mock.patch('athina.cli.sys.exit') as mock_exit:
             mock_users.DoesNotExist = peewee.DoesNotExist
             mock_args.repo_url_testing = 'https://github.com/x/y.git'
             user_data = mock.Mock()

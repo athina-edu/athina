@@ -1,7 +1,6 @@
 # Tests for athina.configuration (Configuration hyper-object + YAML loading).
 import os
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 import yaml
 
@@ -10,7 +9,7 @@ from tests.helpers import make_config
 from tests.test_athina import create_test_config, TEST_TMP_DIR
 
 
-class TestConfiguration(unittest.TestCase):
+class TestConfiguration(TestCase):
     def test_find_yaml_directory(self):
         create_test_config()
         yaml_path = os.path.join(TEST_TMP_DIR, "test_assignment.yaml")

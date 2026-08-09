@@ -186,6 +186,7 @@ def core_iteration(configuration, user_data):
             obj = return_a_student(configuration.course_id, configuration.assignment_id, 1)
             obj.delete_instance()
         except Users.DoesNotExist:
+            # No existing user to clean up; a fresh one is created below.
             pass
         Users.create(user_id=1,
                      course_id=1,
@@ -199,7 +200,7 @@ def core_iteration(configuration, user_data):
         repository.check_repository_changes(1)
         tester.process_student_assignment(1)
         LOGGER.logger.info("Single repository testing completed.")
-        exit(0)  # This is used for testing so no further processing is necessary
+        sys.exit(0)  # This is used for testing so no further processing is necessary
     else:
         # Start testing changed records (new or updated) if any exist
         tester.start_testing_db()
@@ -212,4 +213,5 @@ def core_iteration(configuration, user_data):
     try:
         os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o777)
     except FileNotFoundError:
+        # No repodata dir yet; nothing to chmod.
         pass

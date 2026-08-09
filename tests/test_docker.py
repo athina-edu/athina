@@ -1,7 +1,6 @@
 import os
 import subprocess
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 from tests.test_athina import create_test_config, create_logger, create_fake_user_db
 from athina.configuration import Configuration
@@ -10,7 +9,7 @@ from athina.tester.docker import docker_build, docker_run, _terminate_container,
 from tests.helpers import make_config
 
 
-class TestFunctions(unittest.TestCase):
+class TestFunctions(TestCase):
     def test_docker_build(self):
         logger = create_logger()
         configuration = Configuration(logger=logger)
@@ -26,7 +25,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(result, False, "We do not rebuild if we have already built for a specific commit")
 
 
-class TestDocker(unittest.TestCase):
+class TestDocker(TestCase):
     def test_docker_build_first(self):
         configuration, logger = make_config()
         configuration.config_dir = "/tmp"

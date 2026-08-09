@@ -66,6 +66,7 @@ class Database:
             try:
                 DB.init(DB.database)
             except Exception:
+                # DB may already be initialized; ignore and continue.
                 pass
             DB.connect(reuse_if_open=True)
             DB.create_tables([Users, AssignmentData])
@@ -107,7 +108,7 @@ class Database:
         except peewee.OperationalError:
             # Database specifications have changed (e.g., newer athina version)
             # delete old sql file and start a new
-            exit(1)
+            sys.exit(1)
             return False
         except peewee.InternalError as error:
             if error.args[0] == 1054:  # Database fields have changed
@@ -224,6 +225,7 @@ def update_key_in_assignment_data(course_id, assignment_id, variable, variable_v
             AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id,
                                   course_id=course_id)
         except Exception:
+            # Best-effort retry; the caller handles a missing table.
             pass
 
 

@@ -1,14 +1,13 @@
 # Tests for athina.tester.tester (Tester class helpers).
-import unittest
 from datetime import datetime
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.tester.tester import Tester
 from athina.users import Users
 from tests.helpers import make_config
 
 
-class TestTester(unittest.TestCase):
+class TestTester(TestCase):
     def test_trim_test_output_short(self):
         configuration, logger = make_config()
         configuration.max_file_size = 1024

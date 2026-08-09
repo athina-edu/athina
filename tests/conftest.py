@@ -164,7 +164,8 @@ def mysql_container() -> Generator[dict, None, None]:
     print("Stopping MySQL container...")
     try:
         container.stop()
-    except:
+    except Exception:
+        # Container may already be stopped/removed; ignore.
         pass
 
 

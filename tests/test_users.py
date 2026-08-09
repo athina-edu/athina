@@ -1,13 +1,12 @@
 # Tests for athina.users (Peewee ORM models + DB helpers).
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.users import Database, Users, AssignmentData, update_key_in_assignment_data, \
     load_key_from_assignment_data, return_all_students, return_a_student
 from tests.test_athina import create_fake_user_db, create_logger
 
 
-class TestUsers(unittest.TestCase):
+class TestUsers(TestCase):
     def test_database_init_with_logger(self):
         logger = create_logger()
         user_data = Database(logger=logger)

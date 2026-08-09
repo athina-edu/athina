@@ -1,14 +1,13 @@
 # Tests for athina.git.git (Repository class + git helpers).
-import unittest
 from datetime import datetime
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.git.git import make_proper_git_url, get_repo_commit, Repository
 from athina.users import Database, Users, AssignmentData, return_a_student
 from tests.helpers import make_config
 
 
-class TestGit(unittest.TestCase):
+class TestGit(TestCase):
     def setUp(self):
         user_data = Database()
         user_data.db.drop_tables([Users, AssignmentData])

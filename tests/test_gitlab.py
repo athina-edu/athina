@@ -1,13 +1,12 @@
 # Tests for athina.git.gitlab (GitLab webhook + private-repo checks).
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.git.gitlab import gitlab_return_encoded_url, gitlab_set_webhook, gitlab_check_if_repo_private
 from athina.users import Database, Users, AssignmentData
 from tests.helpers import make_config
 
 
-class TestGitlab(unittest.TestCase):
+class TestGitlab(TestCase):
     def setUp(self):
         user_data = Database()
         user_data.db.drop_tables([Users, AssignmentData])

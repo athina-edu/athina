@@ -1,13 +1,12 @@
 # Tests for athina.tester.firejail (firejail sandboxing).
 import os
-import unittest
-from unittest import mock
+from unittest import mock, TestCase
 
 from athina.tester.firejail import execute_with_firejail, generate_firejail_profile
 from tests.helpers import make_config
 
 
-class TestFirejail(unittest.TestCase):
+class TestFirejail(TestCase):
     def test_execute_with_firejail(self):
         configuration, logger = make_config()
         configuration.athina_test_tmp_dir = "/tmp"
