@@ -10,6 +10,7 @@ athina = {editable = true, path = ".", extras = ["test"]}
 pytest = ">=7.0"
 pytest-timeout = ">=2.0"
 docker = ">=6.0"
+gitpython = "*"
 
 [requires]
 python_version = "3.14"

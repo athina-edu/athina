@@ -4,11 +4,16 @@ from datetime import datetime
 from unittest import mock
 
 from athina.git.git import make_proper_git_url, get_repo_commit, Repository
-from athina.users import Users, return_a_student
+from athina.users import Database, Users, AssignmentData, return_a_student
 from tests.helpers import make_config
 
 
 class TestGit(unittest.TestCase):
+    def setUp(self):
+        user_data = Database()
+        user_data.db.drop_tables([Users, AssignmentData])
+        user_data.db.create_tables([Users, AssignmentData])
+
     def test_make_proper_git_url_with_git(self):
         self.assertEqual(make_proper_git_url("https://x/y.git"), "https://x/y.git")
 
