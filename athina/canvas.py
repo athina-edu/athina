@@ -91,18 +91,13 @@ class Canvas:
             upload_result = self.upload_file_to_canvas(filename="athina_%s%s.txt" % (user_id, user_values.commit_date),
                                                        user_id=user_id, file_contents=file_contents)
             if upload_result["fileid"] != 0:
-                if upload_result["public"] is False:
-                    # Submit grade and comment referencing the file that was just uploaded
-                    # FIXME: Canvas does not display the file from the line below two all students in a group
-                    # FIXME: It has a flag that allows comments to display to all members of a group.
-                    # self.submit_grade_canvas(user_id=user_id, grade=grade, comment_file=upload_result["fileid"])
-                    comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
-                                   (self.configuration.canvas_url, upload_result["fileid"])
-                    self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
-                else:
-                    comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
-                                   (self.configuration.canvas_url, upload_result["fileid"])
-                    self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
+                # Submit grade and comment referencing the file that was just uploaded
+                # FIXME: Canvas does not display the file from the line below two all students in a group
+                # FIXME: It has a flag that allows comments to display to all members of a group.
+                # self.submit_grade_canvas(user_id=user_id, grade=grade, comment_file=upload_result["fileid"])
+                comment_text = "See file:\nhttps://%s/files/%d/download?download_frd=1" % \
+                               (self.configuration.canvas_url, upload_result["fileid"])
+                self.submit_grade_canvas(user_id=user_id, grade=grade, comment_text=comment_text)
             else:
                 comment_text = "An error has occurred when uploading comment file to Canvas.\n" \
                                "Please contact the instructor."
