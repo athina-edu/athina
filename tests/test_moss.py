@@ -1,8 +1,7 @@
 import os
 import shutil
-import unittest
 from datetime import datetime
-from unittest import mock, TestCase
+from unittest import mock, TestCase, skip
 
 from athina.logger import *
 from athina.moss import Plagiarism, plagiarism_checks_on_users
@@ -12,7 +11,7 @@ from tests.test_athina import create_logger
 
 
 class TestFunctions(TestCase):
-    @unittest.skip("Moss service hangs for too long. Implement timeouts in moss.py")
+    @skip("Moss service hangs for too long. Implement timeouts in moss.py")
     def test_moss(self):
         shutil.rmtree("/tmp/u1", ignore_errors=True)
         shutil.rmtree("/tmp/u2", ignore_errors=True)
