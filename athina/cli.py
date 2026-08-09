@@ -211,10 +211,10 @@ def core_iteration(configuration, user_data):
 
     # In case this script is run as another user the repo needs to be also set to be editable by anyone
     try:
-        # 0o775: owner+group rwx, others rx. Group-writable so the sandboxed
-        # test process (which may run as a different user) can access the repo,
-        # without making it world-writable.
-        os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o775)
+        # 0o755: owner rwx, group/others rx. Readable/executable by all so the
+        # sandboxed test process can access the repo, without granting group or
+        # world write access (avoids py/overly-permissive-file).
+        os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o755)
     except FileNotFoundError:
         # No repodata dir yet; nothing to chmod.
         pass
