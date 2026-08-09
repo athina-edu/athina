@@ -14,8 +14,9 @@ blocks:
       prologue:
         commands:
           - sem-version python 3.12
-          - sudo apt-get install -y openjdk-21-jdk
-          - export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+          - curl -sSLo /tmp/jdk21.tar.gz "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
+          - mkdir -p /opt/jdk21 && tar -xzf /tmp/jdk21.tar.gz -C /opt/jdk21 --strip-components=1
+          - export JAVA_HOME=/opt/jdk21
           - export PATH="$JAVA_HOME/bin:$PATH"
           - java -version
           - sem-service start mysql
