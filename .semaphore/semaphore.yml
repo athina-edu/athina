@@ -45,7 +45,8 @@ blocks:
             - curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389.zip
             - unzip -q /tmp/sonar-scanner.zip -d /tmp/sonar-scanner-dir
             - export PATH="/tmp/sonar-scanner-dir/sonar-scanner-8.1.0.6389/bin:$PATH"
-            - sonar-scanner -Dsonar.token=$SONAR_LOGIN -Dsonar.projectKey=athina-edu_athina -Dsonar.organization=athina-edu -Dsonar.sources=athina -Dsonar.scanner.skipJreProvisioning=true
+            - export SONAR_TOKEN="$SONAR_LOGIN"
+            - sonar-scanner -Dsonar.projectKey=athina-edu_athina -Dsonar.organization=athina-edu -Dsonar.sources=athina -Dsonar.scanner.skipJreProvisioning=true
         - name: Athina test using repo_url_testing parameter
           commands:
             - out=$(bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git)
