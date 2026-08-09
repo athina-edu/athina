@@ -8,7 +8,11 @@ setup(
     name='athina',
     version='0.97',
     packages=find_packages(),
-    scripts=['bin/athina-cli'],
+    entry_points={
+        'console_scripts': [
+            'athina-cli=athina.cli:run',
+        ],
+    },
     # 'np' is an unrelated, broken package on PyPI and conflicts with the project's use of numpy as 'np'
     # remove it from install_requires; numpy remains required.
     install_requires=['filelock', 'python-dateutil', 'requests', 'numpy', 'peewee', 'mosspy', 'pyyaml',
@@ -21,6 +25,5 @@ setup(
     author='Michail Tsikerdekis',
     author_email='tsikerdekis@gmail.com',
     description='',
-    test_suite="tests",
     include_package_data=True
 )

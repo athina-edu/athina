@@ -1,0 +1,215 @@
+# Console entry point for the athina CLI.
+# This module exposes the `run()` function referenced by the `athina-cli`
+# console script in setup.py. Using a proper entry point (instead of a
+# `scripts=` file) makes the package buildable in any context (e.g., when
+# Dependabot builds the editable package from a temp dir), since it no longer
+# depends on a `bin/` file existing at build time.
+import argparse
+import datetime
+import os
+import signal
+import sys
+import time
+
+import dateutil
+import filelock
+import requests
+import yaml
+from dateutil.tz import tzlocal
+
+from athina.canvas import *
+from athina.configuration import *
+from athina.git.git import *
+from athina.logger import Logger
+from athina.moss import *
+from athina.tester.tester import *
+from athina.url import *
+from athina.users import *
+
+
+# Module-level globals set by run(); defaults so they can be referenced/mocked.
+DIR_PATH = None
+ATHINA_WEB_URL = None
+ARGS = None
+lock = None
+LOGGER = None
+
+
+def lock_process():
+    # Allow only one instance
+    lock_file = filelock.FileLock("/run/lock/athina.py.lock")
+    try:
+        lock_file.acquire(timeout=10)
+    except filelock.Timeout:
+        sys.exit("Another instance of athina.py is running. If this is an error, delete athina.py.lock")
+    return lock_file
+
+
+def signal_handler(signum, frame):
+    LOGGER.logger.info('Ctrl+C detected. Terminating service...')
+    lock.release()
+    sys.exit(0)
+
+
+def run():
+    # Athina's directory
+    global DIR_PATH, ATHINA_WEB_URL, ARGS, lock, LOGGER
+    DIR_PATH = os.path.dirname(os.path.realpath(__file__))
+
+    # Athina-Web url (one click run passes that when the first time setup occurs)
+    ATHINA_WEB_URL = os.environ.get('ATHINA_WEB_URL', None)
+
+    # Get command line parameters
+    ARGS = parse_command_line()
+
+    # Lock process so that duplicates won't run
+    lock = lock_process()
+
+    # Setup logger
+    LOGGER = Logger()
+    LOGGER.set_verbose(ARGS.verbose)  # this also creates LOGGER.logger
+
+    # Capturing and terminating on service or non service interrupt
+    signal.signal(signal.SIGINT, signal_handler)
+    LOGGER.logger.info('Press Ctrl+C at any time to terminate Athina.')
+
+    # Start main process
+    if ARGS.service is True:
+        # Run as a daemon
+        while True:
+            main()
+            time.sleep(60)
+    else:
+        main()
+
+    # Closing statement
+    lock.release()
+
+
+def parse_command_line():
+    """
+    Command line arguments
+    :return:
+    """
+    parser = argparse.ArgumentParser(
+        description='ATHINA - Automated Testing Homework Interface for N Assignments')
+    parser.add_argument('-c', '--config', metavar='[config file|config dir]',
+                        required=False, type=str, help='Configuration File')
+    parser.add_argument('-v', '--verbose', required=False, help='Verbose mode, default False',
+                        default=False, action='store_true')
+    parser.add_argument('-s', '--service', required=False, help='Run Athina as a service',
+                        default=False, action='store_true')
+    parser.add_argument('-r', '--repo_url_testing', metavar='[repository url]', required=False,
+                        help='Test a git config on a particular repo (this exclusively for testing configuration)',
+                        type=str)
+    parser.add_argument('-j', '--json', metavar='[json file]', required=False, type=str,
+                        help='JSON list of folders with Athina cfg files and tests')
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    # Build the list of assignments to check (Athina Web = json format, command line = 1 assignment only)
+    run_list = []
+    if ARGS.json is not None:
+        try:
+            run_list = request_url(ARGS.json, method="get", return_type="json")
+        except requests.exceptions.ConnectionError:
+            LOGGER.logger.error("Cannot connect to URL: %s" % ARGS.json)
+    elif ARGS.config is not None:
+        run_list.append({'directory': ARGS.config})
+    else:
+        raise SyntaxError("You need to provide either --config or --json.")
+
+    # Iterate through each assignment
+    user_data = Database(logger=LOGGER)
+    for run_record in run_list:
+        # Build configuration object
+        configuration = Configuration(logger=LOGGER)
+        try:
+            configuration.load_configuration(run_record['directory'])
+        except (ValueError, TypeError, yaml.YAMLError):
+            LOGGER.logger.error("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
+                                "missing or incorrect (e.g., no quotes are necessary for strings).")
+            continue  # in case a use forgets and gives empty values in their config
+
+        configuration.athina_web_url = ATHINA_WEB_URL
+
+        # Starting statement
+        LOGGER.logger.info("Processing...")
+
+        core_iteration(configuration, user_data)
+
+        del configuration
+        LOGGER.logger.info("Processing done.")
+
+
+def core_iteration(configuration, user_data):
+    # Begin gathering data from Canvas
+    e_learning = Canvas(configuration, LOGGER)
+
+    # No point contacting elearning platform if no auth token is provided
+    if configuration.auth_token != "":
+        LOGGER.logger.debug("Retrieving submission list from elearning platform...")
+        e_learning.get_all_submissions()
+        LOGGER.logger.debug("Retrieved!")
+
+        # Getting additional information from e-learning platform
+        if len(return_all_students(configuration.course_id, configuration.assignment_id)) > 0 and \
+                e_learning.needs_update:  # this helps reduce API calls
+            LOGGER.logger.debug("Retrieving user info from elearning platform...")
+            user_data = e_learning.get_additional_user_info(user_data)
+            LOGGER.logger.debug("Retrieved!")
+            if configuration.enforce_due_date:
+                configuration.due_date = e_learning.get_assignment_due_date()
+            else:
+                configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")  # a day in the future
+            e_learning.update_last_update()
+        # Check if more than N times the same URL in usrdb
+        elif len(return_all_students(configuration.course_id, configuration.assignment_id)) > 0:
+            LOGGER.logger.debug("Checking for duplicate urls...")
+            user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit,
+                                          course_id=configuration.course_id,
+                                          assignment_id=configuration.assignment_id)
+            LOGGER.logger.debug("Checked!")
+
+    # Build Repository Object
+    repository = Repository(LOGGER, configuration, e_learning)
+
+    # Build Tester Object
+    tester = Tester(user_data, LOGGER, configuration, e_learning, repository)
+
+    if ARGS.repo_url_testing is not None:
+        # Creating tmp user and simulating the test for the provided repository
+        LOGGER.logger.debug("TEST")
+        try:
+            obj = return_a_student(configuration.course_id, configuration.assignment_id, 1)
+            obj.delete_instance()
+        except Users.DoesNotExist:
+            pass
+        Users.create(user_id=1,
+                     course_id=1,
+                     assignment_id=1,
+                     repository_url=ARGS.repo_url_testing,
+                     url_date=datetime.datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
+                     new_url=True,
+                     commit_date=datetime.datetime(1, 1, 1, 0, 0).replace(tzinfo=None))
+        LOGGER.set_verbose(True)
+        LOGGER.set_debug(True)
+        repository.check_repository_changes(1)
+        tester.process_student_assignment(1)
+        LOGGER.logger.info("Single repository testing completed.")
+        exit(0)  # This is used for testing so no further processing is necessary
+    else:
+        # Start testing changed records (new or updated) if any exist
+        tester.start_testing_db()
+
+    # Initiate plagiarism checks
+    if datetime.datetime.now(tzlocal()).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
+        plagiarism_checks_on_users(LOGGER, configuration, e_learning)
+
+    # In case this script is run as another user the repo needs to be also set to be editable by anyone
+    try:
+        os.chmod("%s/repodata%s" % (configuration.config_dir, configuration.assignment_id), 0o777)
+    except FileNotFoundError:
+        pass
