@@ -50,7 +50,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
         for i in range(0, len(db_rows) - len(values)):
             values.append(0)
         if len(values) != 0:  # this if is probably useless but kept here just in case
-            mean_similarity = np.mean(np.array(values).astype(np.float))
+            mean_similarity = np.mean(np.array(values).astype(float))
         else:
             mean_similarity = 0
 
