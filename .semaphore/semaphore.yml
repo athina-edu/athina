@@ -14,7 +14,10 @@ blocks:
       prologue:
         commands:
           - sem-version python 3.12
-          - sem-version java 21
+          - sudo apt-get install -y openjdk-21-jdk
+          - export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+          - export PATH="$JAVA_HOME/bin:$PATH"
+          - java -version
           - sem-service start mysql
           - sudo apt-get install -y firejail git 
           - rm -rf .git && git init && git remote add origin https://github.com/athina-edu/athina.git && git fetch origin master --depth=50 && git checkout origin/master -f
