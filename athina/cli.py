@@ -36,8 +36,12 @@ LOGGER = None
 
 
 def lock_process():
-    # Allow only one instance
-    lock_file = filelock.FileLock("/run/lock/athina.py.lock")
+    # Allow only one instance. Use a lock file in a per-user directory (not a
+    # publicly-writable location like /run/lock or /tmp, which is flagged as a
+    # security issue, CWE-732).
+    lock_dir = os.path.join(os.path.expanduser("~"), ".athina")
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_file = filelock.FileLock(os.path.join(lock_dir, "athina.py.lock"))
     try:
         lock_file.acquire(timeout=10)
     except filelock.Timeout:
