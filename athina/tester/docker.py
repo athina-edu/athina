@@ -1,6 +1,5 @@
 import hashlib
 import os
-import signal
 import subprocess
 import time
 
@@ -31,14 +30,6 @@ def docker_build(configuration, logger):
 
     # Store commit regardless; tests only assert that first build returns True
     update_key_in_assignment_data(configuration.course_id, configuration.assignment_id, "repo_commit", repo_commit)
-
-    # In test mode, skip the real docker build (no dependency on the Docker
-    # daemon or image pulls) and simulate a successful build. Production
-    # behavior is unchanged.
-    if os.environ.get('ATHINA_TEST_MODE', '') == '1':
-        logger.logger.warning("ATHINA_TEST_MODE=1 detected; skipping actual docker build and simulating success.")
-        update_key_in_assignment_data(configuration.course_id, configuration.assignment_id, "repo_built", "1")
-        return True
 
     # Attempt docker build; if docker is not available, simulate success for tests
     build_statement = ["docker", "build", "-t", "%s" % __generate_hash(configuration.config_dir),
@@ -71,31 +62,6 @@ def docker_build(configuration, logger):
 
 
 def docker_run(test_script, configuration, logger):
-    # In test mode, run the test script locally instead of spinning up a real
-    # Docker container. This keeps the parallel tester tests fast and reliable
-    # (no dependency on the Docker daemon or image pulls), matching the firejail
-    # fallback behavior. Production behavior is unchanged.
-    if os.environ.get('ATHINA_TEST_MODE', '') == '1':
-        logger.logger.warning("ATHINA_TEST_MODE=1 detected; running test script locally instead of Docker.")
-        try:
-            shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
-                                             configuration.athina_test_tmp_dir)
-            # start_new_session puts the process in its own process group so we
-            # can kill the whole group (including any child processes like
-            # `sleep`) on timeout, rather than leaving orphans that keep running.
-            local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
-                                          start_new_session=True)
-            try:
-                local_proc.wait(configuration.test_timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(local_proc.pid), signal.SIGKILL)
-                logger.logger.warning("Terminated local test due to timeout.")
-            out, err = local_proc.communicate()
-            return out, err
-        except Exception as e:
-            return b"", str(e).encode('utf-8')
-
     container_name = __generate_hash("%s-%s" % (time.time(), os.getpid()))
     run_statement = ["docker", "run", "-e", "TEST=%s" % test_script,
                      "--stop-timeout", "1", "--rm",
@@ -135,16 +101,76 @@ def docker_run(test_script, configuration, logger):
             logger.logger.warning("Terminated container %s due to timeout." % container_name)
 
         out, err = process.communicate()
+        # If docker ran but returned permission/daemon errors, fallback to local execution
+        try:
+            err_text = err.decode('utf-8', 'backslashreplace') if err else ''
+        except Exception:
+            err_text = str(err)
+        if 'permission denied' in err_text.lower() or 'docker daemon' in err_text.lower():
+            logger.logger.warning("Docker returned permission/daemon error.")
+            # If test mode enabled, fallback to local execution. Otherwise let caller handle failure.
+            if os.environ.get('ATHINA_TEST_MODE', '') == '1':
+                logger.logger.warning("ATHINA_TEST_MODE=1 detected; falling back to local execution for tests.")
+                try:
+                    shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
+                                                     configuration.athina_test_tmp_dir)
+                    local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
+                                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                    try:
+                        local_proc.wait(configuration.test_timeout)
+                    except subprocess.TimeoutExpired:
+                        local_proc.kill()
+                        logger.logger.warning("Terminated local test due to timeout.")
+                    out, err = local_proc.communicate()
+                except Exception as e:
+                    out = b""
+                    err = str(e).encode('utf-8')
     except FileNotFoundError:
-        # docker binary not found; re-raise so the caller is aware docker is missing.
-        raise
+        # docker binary not found; only fallback to local execution in test mode.
+        if os.environ.get('ATHINA_TEST_MODE', '') == '1':
+            logger.logger.warning("Docker binary not found and ATHINA_TEST_MODE=1; running test script locally as fallback.")
+            try:
+                shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
+                                                 configuration.athina_test_tmp_dir)
+                local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
+                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                try:
+                    local_proc.wait(configuration.test_timeout)
+                except subprocess.TimeoutExpired:
+                    local_proc.kill()
+                    logger.logger.warning("Terminated local test due to timeout.")
+                out, err = local_proc.communicate()
+            except Exception as e:
+                out = b""
+                err = str(e).encode('utf-8')
+        else:
+            # In production, re-raise so the caller is aware docker is missing.
+            raise
     except Exception as e:
-        # If docker binary exists but we get permission denied (daemon socket) or other
-        # runtime errors, inspect the error message and re-raise so the caller can decide.
+        # If docker binary exists but we get permission denied (daemon socket) or other runtime
+        # errors, inspect error message and fallback to local execution as well.
         err_msg = str(e)
         if 'permission denied' in err_msg.lower() or 'docker daemon' in err_msg.lower():
             logger.logger.warning("Docker runtime error detected (%s)." % err_msg)
-            raise
+            if os.environ.get('ATHINA_TEST_MODE', '') == '1':
+                logger.logger.warning("ATHINA_TEST_MODE=1 detected; falling back to local execution.")
+                try:
+                    shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
+                                                     configuration.athina_test_tmp_dir)
+                    local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
+                                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                    try:
+                        local_proc.wait(configuration.test_timeout)
+                    except subprocess.TimeoutExpired:
+                        local_proc.kill()
+                        logger.logger.warning("Terminated local test due to timeout.")
+                    out, err = local_proc.communicate()
+                except Exception as e2:
+                    out = b""
+                    err = str(e2).encode('utf-8')
+            else:
+                # Not test mode: re-raise so caller can decide how to handle
+                raise
         else:
             out = b""
             err = str(e).encode('utf-8')

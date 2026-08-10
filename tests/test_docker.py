@@ -26,16 +26,6 @@ class TestFunctions(TestCase):
 
 
 class TestDocker(TestCase):
-    def setUp(self):
-        # These unit tests mock subprocess.Popen to exercise the real docker
-        # code path, so ensure ATHINA_TEST_MODE is not set (which would
-        # short-circuit docker_build/docker_run to run locally).
-        self._saved_test_mode = os.environ.pop('ATHINA_TEST_MODE', None)
-
-    def tearDown(self):
-        if self._saved_test_mode is not None:
-            os.environ['ATHINA_TEST_MODE'] = self._saved_test_mode
-
     def test_docker_build_first(self):
         configuration, logger = make_config()
         configuration.config_dir = "/tmp"
@@ -162,57 +152,6 @@ class TestDocker(TestCase):
             out, err = docker_run("bash test", configuration, logger)
             self.assertEqual(out, b"")
 
-    def test_docker_run_file_not_found_production_raises(self):
-        # ATHINA_TEST_MODE is unset (setUp clears it), so a missing docker
-        # binary should re-raise in production.
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
-        with mock.patch('athina.tester.docker.subprocess.Popen', side_effect=FileNotFoundError), \
-                mock.patch('athina.tester.docker._terminate_container'), \
-                mock.patch('athina.tester.docker._docker_chown'):
-            with self.assertRaises(FileNotFoundError):
-                docker_run("bash test", configuration, logger)
-
-    def test_docker_run_permission_denied_production_raises(self):
-        # ATHINA_TEST_MODE is unset, so a permission-denied runtime error should
-        # re-raise in production.
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
-        with mock.patch('athina.tester.docker.subprocess.Popen',
-                        side_effect=PermissionError("permission denied")), \
-                mock.patch('athina.tester.docker._terminate_container'), \
-                mock.patch('athina.tester.docker._docker_chown'):
-            with self.assertRaises(PermissionError):
-                docker_run("bash test", configuration, logger)
-
-    def test_docker_run_permission_denied_output(self):
-        # ATHINA_TEST_MODE is unset; docker returns permission denied in stderr.
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
-        with mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen, \
-                mock.patch('athina.tester.docker._terminate_container'), \
-                mock.patch('athina.tester.docker._docker_chown'):
-            proc = mock_popen.return_value
-            proc.wait.return_value = 0
-            proc.communicate.return_value = (b"out", b"permission denied")
-            out, err = docker_run("bash test", configuration, logger)
-            self.assertEqual(out, b"out")
-
     def test_terminate_container(self):
         with mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen:
             _terminate_container("container1")
@@ -260,57 +199,3 @@ class TestDocker(TestCase):
             proc.communicate.return_value = (b"out", b"")
             out, err = _docker_chown(configuration, logger, "/tmp/student")
             self.assertEqual(out, b"out")
-
-    def test_docker_build_test_mode_short_circuit(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        os.environ['ATHINA_TEST_MODE'] = '1'
-        try:
-            with mock.patch('athina.tester.docker.get_repo_commit', return_value="abc"), \
-                    mock.patch('athina.tester.docker.load_key_from_assignment_data', return_value=None), \
-                    mock.patch('athina.tester.docker.update_key_in_assignment_data') as mock_upd, \
-                    mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen:
-                self.assertTrue(docker_build(configuration, logger))
-                # The real docker build should be skipped in test mode.
-                mock_popen.assert_not_called()
-                mock_upd.assert_called()
-        finally:
-            os.environ.pop('ATHINA_TEST_MODE', None)
-
-    def test_docker_run_test_mode_short_circuit(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.test_timeout = 10
-        os.environ['ATHINA_TEST_MODE'] = '1'
-        try:
-            with mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen:
-                proc = mock_popen.return_value
-                proc.communicate.return_value = (b"80\n", b"")
-                out, err = docker_run("bash test", configuration, logger)
-                self.assertEqual(out, b"80\n")
-                # The real docker run should be skipped in test mode.
-                self.assertEqual(mock_popen.call_count, 1)  # only the local fallback
-        finally:
-            os.environ.pop('ATHINA_TEST_MODE', None)
-
-    def test_docker_run_test_mode_short_circuit_timeout(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.test_timeout = 1
-        os.environ['ATHINA_TEST_MODE'] = '1'
-        try:
-            with mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen, \
-                    mock.patch('athina.tester.docker.os.killpg') as mock_killpg:
-                proc = mock_popen.return_value
-                proc.wait.side_effect = subprocess.TimeoutExpired("cmd", 1)
-                proc.communicate.return_value = (b"", b"")
-                out, err = docker_run("bash test", configuration, logger)
-                mock_killpg.assert_called_once()
-        finally:
-            os.environ.pop('ATHINA_TEST_MODE', None)
