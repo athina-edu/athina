@@ -1,0 +1,23 @@
+# Exclude sensitive/unnecessary files from the Docker build context
+.git
+.gitignore
+.github
+.semaphore
+.travis.yml
+tests
+logs
+config
+config-examples
+athina-web
+docs
+*.pyc
+__pycache__
+*.egg-info
+.eggs
+build
+dist
+.pytest_cache
+.coverage
+coverage.xml
+*.log
+*.sqlite3

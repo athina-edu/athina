@@ -9,10 +9,10 @@ RUN apt-get update && apt-get -y install \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-ADD . /code
+COPY . /code
 WORKDIR /code
-RUN pip3 install pip
-RUN pip3 install .
+RUN pip3 install --no-cache-dir --only-binary :all: pip
+RUN pip3 install --no-cache-dir .
 
 ENTRYPOINT ["athina-cli"]
 CMD [""]

@@ -225,7 +225,9 @@ class Tester:
         else:
             # Docker tends to create mount points which result in root folders that then cannot be deleted
             # The code below solves this problem.
-            os.mkdir('%s' % self.configuration.athina_student_code_dir, mode=0o777)
+            # 0o755: owner rwx, group/others rx. Avoid world-writable (0o777)
+            # which is flagged as a security issue (CWE-732).
+            os.mkdir('%s' % self.configuration.athina_student_code_dir, mode=0o755)
 
         # Copy tests in tmp folder
         rm_dir(self.configuration.athina_test_tmp_dir)

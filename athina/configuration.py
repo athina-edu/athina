@@ -82,7 +82,9 @@ class Configuration:
         # mainly used for testing
         os.makedirs(Configuration.config_dir, exist_ok=True)
         try:
-            os.chmod(Configuration.config_dir, 0o777)
+            # 0o755: owner rwx, group/others rx. Avoid world-writable (0o777)
+            # which is flagged as a security issue (CWE-732).
+            os.chmod(Configuration.config_dir, 0o755)
         except PermissionError:
             # Some test environments disallow chmod on /tmp; ignore in that case.
             pass
