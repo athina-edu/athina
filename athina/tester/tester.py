@@ -323,6 +323,7 @@ class Tester:
         self.logger.delete_logger()
 
         # fork(). Loop through each student in list and fork (main routine continues)
+        child_pids = []
         for student_id in user_ids:
             new_pid = os.fork()
             if new_pid == 0:
@@ -331,6 +332,18 @@ class Tester:
                 self._tester_lock_unlock(student_id, lock=False)  # Release the lock for user
                 del self.user_data  # Delete in child process the db connection
                 os._exit(0)  # Terminating the child (pytest compatible)
+            else:
+                child_pids.append(new_pid)
+
+        # Reap all forked children so no orphaned processes remain holding the
+        # database connection/lock. Without this, children left running after a
+        # test finishes can deadlock subsequent tests (e.g., SQLite "database is
+        # locked") or cause pytest-timeout failures.
+        for pid in child_pids:
+            try:
+                os.waitpid(pid, 0)
+            except (ChildProcessError, OSError):
+                pass
 
         self.logger.create_logger()
         self.user_data = Database()

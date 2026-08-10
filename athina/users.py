@@ -24,7 +24,17 @@ if use_sqlite:
     # visible to children after fork which breaks tests that spawn processes.
     sqlite_path = os.environ.get('ATHINA_SQLITE_DB', '/tmp/athina_test.db')
     # Allow overriding via env var for CI
-    DB = peewee.SqliteDatabase(sqlite_path)
+    # WAL mode + busy_timeout allow concurrent forked worker processes to read/write
+    # the same file DB without hitting "database is locked" errors. Without these,
+    # the parallel tester tests (which fork multiple children) deadlock and time out.
+    DB = peewee.SqliteDatabase(
+        sqlite_path,
+        pragmas={
+            'journal_mode': 'wal',
+            'busy_timeout': 30000,
+            'synchronous': 'normal',
+        },
+    )
 else:
     DB = peewee.MySQLDatabase(None)
 # Read DB connection info from environment, but use safe defaults so importing this module
