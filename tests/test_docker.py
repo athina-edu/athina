@@ -26,6 +26,16 @@ class TestFunctions(TestCase):
 
 
 class TestDocker(TestCase):
+    def _make_run_config(self):
+        configuration, logger = make_config()
+        configuration.config_dir = "/tmp"
+        configuration.athina_student_code_dir = "/tmp/student"
+        configuration.athina_test_tmp_dir = "/tmp/test"
+        configuration.extra_params = []
+        configuration.docker_memory_limit = "2g"
+        configuration.test_timeout = 10
+        return configuration, logger
+
     def test_docker_build_first(self):
         configuration, logger = make_config()
         configuration.config_dir = "/tmp"
@@ -82,13 +92,7 @@ class TestDocker(TestCase):
             self.assertFalse(docker_build(configuration, logger))
 
     def test_docker_run_file_not_found_test_mode(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
+        configuration, logger = self._make_run_config()
         os.environ['ATHINA_TEST_MODE'] = '1'
         try:
             with mock.patch('athina.tester.docker.subprocess.Popen', side_effect=FileNotFoundError), \
@@ -100,13 +104,7 @@ class TestDocker(TestCase):
             os.environ.pop('ATHINA_TEST_MODE', None)
 
     def test_docker_run_timeout(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
+        configuration, logger = self._make_run_config()
         with mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen, \
                 mock.patch('athina.tester.docker._terminate_container') as mock_term, \
                 mock.patch('athina.tester.docker._docker_chown'):
@@ -118,13 +116,7 @@ class TestDocker(TestCase):
             self.assertEqual(out, b"out")
 
     def test_docker_run_permission_denied_test_mode(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
+        configuration, logger = self._make_run_config()
         os.environ['ATHINA_TEST_MODE'] = '1'
         try:
             with mock.patch('athina.tester.docker.subprocess.Popen') as mock_popen, \
@@ -139,13 +131,7 @@ class TestDocker(TestCase):
             os.environ.pop('ATHINA_TEST_MODE', None)
 
     def test_docker_run_generic_exception(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
+        configuration, logger = self._make_run_config()
         with mock.patch('athina.tester.docker.subprocess.Popen', side_effect=RuntimeError("boom")), \
                 mock.patch('athina.tester.docker._terminate_container'), \
                 mock.patch('athina.tester.docker._docker_chown'):
@@ -167,13 +153,7 @@ class TestDocker(TestCase):
             mock_popen.assert_called_once()
 
     def test_docker_run_flag_branches(self):
-        configuration, logger = make_config()
-        configuration.config_dir = "/tmp"
-        configuration.athina_student_code_dir = "/tmp/student"
-        configuration.athina_test_tmp_dir = "/tmp/test"
-        configuration.extra_params = []
-        configuration.docker_memory_limit = "2g"
-        configuration.test_timeout = 10
+        configuration, logger = self._make_run_config()
         configuration.docker_use_seccomp = False
         configuration.docker_use_net_admin = True
         configuration.docker_no_internet = True
