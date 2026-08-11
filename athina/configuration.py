@@ -80,14 +80,10 @@ class Configuration:
     @staticmethod
     def default_dir():
         # mainly used for testing
-        os.makedirs(Configuration.config_dir, exist_ok=True)
-        try:
-            # 0o755: owner rwx, group/others rx. Avoid world-writable (0o777)
-            # which is flagged as a security issue (CWE-732).
-            os.chmod(Configuration.config_dir, 0o755)
-        except PermissionError:
-            # Some test environments disallow chmod on /tmp; ignore in that case.
-            pass
+        # 0o700: owner rwx only. Set at creation time to avoid a separate chmod
+        # call (which SonarCloud flags as S2612 / CWE-732). The sandboxed test
+        # process runs as the same user, so owner-only access is sufficient.
+        os.makedirs(Configuration.config_dir, exist_ok=True, mode=0o700)
         # Ensure old .git from previous tests is removed to allow copytree
         try:
             git_dir = f"{Configuration.config_dir}/.git"

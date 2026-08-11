@@ -13,6 +13,20 @@ def __generate_hash(string):
     return hashlib.md5(string.encode("ascii")).hexdigest()
 
 
+def _run_local_test(configuration, logger):
+    """Run the test script locally (used as a fallback in test mode)."""
+    shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
+                                     configuration.athina_test_tmp_dir)
+    local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    try:
+        local_proc.wait(configuration.test_timeout)
+    except subprocess.TimeoutExpired:
+        local_proc.kill()
+        logger.logger.warning("Terminated local test due to timeout.")
+    return local_proc.communicate()
+
+
 def docker_build(configuration, logger):
     repo_commit = get_repo_commit(configuration.config_dir)
     # If we've already built for this assignment and commit matches, skip rebuild.
@@ -112,16 +126,7 @@ def docker_run(test_script, configuration, logger):
             if os.environ.get('ATHINA_TEST_MODE', '') == '1':
                 logger.logger.warning("ATHINA_TEST_MODE=1 detected; falling back to local execution for tests.")
                 try:
-                    shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
-                                                     configuration.athina_test_tmp_dir)
-                    local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
-                                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                    try:
-                        local_proc.wait(configuration.test_timeout)
-                    except subprocess.TimeoutExpired:
-                        local_proc.kill()
-                        logger.logger.warning("Terminated local test due to timeout.")
-                    out, err = local_proc.communicate()
+                    out, err = _run_local_test(configuration, logger)
                 except Exception as e:
                     out = b""
                     err = str(e).encode('utf-8')
@@ -130,16 +135,7 @@ def docker_run(test_script, configuration, logger):
         if os.environ.get('ATHINA_TEST_MODE', '') == '1':
             logger.logger.warning("Docker binary not found and ATHINA_TEST_MODE=1; running test script locally as fallback.")
             try:
-                shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
-                                                 configuration.athina_test_tmp_dir)
-                local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
-                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                try:
-                    local_proc.wait(configuration.test_timeout)
-                except subprocess.TimeoutExpired:
-                    local_proc.kill()
-                    logger.logger.warning("Terminated local test due to timeout.")
-                out, err = local_proc.communicate()
+                out, err = _run_local_test(configuration, logger)
             except Exception as e:
                 out = b""
                 err = str(e).encode('utf-8')
@@ -155,16 +151,7 @@ def docker_run(test_script, configuration, logger):
             if os.environ.get('ATHINA_TEST_MODE', '') == '1':
                 logger.logger.warning("ATHINA_TEST_MODE=1 detected; falling back to local execution.")
                 try:
-                    shell_cmd = "bash test %s %s" % (configuration.athina_student_code_dir,
-                                                     configuration.athina_test_tmp_dir)
-                    local_proc = subprocess.Popen(shell_cmd, cwd="%s/" % configuration.athina_test_tmp_dir,
-                                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                    try:
-                        local_proc.wait(configuration.test_timeout)
-                    except subprocess.TimeoutExpired:
-                        local_proc.kill()
-                        logger.logger.warning("Terminated local test due to timeout.")
-                    out, err = local_proc.communicate()
+                    out, err = _run_local_test(configuration, logger)
                 except Exception as e2:
                     out = b""
                     err = str(e2).encode('utf-8')
