@@ -178,7 +178,33 @@ class Tester:
             # Submitting grades for as many students that share the repository url (depending on how many are permitted)
             submitted_once = False
             for current_user_id, current_user_object in user_list:
-                # Submit grade
+                # Generate LLM feedback first (so it can be included in the grade report/issue)
+                llm_guidance = ""
+                if _HAS_LLM and self.configuration.llm_enabled:
+                    try:
+                        student_code_dir = "%s/repodata%s/u%s" % (
+                            self.configuration.config_dir, self.configuration.assignment_id,
+                            current_user_id)
+                        student_code = read_student_code(student_code_dir)
+                        test_desc = parse_test_descriptions(self.configuration)
+                        test_output = "\n".join([t.decode("utf-8", "backslashreplace") for t in test_reports])
+                        guidance = generate_llm_feedback(
+                            self.configuration, student_code, test_output, test_desc,
+                            logger=self.logger)
+                        if guidance:
+                            llm_guidance = guidance
+                            self.logger.logger.info(">>> LLM guidance generated for %s (%d chars)" % (
+                                current_user_id, len(guidance)))
+                    except Exception as e:
+                        self.logger.logger.error("LLM feedback failed for %s: %s" % (current_user_id, str(e)))
+
+                # Append LLM feedback to the report so it's included in the GitLab issue / Canvas submission
+                if llm_guidance:
+                    test_reports.append(("\nLLM Feedback:\n%s\n\n"
+                                         "Note: The LLM can make errors. Please review the feedback critically.\n"
+                                         % llm_guidance).encode("utf-8"))
+
+                # Submit grade (creates GitLab issue or posts to Canvas with full report including LLM feedback)
                 issue_iid = 0
                 if self.configuration.grade_publish and\
                         ((self.configuration.group_assignment is True and submitted_once is False) or
@@ -203,24 +229,9 @@ class Tester:
                 if issue_iid:
                     current_user_object.gitlab_issue_iid = issue_iid
 
-                # Generate LLM feedback if enabled
-                if _HAS_LLM and self.configuration.llm_enabled:
-                    try:
-                        student_code_dir = "%s/repodata%s/u%s" % (
-                            self.configuration.config_dir, self.configuration.assignment_id,
-                            current_user_id)
-                        student_code = read_student_code(student_code_dir)
-                        test_desc = parse_test_descriptions(self.configuration)
-                        test_output = "\n".join([t.decode("utf-8", "backslashreplace") for t in test_reports])
-                        guidance = generate_llm_feedback(
-                            self.configuration, student_code, test_output, test_desc,
-                            logger=self.logger)
-                        if guidance:
-                            current_user_object.llm_guidance = guidance
-                            self.logger.logger.info(">>> LLM guidance generated for %s (%d chars)" % (
-                                current_user_id, len(guidance)))
-                    except Exception as e:
-                        self.logger.logger.error("LLM feedback failed for %s: %s" % (current_user_id, str(e)))
+                # Store LLM guidance separately for the web UI modal
+                if llm_guidance:
+                    current_user_object.llm_guidance = llm_guidance
 
                 current_user_object.save()
                 user_object_list.append(current_user_object)

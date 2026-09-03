@@ -223,6 +223,10 @@ class Configuration:
 
         self.load_value(config, 'git_url', self.git_url)
         self.load_value(config, 'canvas_url', self.canvas_url)
+        # Git credentials can also come from environment (written by athina-web .env)
+        self.git_url = os.environ.get('GIT_URL', self.git_url)
+        self.git_username = os.environ.get('GIT_USERNAME', self.git_username)
+        self.git_password = os.environ.get('GIT_PASSWORD', self.git_password)
         self.load_value(config, 'grade_publish', self.grade_publish)
         self.load_value(config, 'docker_use_seccomp', self.docker_use_seccomp)
         self.load_value(config, 'docker_use_net_admin', self.docker_use_net_admin)
