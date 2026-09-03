@@ -22,7 +22,7 @@ import time
 #   ATHINA_MYSQL_HOST=127.0.0.1
 #   ATHINA_MYSQL_PORT=3307
 #   ATHINA_MYSQL_USERNAME=athina
-#   ATHINA_MYSQL_PASSWORD=athina_dev_pass
+#   ATHINA_MYSQL_PASSWORD=<your-mysql-password>
 # ---------------------------------------------------------------------------
 def _load_dotenv():
     """Best-effort load of a .env file (KEY=VALUE, one per line)."""

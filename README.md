@@ -26,24 +26,76 @@ Need plug-and-play assignments, tests and test configuration for your course? Ch
 |   **Supported VCS (anything Git)**      | **Supported plagiarism check software**      |
 | ![git (github, gitlab etc.)](docs/img/git.jpg)     | Moss |
 
-# Here is what it does:
+# Features
+
+1. **Grade output modes**: Submit grades to Canvas LMS **or** create GitLab issues in each student's repository
+2. **AI-powered feedback**: Generate personalized LLM feedback on student code using any OpenAI-compatible endpoint (GPT-4, Claude, MiMo, etc.)
+3. **Multi-language testing**: Build tests in any language — C, C++, Bash, Java, Python, Ruby, R, etc.
+4. **Sandboxed execution**: All student code runs in Docker or firejail containers with memory and network limits
+5. **Plagiarism detection**: Built-in copydetect and MOSS integration with similarity scoring
+6. **Group assignments**: Support for shared repositories with configurable member limits
+7. **Environment-based credentials**: Git, LLM, and output settings flow from athina-web's `.env` files — no hardcoded secrets
+8. **Service mode**: Runs as a daemon, polling the athina-web API for new assignments
+
+# How it works
+
 1. Build your tests in your language of choice
-2. Your tests can print anything. The last line is the grade from 0-100
-3. Setup Athina's yaml file and define tests and their weights along with other options (e.g., students per assignment)
-4. Place your files in the tests directory and construct your environment (using Dockerfile)
-5. Run athina as a service
-6. Students submit on Canvas their repo urls.
-7. Athina, clones, looks for changes, runs some safety checks, sandboxes the code and then uses your tests.
-8. Then, it submits feedback, grade along with all text printed from the test to the student's Canvas
-submission page (as a comment or file attachment containing the text).
+2. Your tests can print anything — the last line is the grade from 0-100
+3. Set up Athina's YAML configuration and define tests and their weights
+4. Place your test scripts in the tests directory and configure the sandbox environment
+5. Run athina as a service or single-pass
+6. Students submit their repo URLs via Canvas or the web interface
+7. Athina clones, detects changes, runs safety checks, sandboxes the code, and executes your tests
+8. Grades and feedback are submitted to Canvas **or** posted as GitLab issues in the student's repo
+
+# Output Modes
+
+## Canvas (default)
+Grades and test reports are submitted as comments/files on the student's Canvas submission page.
+
+## GitLab Issues
+Grades and test reports are posted as issues **in each student's own GitLab repository**. This mode is useful when:
+- You're not using Canvas LMS
+- You want students to see feedback directly in their repo
+- You want issue-based workflows for grade appeals
+
+Configure via the assignment's `.env` file (set by athina-web):
+```
+OUTPUT_METHOD=gitlab_issues
+```
+
+The GitLab issues adapter:
+- Creates one issue per student titled `"<Student Name> — Grade Report"`
+- Posts the full test report as a Markdown issue body
+- Uses the student's `repository_url` to determine which repo to post to
+- Stores the issue IID in the database for linking
+
+# LLM Feedback
+
+Athina can generate AI-powered feedback on student code using any OpenAI-compatible API endpoint. When enabled:
+
+1. After grading, the student's code and test output are sent to the LLM
+2. The LLM generates personalized feedback explaining what went wrong and how to fix it
+3. Feedback is stored in the database and displayed alongside the test report
+
+Configure via the assignment's `.env` file:
+```
+LLM_ENDPOINT_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o
+```
+
+Or set `llm_enabled: true` in the YAML configuration.
 
 # Security Features
-* All tests are sandboxed (using firejail or docker)
-* Only 1 student can submit the same git url, but can also permit more (for group projects)
-* Moss implementation notifies student of the average similarity scores for plagiarism
-* Git authentication only happens under the specified domain url (e.g., github.com)
+
+* All tests are sandboxed (using firejail or Docker)
+* Only 1 student can submit the same git URL (configurable for group projects)
+* MOSS implementation notifies students of average similarity scores
+* Git authentication only happens under the specified domain URL
 * Git credentials and configuration cannot be obtained through student code execution
-* Tests are forcefully timed out after a certain period of time (e.g., in case of infinite loops)
+* Tests are forcefully timed out after a configurable period
+* Credentials are stored in `.env` files (never committed to git)
 
 # Testing
 
