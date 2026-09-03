@@ -157,6 +157,20 @@ class Tester:
                 user_object.force_test = False
                 user_object.save()
 
+            # Create initial "Test in progress" issue in student's GitLab repo
+            initial_issue_iid = 0
+            if self.configuration.output_method == "gitlab_issues" and hasattr(self.e_learning, 'create_initial_issue'):
+                from athina.gitlab_issues import GitLabIssues
+                if isinstance(self.e_learning, GitLabIssues):
+                    student_repo_url = getattr(user_object, 'repository_url', '') or ''
+                    project_path = self.e_learning._repo_url_to_project_path(student_repo_url)
+                    if project_path:
+                        initial_issue_iid = self.e_learning.create_initial_issue(
+                            user_object.user_id, user_object, project_path)
+                        if initial_issue_iid:
+                            self.logger.logger.info(">>> Initial issue #%s created for %s" % (
+                                initial_issue_iid, user_object.user_fullname))
+
             # Run tests
             test_grades = []
             test_reports = []
@@ -204,9 +218,24 @@ class Tester:
                                          "Note: The LLM can make errors. Please review the feedback critically.\n"
                                          % llm_guidance).encode("utf-8"))
 
-                # Submit grade (creates GitLab issue or posts to Canvas with full report including LLM feedback)
-                issue_iid = 0
-                if self.configuration.grade_publish and\
+                # Submit grade: update existing issue or create new one (GitLab), or post to Canvas
+                issue_iid = initial_issue_iid  # reuse initial issue if one was created
+                if self.configuration.output_method == "gitlab_issues" and initial_issue_iid:
+                    # Update the existing "Test in progress" issue with final results
+                    from athina.gitlab_issues import GitLabIssues
+                    if isinstance(self.e_learning, GitLabIssues):
+                        student_repo_url = getattr(current_user_object, 'repository_url', '') or ''
+                        project_path = self.e_learning._repo_url_to_project_path(student_repo_url)
+                        student_name = getattr(current_user_object, 'user_fullname', '') or str(current_user_id)
+                        title = "%s — %s" % (student_name, self.configuration.gitlab_issues_title_prefix)
+                        full_report = "\n".join([t.decode("utf-8", "backslashreplace") if isinstance(t, bytes)
+                                                 else str(t) for t in test_reports])
+                        body = self.e_learning._build_issue_body(
+                            user_id=current_user_id, student_name=student_name,
+                            grade=grade, total_points=self.configuration.total_points,
+                            report=full_report)
+                        self.e_learning.update_issue(initial_issue_iid, title, body, project_path)
+                elif self.configuration.grade_publish and\
                         ((self.configuration.group_assignment is True and submitted_once is False) or
                          self.configuration.group_assignment is False):
                     result = self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
@@ -249,6 +278,9 @@ class Tester:
             user_object_list = [user_object]  # return list of the current object
 
         self.logger.logger.info("Testing Completed for %d" % user_object.user_id)
+
+        # Release the tester lock so the next cycle can detect new commits
+        self._tester_lock_unlock(user_object.user_id, lock=False)
 
         return user_object_list  # return the list of all updated objects
 
@@ -328,19 +360,28 @@ class Tester:
         for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
             if self.configuration.no_repo is not True:
                 if user.repository_url is not None:
+                    # Always pull the student repo to detect new commits — even if tester is active.
+                    # The tester lock only prevents re-running tests, not fetching updates.
                     if user.force_test:
                         # Force test overrides any active tester lock — terminate stale lock and proceed
                         if not self._tester_is_inactive(user.user_id):
                             self.logger.logger.info("Force test requested — overriding active tester lock for %s" %
                                                     user.user_fullname)
                             self._tester_lock_unlock(user.user_id, lock=False)
-                        self.repository.check_repository_changes(user.user_id)
-                        reverse_repository_index[user.repository_url] = user.user_id
-                    elif self._tester_is_inactive(user.user_id):
-                        self.repository.check_repository_changes(user.user_id)
-                        # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
-                        # Process group assignment will test once and then it identifies and submits a grade for both
-                        # groups
+                    self.repository.check_repository_changes(user.user_id)
+
+                    # Re-read the updated state after check_repository_changes
+                    updated_user = return_a_student(self.configuration.course_id,
+                                                    self.configuration.assignment_id, user.user_id)
+                    has_new_commit = updated_user.changed_state is True
+
+                    # Queue for processing if: force_test, tester inactive, OR new commit detected
+                    if user.force_test or self._tester_is_inactive(user.user_id) or has_new_commit:
+                        # Release stale tester lock if a new commit was detected
+                        if has_new_commit and not self._tester_is_inactive(user.user_id):
+                            self.logger.logger.info("New commit detected — overriding active tester lock for %s" %
+                                                    user.user_fullname)
+                            self._tester_lock_unlock(user.user_id, lock=False)
                         reverse_repository_index[user.repository_url] = user.user_id
                     else:
                         self.logger.logger.warning("Tester active for user %s - %s - %s" %

@@ -149,6 +149,7 @@ class GitLabIssues:
         """
         POST a new issue to a GitLab project via the v4 API.
         project_path: URL-encoded GitLab project path (e.g. 'group%2Frepo').
+        Returns the issue IID (or 0 on failure).
         """
         git_url = self.configuration.git_url
         token = self.configuration.git_password
@@ -172,6 +173,65 @@ class GitLabIssues:
             self.logger.logger.error(
                 "Failed to create GitLab issue '%s'. Response: %s" % (title, result))
             return 0
+
+    def create_initial_issue(self, user_id, user_values, project_path):
+        """
+        Create an initial 'Test in progress' issue in the student's repo.
+        Returns the issue IID (or 0 on failure).
+        """
+        if not project_path:
+            return 0
+
+        student_name = getattr(user_values, 'user_fullname', '') or ''
+        if not student_name:
+            student_name = getattr(user_values, 'secondary_id', '') or ''
+        if not student_name:
+            student_name = str(user_id)
+
+        title = "%s — %s" % (student_name, self.configuration.gitlab_issues_title_prefix)
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+        body = (
+            "## ⏳ Test in Progress\n\n"
+            "| Field | Value |\n"
+            "|-------|-------|\n"
+            "| **Student** | %s |\n"
+            "| **User ID** | %s |\n"
+            "| **Started** | %s |\n\n"
+            "---\n\n"
+            "Tests are running. This issue will be updated with results when complete.\n"
+        ) % (student_name, user_id, now)
+
+        return self._create_issue(title, body, project_path)
+
+    def update_issue(self, issue_iid, title, body, project_path):
+        """
+        Update an existing GitLab issue via the v4 API (PATCH).
+        """
+        if not issue_iid or not project_path:
+            return False
+
+        git_url = self.configuration.git_url
+        token = self.configuration.git_password
+
+        url = "https://%s/api/v4/projects/%s/issues/%s" % (git_url, project_path, issue_iid)
+        headers = {"Authorization": "Bearer %s" % token}
+        payload = {
+            "title": title,
+            "description": body,
+        }
+
+        self.logger.logger.debug("Updating GitLab issue #%s (project: %s)" % (issue_iid, project_path))
+        result = request_url(url, headers=headers, payload=payload,
+                             method="put", return_type="json")
+
+        if result and result.get("iid"):
+            self.logger.logger.info("GitLab issue updated: #%s" % result["iid"])
+            return True
+        else:
+            self.logger.logger.error(
+                "Failed to update GitLab issue #%s. Response: %s" % (issue_iid, result))
+            return False
 
     @staticmethod
     def _repo_url_to_project_path(repo_url):
