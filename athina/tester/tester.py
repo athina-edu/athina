@@ -224,8 +224,11 @@ class Tester:
                 current_user_object.changed_state = False
                 current_user_object.force_test = False
                 current_user_object.last_grade = grade
-                current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") for test
-                                                             in test_reports])
+                # Store raw test output only (LLM feedback is in llm_guidance, appended by web view)
+                raw_reports = [t for t in test_reports if not (isinstance(t, (bytes, str)) and
+                              (b'LLM Feedback:' in t if isinstance(t, bytes) else 'LLM Feedback:' in t))]
+                current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") if isinstance(test, bytes)
+                                                             else str(test) for test in raw_reports])
                 if issue_iid:
                     current_user_object.gitlab_issue_iid = issue_iid
 
