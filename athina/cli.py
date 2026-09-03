@@ -178,6 +178,10 @@ def main():
     # Iterate through each assignment
     user_data = Database(logger=LOGGER)
     for run_record in run_list:
+        # Pull the latest from the remote repo for this assignment directory.
+        # The online version is the ground truth — local edits are discarded.
+        _pull_assignment_repo(run_record.get('directory', ''))
+
         # Build configuration object
         configuration = Configuration(logger=LOGGER)
         try:
@@ -207,6 +211,29 @@ def main():
 
         del configuration
         LOGGER.logger.info("Processing done.")
+
+
+def _pull_assignment_repo(directory):
+    """Pull the latest from the remote for an assignment's git repo.
+    The online version is always the ground truth — local edits are discarded.
+    """
+    if not directory or not os.path.isdir(directory):
+        return
+    git_dir = os.path.join(directory, '.git')
+    if not os.path.isdir(git_dir):
+        return  # not a git repo (e.g., manually created directory)
+    try:
+        import git as _git
+        repo = _git.Repo(directory)
+        origin = repo.remotes.origin
+        # Discard local changes and pull latest
+        repo.git.checkout('--', '.')
+        origin.pull()
+        if LOGGER and LOGGER.logger:
+            LOGGER.logger.info("Pulled latest from remote for: %s" % directory)
+    except Exception as e:
+        if LOGGER and LOGGER.logger:
+            LOGGER.logger.warning("Could not pull assignment repo %s: %s" % (directory, str(e)))
 
 
 def _load_submissions_from_file(configuration):
