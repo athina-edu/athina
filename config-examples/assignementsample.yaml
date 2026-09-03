@@ -37,16 +37,16 @@ total_points: 80
 # if true then we enforce it otherwise it is ignored
 enforce_due_date: true
 
-# Moss plagiarism checking
-moss_id: 0
-moss_lang: python
+# Plagiarism detection (CopyDetect - runs locally, no server needed)
+# File glob pattern for plagiarism detection
+plagiarism_pattern: *.py
 
-# Files to look for within the directory
-moss_pattern: *.py
+# CopyDetect similarity threshold for display (0.0-1.0)
+copydetect_threshold: 0.33
 
-# Whether to publish moss results to elearning platform (students will see their max and average similarity percentages)
+# Whether to publish plagiarism results to elearning platform
 # If false, results are still visible via AthinaWeb
-moss_publish: false
+plagiarism_publish: false
 
 # If turned true, athina won't look for a repository submission
 # Instead it will just ran the test script and pass the user's identifier as a command line parameter
@@ -61,11 +61,10 @@ grade_update_frequency: 24
 # Any url not matching the pattern below will be rejected by Athina
 git_url: www.github.com
 
-# Git credentials
-# If special characters are included in username or password, they need to be escaped, e.g., @ becomes %%40
-# Do not use your regular password, most services support auth tokens (with read only rights)
-git_username: 0
-git_password: 0
+# Git credentials are NOT stored in this file.
+# When using Athina Web, credentials are managed per-faculty in their profile
+# and written to a .env file in the assignment directory (0o600 permissions).
+# The grading engine reads from the .env file directly — no network call needed.
 
 # Is this a group assignment?
 group_assignment: false
@@ -94,9 +93,8 @@ pass_extra_params: false
 # Print debug msgs (this prints a bunch of stuff that you do not need to see unless you are debugging)
 print_debug_msgs: true
 
-# Whether docker should be used or run scripts in the tests directory using firejail
-# If docker will be used, a Dockerfile needs to be placed in the directory of the cfg file.
-use_docker: true
+# Docker is always used for test sandboxing.
+# A Dockerfile needs to be placed in the directory of the cfg file.
 
 # Whether the results of the tests along with grade are to be submitted to canvas or
 # have the results printed in the log and stored in sqlite (viewable through AthinaWeb)

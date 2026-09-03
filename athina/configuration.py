@@ -22,10 +22,10 @@ class Configuration:
     enforce_due_date = True
     test_scripts = ["bash test", "bash test"]  # this is defined as such for testing only
     test_weights = [0.8, 0.2]
-    moss_id = 1
-    moss_lang = "C"
-    moss_pattern = "*.c"
-    moss_publish = False
+    plagiarism_service = "copydetect"  # 'copydetect' (local, no server needed)
+    plagiarism_pattern = "*.py"  # file glob pattern for plagiarism detection
+    plagiarism_publish = False  # whether to publish similarity results to e-learning
+    copydetect_threshold = 0.33  # similarity threshold for display (0.0-1.0)
     check_plagiarism_hour = 1
     git_username = "test"
     git_password = "test"
@@ -40,15 +40,32 @@ class Configuration:
     git_url = 'github.com'
     processes = 1
     due_date = datetime(2100, 1, 1, 0, 0)
-    use_docker = False
     canvas_url = "www.instructure.com"
     grade_publish = True
     print_debug_msgs = False
     docker_use_seccomp = True
     docker_use_net_admin = False
+    docker_no_internet = False
     use_webhook = False
     gitlab_check_repo_is_private = False
-    docker_no_internet = False
+
+    # LLM feedback settings (OpenAI-compatible endpoint)
+    llm_enabled = False
+    llm_endpoint_url = ""
+    llm_api_key = ""
+    llm_model = "gpt-4o-mini"
+
+    # Non-Canvas mode settings
+    # input_method: 'canvas' (fetch from Canvas API) or 'db' (read from local database)
+    input_method = "canvas"
+    # output_method: 'canvas' (submit to Canvas) or 'gitlab_issues' (create GitLab issues)
+    output_method = "canvas"
+    # GitLab project where grade issues are created (numeric project ID)
+    gitlab_project_id = 0
+    # Whether grade issues are confidential (only visible to project members)
+    gitlab_issues_confidential = True
+    # Prefix prepended to issue titles, e.g., "Grade: John Doe"
+    gitlab_issues_title_prefix = "Grade Report"
 
     # Set on the fly
     db_filename = ""
@@ -115,6 +132,32 @@ class Configuration:
         else:
             pass  # The default value as set in this configuration.py file remains
 
+    def _load_assignment_env(self):
+        """
+        Load the assignment-specific .env file (written by athina-web) into the
+        process environment.  This file carries LLM credentials (LLM_API_KEY,
+        LLM_ENDPOINT_URL, LLM_MODEL) and git credentials.  Existing environment
+        variables are NOT overridden so that explicit env vars (e.g. set by the
+        operator or docker-compose) take precedence.
+        """
+        env_path = os.path.join(self.config_dir, '.env')
+        if not os.path.isfile(env_path):
+            return
+        try:
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    key, _, value = line.partition('=')
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+        except OSError:
+            # Best-effort; a missing/unreadable .env should not break grading.
+            pass
+
     def load_configuration(self, directory):
         # Load Configuration file
         try:
@@ -135,6 +178,11 @@ class Configuration:
         self.config_dir = os.path.dirname(directory)
         self.config_filename = os.path.split(self.find_yaml(directory))[1]  # cfg filename or dir name
 
+        # Load assignment-specific .env (written by athina-web with LLM credentials,
+        # git credentials, etc.) into the process environment so the LLM section below
+        # can pick up LLM_API_KEY / LLM_ENDPOINT_URL / LLM_MODEL.
+        self._load_assignment_env()
+
         # Set new log file
         self.logger.set_assignment_log_file("%s/%s.log" % (self.config_dir, self.config_filename))
 
@@ -153,10 +201,10 @@ class Configuration:
         self.load_value(config, 'test_scripts', self.test_scripts)
         self.load_value(config, 'test_weights', self.test_weights)
 
-        self.load_value(config, 'moss_id', self.moss_id)
-        self.load_value(config, 'moss_lang', self.moss_lang)
-        self.load_value(config, 'moss_pattern', self.moss_pattern)
-        self.load_value(config, 'moss_publish', self.moss_publish)
+        self.load_value(config, 'plagiarism_service', self.plagiarism_service)
+        self.load_value(config, 'plagiarism_pattern', self.plagiarism_pattern)
+        self.load_value(config, 'plagiarism_publish', self.plagiarism_publish)
+        self.load_value(config, 'copydetect_threshold', self.copydetect_threshold)
 
         self.load_value(config, 'git_username', self.git_username)
         self.load_value(config, 'git_password', self.git_password)
@@ -176,12 +224,36 @@ class Configuration:
         self.load_value(config, 'git_url', self.git_url)
         self.load_value(config, 'canvas_url', self.canvas_url)
         self.load_value(config, 'grade_publish', self.grade_publish)
-        self.load_value(config, 'use_docker', self.use_docker)
         self.load_value(config, 'docker_use_seccomp', self.docker_use_seccomp)
         self.load_value(config, 'docker_use_net_admin', self.docker_use_net_admin)
         self.load_value(config, 'docker_no_internet', self.docker_no_internet)
         self.load_value(config, 'use_webhook', self.use_webhook)
         self.load_value(config, 'gitlab_check_repo_is_private', self.gitlab_check_repo_is_private)
+
+        # LLM feedback — load from YAML config, then override from .env if present
+        self.load_value(config, 'llm_enabled', self.llm_enabled)
+        self.load_value(config, 'llm_endpoint_url', self.llm_endpoint_url)
+        self.load_value(config, 'llm_model', self.llm_model)
+        # API key and endpoint can also come from environment (written by athina-web .env)
+        self.llm_endpoint_url = os.environ.get('LLM_ENDPOINT_URL', self.llm_endpoint_url)
+        self.llm_api_key = os.environ.get('LLM_API_KEY', self.llm_api_key)
+        self.llm_model = os.environ.get('LLM_MODEL', self.llm_model)
+        if self.llm_api_key:
+            self.llm_enabled = True
+
+        # Non-Canvas mode settings — load from YAML, then override from .env env vars
+        self.load_value(config, 'input_method', self.input_method)
+        self.load_value(config, 'output_method', self.output_method)
+        self.load_value(config, 'gitlab_project_id', self.gitlab_project_id)
+        self.load_value(config, 'gitlab_issues_confidential', self.gitlab_issues_confidential)
+        self.load_value(config, 'gitlab_issues_title_prefix', self.gitlab_issues_title_prefix)
+        # Env var overrides (written by athina-web .env)
+        self.output_method = os.environ.get('OUTPUT_METHOD', self.output_method)
+        self.gitlab_project_id = int(os.environ.get('GITLAB_PROJECT_ID', self.gitlab_project_id))
+        self.gitlab_issues_confidential = os.environ.get('GITLAB_ISSUES_CONFIDENTIAL',
+                                                          str(self.gitlab_issues_confidential)).lower() == 'true'
+        self.gitlab_issues_title_prefix = os.environ.get('GITLAB_ISSUES_TITLE_PREFIX',
+                                                          self.gitlab_issues_title_prefix)
 
         self.processes = multiprocessing.cpu_count()
 
@@ -189,14 +261,20 @@ class Configuration:
         if self.no_repo:
             self.pass_extra_params = True
 
-        # If running from within a container then firejail is meaningless
-        if self.in_docker():
-            self.use_docker = True
-
-        # Verify software dependencies
-        packages = ["timeout", "git"]
-        if self.use_docker is True:
-            packages.append("docker")
-        else:
-            packages.append("firejail")
+        # Verify software dependencies — Docker is always required for test sandboxing
+        packages = ["timeout", "git", "docker"]
         self.check_dependencies(packages)
+
+        # Validate non-Canvas mode settings
+        if self.input_method not in ("canvas", "db"):
+            self.logger.logger.warning(
+                "Unknown input_method '%s', defaulting to 'canvas'." % self.input_method)
+            self.input_method = "canvas"
+        if self.output_method not in ("canvas", "gitlab_issues"):
+            self.logger.logger.warning(
+                "Unknown output_method '%s', defaulting to 'canvas'." % self.output_method)
+            self.output_method = "canvas"
+        if self.output_method == "gitlab_issues" and self.gitlab_project_id == 0:
+            self.logger.logger.warning(
+                "output_method is 'gitlab_issues' but gitlab_project_id is not set. "
+                "GitLab issues will not be created.")

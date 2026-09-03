@@ -16,17 +16,11 @@ try:
 except ImportError:
     _HAS_COPYDETECT = False
 
-try:
-    import mosspy
-    _HAS_MOSSPY = True
-except ImportError:
-    _HAS_MOSSPY = False
-
 __all__ = ('plagiarism_checks_on_users', 'Plagiarism',)
 
 
 def plagiarism_checks_on_users(logger, configuration, e_learning):
-    # Report plagiarism to any newly submitted grades (supports MOSS and CopyDetect)
+    # Report plagiarism to any newly submitted grades using CopyDetect
     results = []
     users_graded = [user_object.user_id for user_object in
                     return_all_students(configuration.course_id, configuration.assignment_id)
@@ -36,36 +30,21 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
     logger.logger.info("Checking for plagiarism...")
     logger.logger.debug(users_graded)
 
-    plagiarism_service = getattr(configuration, 'plagiarism_service', 'moss')
+    if len(users_graded) != 0:
+        if not _HAS_COPYDETECT:
+            logger.logger.error("copydetect package not installed. Run: pip install copydetect")
+            return results
 
-    # Determine if plagiarism checking is enabled for the chosen service
-    plagiarism_enabled = False
-    if plagiarism_service == "copydetect":
-        plagiarism_enabled = len(users_graded) != 0
-    elif plagiarism_service == "moss":
-        plagiarism_enabled = len(users_graded) != 0 and configuration.moss_id != 1
-    else:
-        logger.logger.warning("Unknown plagiarism_service '%s', skipping." % plagiarism_service)
-
-    if plagiarism_enabled:
-        if plagiarism_service == "copydetect":
-            if not _HAS_COPYDETECT:
-                logger.logger.error("copydetect package not installed. Run: pip install copydetect")
-                return results
-            plagiarism = Plagiarism(logger=logger,
-                                    service_type="copydetect",
-                                    threshold=getattr(configuration, 'copydetect_threshold', 0.33))
-        else:
-            plagiarism = Plagiarism(logger=logger,
-                                    service_type="moss",
-                                    moss_id=configuration.moss_id,
-                                    moss_lang=configuration.moss_lang)
+        plagiarism = Plagiarism(logger=logger,
+                                service_type="copydetect",
+                                threshold=getattr(configuration, 'copydetect_threshold', 0.33))
         directory_list = []
         for value in return_all_students(configuration.course_id, configuration.assignment_id):
             base_dir = "%s/repodata%s/u%s/" % (configuration.config_dir, configuration.assignment_id,
                                                value.user_id)
-            if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, configuration.moss_pattern)):
-                directory_list.append("%s%s" % (base_dir, configuration.moss_pattern))
+            pattern = getattr(configuration, 'plagiarism_pattern', '*.py')
+            if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, pattern)):
+                directory_list.append("%s%s" % (base_dir, pattern))
 
         # Execute plagiarism check for the directories
         comparison_data = plagiarism.check_plagiarism(directory_list, configuration.course_id,
@@ -83,6 +62,8 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
         else:
             mean_similarity = 0
 
+        plagiarism_publish = getattr(configuration, 'plagiarism_publish', False)
+
         for user_id in users_graded:
             try:
                 user_max_value = [np.max(np.array(val)) for key, val in
@@ -90,7 +71,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
             except (RuntimeWarning, IndexError):
                 user_max_value = 0
 
-            if configuration.moss_publish:
+            if plagiarism_publish:
                 e_learning.submit_comment(user_id,
                                           """Your highest similarity score with another student: %s
                                           The mean similarity score is: %s""" %
@@ -100,8 +81,8 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
                 user_id, user_max_value, mean_similarity))
             obj = return_a_student(configuration.course_id, configuration.assignment_id, user_id)
             obj.last_plagiarism_check = datetime.now(tzlocal()).replace(tzinfo=None)
-            obj.moss_max = user_max_value
-            obj.moss_average = mean_similarity
+            obj.plagiarism_max = user_max_value
+            obj.plagiarism_average = mean_similarity
             obj.save()
 
         for user_object in return_all_students(configuration.course_id, configuration.assignment_id):
@@ -113,9 +94,6 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
 
 class Plagiarism:
     service_type = None
-    moss_id = None
-    moss_lang = None
-    dir_path = None
     logger = None
     threshold = 0.33
 
@@ -123,61 +101,19 @@ class Plagiarism:
         self.logger = logger
         service = kwargs.get("service_type", None)
 
-        if service == "moss":
-            if not _HAS_MOSSPY:
-                raise ImportError('mosspy package not installed. Run: pip install mosspy')
-            try:
-                self.service_type = "moss"
-                self.moss_id = kwargs["moss_id"]
-                self.moss_lang = kwargs["moss_lang"]
-            except KeyError:
-                raise KeyError('Moss type requires parameters moss_id, moss_lang')
-
-        elif service == "copydetect":
+        if service == "copydetect":
             if not _HAS_COPYDETECT:
                 raise ImportError('copydetect package not installed. Run: pip install copydetect')
             self.service_type = "copydetect"
             self.threshold = kwargs.get("threshold", 0.33)
-
         else:
             self.service_type = None
 
     def check_plagiarism(self, folder_list, course_id, assignment_id):
-        if self.service_type == "moss" and len(folder_list) != 0:
-            return self._check_moss(folder_list, course_id, assignment_id)
-        elif self.service_type == "copydetect" and len(folder_list) != 0:
+        if self.service_type == "copydetect" and len(folder_list) != 0:
             return self._check_copydetect(folder_list, course_id, assignment_id)
         else:
             return dict()
-
-    def _check_moss(self, folder_list, course_id, assignment_id):
-        moss = mosspy.Moss(self.moss_id, self.moss_lang)
-        for folder in folder_list:
-            moss.addFilesByWildcard(folder)
-        try:
-            url = moss.send()
-        except Exception:
-            self.logger.logger.error("An error occured with the moss script.")
-            return dict()
-        except (SystemExit, KeyboardInterrupt):
-            pass
-
-        update_key_in_assignment_data(course_id, assignment_id, "moss_url", url)
-
-        self.logger.logger.info("Attempting to get results from moss url: %s" % url)
-
-        try:
-            text = request_url(url, return_type="text")
-        except IndexError:
-            text = ""
-
-        matches = re.findall(r"<TR>.+?u(\d+?)/.+?(\d+)%.+?u(\d+?)/.+?(\d+)%", text, re.DOTALL)
-
-        comparisons = dict()
-        for item in matches:
-            self.parse_comparison_time(comparisons, item[0], item[1])
-            self.parse_comparison_time(comparisons, item[2], item[3])
-        return comparisons
 
     def _check_copydetect(self, folder_list, course_id, assignment_id):
         """Run CopyDetect plagiarism detection locally.
@@ -227,7 +163,7 @@ class Plagiarism:
         try:
             detector.generate_html_report(os.path.dirname(report_path))
             self.logger.logger.info("CopyDetect report saved to: %s" % report_path)
-            update_key_in_assignment_data(course_id, assignment_id, "copydetect_report", report_path)
+            update_key_in_assignment_data(course_id, assignment_id, "plagiarism_report", report_path)
         except Exception as e:
             self.logger.logger.warning("CopyDetect: could not generate HTML report: %s" % str(e))
 

@@ -162,9 +162,14 @@ class Repository:
             return False
 
     def _retrieve_git_log(self, user_id):
+        repo_dir = "%s/repodata%s/u%s" % (self.configuration.config_dir,
+                                           self.configuration.assignment_id, user_id)
+        git_dir = os.path.join(repo_dir, ".git")
+        if not os.path.isdir(git_dir):
+            self.logger.logger.warning("No .git directory in %s — cannot retrieve commit date." % repo_dir)
+            return b"", b"no .git directory"
         process = subprocess.Popen(["git", "log", "-1", "--format=%ci"],
-                                   cwd="%s/repodata%s/u%s/" % (self.configuration.config_dir,
-                                                               self.configuration.assignment_id, user_id),
+                                   cwd="%s/" % repo_dir,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         out, err = process.communicate()
@@ -261,6 +266,22 @@ class Repository:
     # Terminal node in the chain
     class PullRepoHandler(Handler):
         def handle_request(self):
+            # Check if the student repo directory actually has a .git folder.
+            # If not (e.g. clone never completed or was cleaned up), we must
+            # clone fresh instead of pulling — otherwise git will walk up to
+            # a parent directory's .git and silently read the wrong history.
+            repo_dir = "%s/repodata%s/u%s" % (
+                self._repository_ref.configuration.config_dir,
+                self._repository_ref.configuration.assignment_id,
+                self._repository_ref.user_values.user_id)
+            git_dir = os.path.join(repo_dir, ".git")
+
+            if not os.path.isdir(git_dir):
+                self._repository_ref.logger.logger.warning(
+                    "No .git directory found in %s — initiating git clone..." % repo_dir)
+                self._repository_ref.clone_git_repo(self._repository_ref.user_values.user_id,
+                                                    self._repository_ref.user_values)
+
             # Pull and see if there is anything that changed,
             # then check date and compare with last date
             out, err = self._repository_ref.pull_git_repo(self._repository_ref.user_values.user_id)

@@ -15,7 +15,7 @@ setup(
     },
     # 'np' is an unrelated, broken package on PyPI and conflicts with the project's use of numpy as 'np'
     # remove it from install_requires; numpy remains required.
-    install_requires=['filelock', 'python-dateutil', 'requests', 'numpy', 'peewee', 'mosspy', 'pyyaml',
+    install_requires=['filelock', 'python-dateutil', 'requests', 'numpy', 'peewee', 'copydetect', 'pyyaml',
                       'psutil', 'gitpython', 'pymysql', 'beautifulsoup4', 'lxml'],
     extras_require={
         'test': ['pytest>=7.0', 'docker>=6.0', 'pytest-timeout>=2.0', 'pytest-cov>=4.0'],

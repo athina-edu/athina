@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import json
 import os
 import re
 from datetime import datetime
@@ -11,7 +12,7 @@ import sys
 from dateutil.tz import tzlocal
 
 __all__ = ('Database', 'Users', 'AssignmentData', "update_key_in_assignment_data", "load_key_from_assignment_data",
-           "return_all_students", "return_a_student",)
+           "return_all_students", "return_a_student", "import_submissions",)
 
 # Decide database backend: use SQLite in-memory when running under pytest or when
 # ATHINA_DB=sqlite is set. This avoids requiring a running MySQL server for tests.
@@ -185,14 +186,16 @@ class Users(BaseModel):
     changed_state = peewee.BooleanField(default=False)
     last_grade = peewee.SmallIntegerField(null=True)
     last_report = peewee.BlobField(default="", null=True)
-    moss_max = peewee.IntegerField(default=0, null=True)
-    moss_average = peewee.IntegerField(default=0, null=True)
+    plagiarism_max = peewee.IntegerField(default=0, null=True, column_name='moss_max')
+    plagiarism_average = peewee.IntegerField(default=0, null=True, column_name='moss_average')
     tester_active = peewee.BooleanField(default=False)
     tester_date = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))
     force_test = peewee.BooleanField(default=False)
+    gitlab_issue_iid = peewee.IntegerField(default=0)
     use_webhook = peewee.BooleanField(default=False)
     webhook_event = peewee.BooleanField(default=False)
     webhook_token = peewee.CharField(max_length=255, default='')
+    llm_guidance = peewee.TextField(default="", null=True)
 
     class Meta:
         db_table = 'users'
@@ -258,3 +261,68 @@ def return_all_students(course_id, assignment_id):
 
 def return_a_student(course_id, assignment_id, user_id):
     return Users.get(Users.course_id == course_id, Users.assignment_id == assignment_id, Users.user_id == user_id)
+
+
+def import_submissions(course_id, assignment_id, submissions, due_date=None):
+    """
+    Import student submissions into the Users table.
+    Used when input_method is 'db' (no Canvas API).
+
+    :param course_id: the course identifier
+    :param assignment_id: the assignment identifier
+    :param submissions: list of dicts, each with keys:
+        - user_id (int, required)
+        - user_fullname (str, optional)
+        - secondary_id (str, optional — email)
+        - repository_url (str, optional — git repo URL)
+    :param due_date: optional datetime for the assignment due date
+    :return: tuple (created_count, updated_count)
+    """
+    created = 0
+    updated = 0
+    for entry in submissions:
+        uid = entry.get("user_id")
+        if uid is None:
+            continue
+        try:
+            obj = Users.get(Users.course_id == course_id,
+                            Users.assignment_id == assignment_id,
+                            Users.user_id == uid)
+            # Update existing record
+            changed = False
+            repo_url = entry.get("repository_url", "")
+            if repo_url and obj.repository_url != repo_url:
+                obj.repository_url = repo_url
+                obj.new_url = True
+                obj.commit_date = datetime(1, 1, 1, 0, 0).replace(tzinfo=None)
+                changed = True
+            fullname = entry.get("user_fullname", "")
+            if fullname and obj.user_fullname != fullname:
+                obj.user_fullname = fullname
+                changed = True
+            email = entry.get("secondary_id", "")
+            if email and obj.secondary_id != email:
+                obj.secondary_id = email
+                changed = True
+            if changed:
+                obj.save()
+                updated += 1
+        except Users.DoesNotExist:
+            Users.create(
+                user_id=uid,
+                course_id=course_id,
+                assignment_id=assignment_id,
+                user_fullname=entry.get("user_fullname", ""),
+                secondary_id=entry.get("secondary_id", ""),
+                repository_url=entry.get("repository_url", ""),
+                url_date=datetime.now(tzlocal()).replace(tzinfo=None),
+                new_url=True,
+                commit_date=datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
+            )
+            created += 1
+
+    # Store due date in assignment data if provided
+    if due_date is not None:
+        update_key_in_assignment_data(course_id, assignment_id, "due_date", due_date)
+
+    return created, updated

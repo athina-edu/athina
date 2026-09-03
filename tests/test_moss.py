@@ -68,6 +68,23 @@ class TestPlagiarism(TestCase):
         p = Plagiarism(logger=logger, service_type="other")
         self.assertIsNone(p.service_type)
 
+    def test_plagiarism_init_copydetect(self):
+        logger = create_logger()
+        p = Plagiarism(logger=logger, service_type="copydetect", threshold=0.5)
+        self.assertEqual(p.service_type, "copydetect")
+        self.assertEqual(p.threshold, 0.5)
+
+    def test_plagiarism_init_copydetect_default_threshold(self):
+        logger = create_logger()
+        p = Plagiarism(logger=logger, service_type="copydetect")
+        self.assertEqual(p.service_type, "copydetect")
+        self.assertEqual(p.threshold, 0.33)
+
+    def test_check_plagiarism_copydetect_empty(self):
+        logger = create_logger()
+        p = Plagiarism(logger=logger, service_type="copydetect")
+        self.assertEqual(p.check_plagiarism([], 1, 1), dict())
+
     def test_check_plagiarism_empty_folder_list(self):
         logger = create_logger()
         p = Plagiarism(logger=logger, service_type="moss", moss_id=123, moss_lang="python")

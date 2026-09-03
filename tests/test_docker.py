@@ -14,7 +14,6 @@ class TestFunctions(TestCase):
         logger = create_logger()
         configuration = Configuration(logger=logger)
 
-        configuration.use_docker = True
         # Create fake directories
         create_test_config()
         user_data = create_fake_user_db()

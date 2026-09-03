@@ -10,9 +10,14 @@ from dateutil.tz import tzlocal
 
 from athina.file_functions import *
 from athina.tester.docker import *
-from athina.tester.firejail import *
 from athina.users import *
 from athina.users import Database, Users
+
+try:
+    from athina.llm import generate_llm_feedback, read_student_code, parse_test_descriptions
+    _HAS_LLM = True
+except ImportError:
+    _HAS_LLM = False
 
 __all__ = ('Tester',)
 
@@ -174,11 +179,14 @@ class Tester:
             submitted_once = False
             for current_user_id, current_user_object in user_list:
                 # Submit grade
+                issue_iid = 0
                 if self.configuration.grade_publish and\
                         ((self.configuration.group_assignment is True and submitted_once is False) or
                          self.configuration.group_assignment is False):
-                    self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
-                                                 test_reports=test_reports)
+                    result = self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
+                                                          test_reports=test_reports)
+                    if result:
+                        issue_iid = result
                     submitted_once = True
                 else:  # print instead
                     for text in test_reports:
@@ -192,12 +200,36 @@ class Tester:
                 current_user_object.last_grade = grade
                 current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") for test
                                                              in test_reports])
+                if issue_iid:
+                    current_user_object.gitlab_issue_iid = issue_iid
+
+                # Generate LLM feedback if enabled
+                if _HAS_LLM and self.configuration.llm_enabled:
+                    try:
+                        student_code_dir = "%s/repodata%s/u%s" % (
+                            self.configuration.config_dir, self.configuration.assignment_id,
+                            current_user_id)
+                        student_code = read_student_code(student_code_dir)
+                        test_desc = parse_test_descriptions(self.configuration)
+                        test_output = "\n".join([t.decode("utf-8", "backslashreplace") for t in test_reports])
+                        guidance = generate_llm_feedback(
+                            self.configuration, student_code, test_output, test_desc,
+                            logger=self.logger)
+                        if guidance:
+                            current_user_object.llm_guidance = guidance
+                            self.logger.logger.info(">>> LLM guidance generated for %s (%d chars)" % (
+                                current_user_id, len(guidance)))
+                    except Exception as e:
+                        self.logger.logger.error("LLM feedback failed for %s: %s" % (current_user_id, str(e)))
+
                 current_user_object.save()
                 user_object_list.append(current_user_object)
         else:
             self.logger.logger.info(">> No changes or past due date")
             user_object.changed_state = False
-            user_object.force_test = False
+            # NOTE: Do NOT clear force_test here — it should only be cleared
+            # after the test actually runs (in the if branch above).
+            # Clearing it here causes force_test to be consumed without testing.
 
             user_object.save()
             user_object_list = [user_object]  # return list of the current object
@@ -240,14 +272,11 @@ class Tester:
             self.configuration.extra_params = [self.configuration.athina_student_code_dir,
                                                self.configuration.athina_test_tmp_dir]
 
-        # Execute using docker or firejail (depending on what the settings are)
-        if self.configuration.use_docker is True:
-            if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
-                out, err = docker_run(test_script, configuration=self.configuration, logger=self.logger)
-            else:
-                out, err = b"0", b"Missing Dockerfile (contact instructor)"
+        # Execute using Docker (the only supported sandboxing method)
+        if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
+            out, err = docker_run(test_script, configuration=self.configuration, logger=self.logger)
         else:
-            out, err = execute_with_firejail(self.configuration, test_script, self.logger)
+            out, err = b"0", b"Missing Dockerfile (contact instructor)"
 
         # Clear temp directories
         rm_dir(self.configuration.athina_test_tmp_dir)
@@ -285,7 +314,15 @@ class Tester:
         for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
             if self.configuration.no_repo is not True:
                 if user.repository_url is not None:
-                    if self._tester_is_inactive(user.user_id):
+                    if user.force_test:
+                        # Force test overrides any active tester lock — terminate stale lock and proceed
+                        if not self._tester_is_inactive(user.user_id):
+                            self.logger.logger.info("Force test requested — overriding active tester lock for %s" %
+                                                    user.user_fullname)
+                            self._tester_lock_unlock(user.user_id, lock=False)
+                        self.repository.check_repository_changes(user.user_id)
+                        reverse_repository_index[user.repository_url] = user.user_id
+                    elif self._tester_is_inactive(user.user_id):
                         self.repository.check_repository_changes(user.user_id)
                         # Create a reverse dictionary and obtain one name from a group (in case of group assignments)
                         # Process group assignment will test once and then it identifies and submits a grade for both
@@ -305,10 +342,9 @@ class Tester:
                            if user.user_id in reverse_repository_index.values()]
         del reverse_repository_index
 
-        # If we utilize docker we need to pre-build the docker container
-        if self.configuration.use_docker:
-            # Build if something has changed (i.e., new commit)
-            docker_build(configuration=self.configuration, logger=self.logger)
+        # Pre-build the Docker container (always required for test sandboxing)
+        # Build if something has changed (i.e., new commit)
+        docker_build(configuration=self.configuration, logger=self.logger)
 
         user_ids = [key for key, value in processing_list]
         self._spawn_worker(user_ids)
@@ -316,8 +352,16 @@ class Tester:
     def _spawn_worker(self, user_ids):
         # Lock all userids. Mark all users that use the same repository (i.e., groups) as being actively tested
         self.logger.logger.debug("Processing the following users: %s" % user_ids)
+
+        # Separate force_test users (always processed) from normal users (only if tester inactive)
+        force_test_ids = set()
+        for uid in user_ids:
+            student = return_a_student(self.configuration.course_id, self.configuration.assignment_id, uid)
+            if student.force_test:
+                force_test_ids.add(uid)
+
         user_ids = [self._tester_lock_unlock(student_id, lock=True) for student_id in user_ids
-                    if self._tester_is_inactive(student_id)]
+                    if student_id in force_test_ids or self._tester_is_inactive(student_id)]
         self.logger.logger.debug("The following users do not have active testers: %s" % user_ids)
 
         # For parallel/threaded runs database objects have to be dropped. Same for logger

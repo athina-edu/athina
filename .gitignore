@@ -26,3 +26,4 @@ athina.log*
 user_data.sqlite3
 cc-test-reporter
 coverage.xml
+.env

@@ -22,7 +22,7 @@ from athina.git.git import *
 from athina.configuration import *
 from athina.tester.tester import *
 from athina.canvas import *
-from athina.moss import *
+from athina.plagiarism import *
 from athina.users import *
 
 # Allow overriding the test temp dir to avoid collisions/permission issues on CI/hosts.
@@ -332,7 +332,6 @@ class TestFunctions(unittest.TestCase):
         logger = create_logger()
         configuration = Configuration(logger=logger)
 
-        configuration.use_docker = True
         create_test_config()
 
         user_data = create_fake_user_db()
@@ -384,7 +383,6 @@ class TestFunctions(unittest.TestCase):
         logger = create_logger()
         configuration = Configuration(logger=logger)
 
-        configuration.use_docker = True
         # Create fake directories
         create_test_config("doesntexist")
 
@@ -409,7 +407,6 @@ class TestFunctions(unittest.TestCase):
         logger = create_logger()
         configuration = Configuration(logger=logger)
 
-        configuration.use_docker = True
         # Create fake directories
         create_test_config()
 
@@ -440,7 +437,6 @@ class TestFunctions(unittest.TestCase):
         logger = create_logger()
         configuration = Configuration(logger=logger)
 
-        configuration.use_docker = True
         configuration.test_timeout = 10
         # Create fake directories
         create_test_config("echo 'test'\nsleep 20\necho 80")
@@ -464,7 +460,6 @@ class TestFunctions(unittest.TestCase):
         logger = create_logger()
         configuration = Configuration(logger=logger)
 
-        configuration.use_docker = True
         configuration.test_timeout = 10
         # Create fake directories
         create_test_config("echo 'test'\nsleep 20\necho 80")
@@ -497,7 +492,6 @@ class TestFunctions(unittest.TestCase):
         configuration = Configuration(logger=logger)
         user_data = create_fake_user_db()
 
-        configuration.use_docker = True
         configuration.test_timeout = 10
         # Create fake directories
         create_test_config("echo 'test'\nsleep 20\necho 80")
