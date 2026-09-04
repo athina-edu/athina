@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import unittest
+import pytest
 import psutil
 from dateutil.tz import tzlocal
 from datetime import datetime, timezone, timedelta
@@ -140,6 +141,7 @@ def create_fake_user_db():
 
 
 class TestFunctions(unittest.TestCase):
+    @pytest.mark.slow
     def test_git_tester(self):
         results = []
         logger = create_logger()

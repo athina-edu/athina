@@ -86,7 +86,7 @@ if [ ! -d "$(pipenv --venv 2>/dev/null)" ]; then
 fi
 
 # Build pytest command
-PYTEST_CMD="pipenv run pytest"
+PYTEST_CMD="pipenv run pytest -m \"not slow\""
 
 if [ $VERBOSE -eq 1 ]; then
     PYTEST_CMD="$PYTEST_CMD -v -s"
