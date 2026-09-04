@@ -9,7 +9,7 @@ __all__ = ('gitlab_set_webhook', 'gitlab_check_if_repo_private',)
 
 
 def gitlab_return_encoded_url(repository_url):
-    return urlquote(re.sub('\.git$', '', urlparse(repository_url).path[1:]))
+    return urlquote(re.sub(r'\.git$', '', urlparse(repository_url).path[1:]))
 
 
 def gitlab_set_webhook(configuration, logger, user_values):
