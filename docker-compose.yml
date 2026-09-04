@@ -1,8 +1,47 @@
 version: '3'
 services:
   athina:
+    build: .
     image: athinaedu/athina:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - $HOME:$HOME
       - /tmp:/tmp
+      - ./athina_files:/athina_files
+    environment:
+      - ATHINA_MYSQL_HOST=db
+      - ATHINA_MYSQL_PORT=3306
+      - ATHINA_MYSQL_USERNAME=athina
+      - ATHINA_MYSQL_PASSWORD=${MYSQL_PASSWORD:-athina_dev_pass}
+    depends_on:
+      - db
+
+  athina-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "8000:8001"
+    volumes:
+      - ./athina_files:/code/athina_files
+      - ./athina_web/db.sqlite3:/code/athina_web/db.sqlite3
+    environment:
+      - DJANGO_SETTINGS_MODULE=athina_web.settings
+      - ATHINA_MYSQL_HOST=db
+      - ATHINA_MYSQL_PORT=3306
+      - ATHINA_MYSQL_USERNAME=athina
+      - ATHINA_MYSQL_PASSWORD=${MYSQL_PASSWORD:-athina_dev_pass}
+    depends_on:
+      - db
+
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD:-athina_dev_pass}
+      - MYSQL_DATABASE=athina
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:

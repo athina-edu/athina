@@ -1,0 +1,26 @@
+<!-- templates/home.html -->
+{% extends 'base.html' %}
+
+{% block title %}Viewing {{ inner_path }}{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="javascript:history.back()">Back</a></li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+    <h4><b>Viewing /{{ inner_path }}</b></h4>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light justify-content-end">
+            <input type="button" class="btn btn-info" value="Back"
+                   onclick="window.history.back();">
+    </nav>
+    <pre class="pre">
+        {{file_contents}}
+    </pre>
+</div>
+{% endblock %}

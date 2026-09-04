@@ -1,1 +1,4 @@
 include athina/tester/server.profile
+recursive-include athina_web/templates *
+recursive-include athina_web/static *
+recursive-include athina_web/*/migrations *

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ report_type }} Report — {{ student_name }}{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        {% if assignment.course %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=assignment.course.pk %}">{{ assignment.course.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></li>
+        <li class="breadcrumb-item active">{{ report_type }} Report — {{ student_name }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2 mb-3">
+    <a class="btn btn-secondary" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">Back to Assignment</a>
+</div>
+
+<h4>{{ report_type }} Report — {{ student_name }}</h4>
+<hr>
+
+<div class="card">
+    <div class="card-body" style="background: #f8f9fa;">
+        <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: 0.85em;">{{ report_html }}</pre>
+    </div>
+</div>
+{% endblock %}

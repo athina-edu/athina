@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block head_addition %}
+{% load static %}
+<script src='{% static "athina_web/jquery.min.js" %}'></script>
+{% endblock %}
+{% block title %}Students - {{ course.name }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item active">Students</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>Students: {{ course.name }}</h3>
+<hr>
+<div class="mb-3">
+<a class="btn btn-success" href="{% url 'assignments:student_add' course_id=course.pk %}">Add Student</a>
+<a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Bulk Import</a>
+{% if has_assignments %}
+<a class="btn btn-warning" href="{% url 'assignments:provision_students' course_id=course.pk %}">Provision Missing Repos</a>
+{% endif %}
+<a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
+</div>
+{% if students %}
+<div class="table-responsive">
+<table class="table table-striped">
+<tr><th>Email</th><th>Username</th><th>GitLab User</th><th>Repository URL</th><th>Actions</th></tr>
+{% for student in students %}
+<tr>
+<td>{{ student.email }}</td>
+<td>{{ student.username }}</td>
+<td>{{ student.gitlab_username|default:"-" }}</td>
+<td>{{ student.repository_url|default:"-" }}</td>
+<td>
+<a class="btn btn-info btn-sm" href="{% url 'assignments:student_edit' course_id=course.pk student_id=student.pk %}">Edit</a>
+<a class="btn btn-danger btn-sm confirm-delete-student" href="{% url 'assignments:student_delete' course_id=course.pk student_id=student.pk %}"
+   data-name="{{ student.email }}">Remove</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% else %}
+<p class="text-muted">No students enrolled yet.</p>
+{% endif %}
+</div>
+<script>
+$('.confirm-delete-student').click(function(e) {
+    var name = $(this).data('name');
+    if (!confirm('Remove "' + name + '" from this course?')) {
+        e.preventDefault();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,10 @@
+<nav class="navbar navbar-expand-lg navbar-light bg-light justify-content-end">
+            {% if inner_path == '' %}
+            <input type="button" class="btn btn-info" value="Upload"
+                   onclick="location.href = '{% url 'filemanager:upload' %}';">
+            {% else %}
+            <input type="button" class="btn btn-info" value="Upload"
+                   onclick="location.href = '{% url 'filemanager:upload' inner_path=inner_path_hyphened %}';">
+            {% endif %}
+</nav>
+

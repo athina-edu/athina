@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Create/Edit Course{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item active">New Course</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2 form-control">
+<h4>Create or Edit Course</h4>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Save</button>
+    <input type="button" class="btn btn-secondary" value="Back" onclick="window.history.back();">
+</form>
+</div>
+{% endblock %}

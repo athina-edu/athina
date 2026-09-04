@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Importing Students - {{ course.name }}{% endblock %}
+{% block head_addition %}
+{% load static %}
+<script src='{% static "athina_web/jquery.min.js" %}'></script>
+{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item active">Importing...</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>Importing Students: {{ course.name }}</h3>
+<hr>
+<div class="card">
+    <div class="card-body">
+        <div class="progress mb-3" style="height: 30px;">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                 role="progressbar" style="width: 0%">0%</div>
+        </div>
+        <p id="progress-text" class="text-muted mb-1">Starting import...</p>
+        <p id="progress-detail" class="text-muted small"></p>
+    </div>
+</div>
+</div>
+<script>
+$(document).ready(function() {
+    var pollInterval = setInterval(function() {
+        $.getJSON("{% url 'assignments:import_progress_api' course_id=course.pk %}", function(data) {
+            if (data.total > 0) {
+                var pct = Math.round((data.current / data.total) * 100);
+                var bar = $("#progress-bar");
+                bar.css("width", pct + "%").text(pct + "%");
+                $("#progress-text").text(data.current + " / " + data.total + " students processed");
+
+                if (data.current_student) {
+                    $("#progress-detail").text("Processing: " + data.current_student);
+                } else {
+                    $("#progress-detail").text("");
+                }
+
+                if (data.status === "done") {
+                    clearInterval(pollInterval);
+                    bar.removeClass("progress-bar-animated").addClass("bg-success");
+                    var msg = "Import complete. " + data.created + " new student(s) created.";
+                    if (data.skipped > 0) msg += " " + data.skipped + " already existed.";
+                    $("#progress-text").html("<strong>" + msg + "</strong>");
+                    $("#progress-detail").html(
+                        "<a class='btn btn-info mt-3' href='{% url 'assignments:student_list' course_id=course.pk %}'>View Students</a> " +
+                        "<a class='btn btn-secondary mt-3' href='{% url 'assignments:course_detail' course_id=course.pk %}'>Back to Course</a>"
+                    );
+                } else if (data.status === "error") {
+                    clearInterval(pollInterval);
+                    bar.removeClass("progress-bar-animated").addClass("bg-danger");
+                    $("#progress-text").html("<strong>Import failed: " + (data.current_student || "Unknown error") + "</strong>");
+                }
+            }
+        });
+    }, 500);
+});
+</script>
+{% endblock %}

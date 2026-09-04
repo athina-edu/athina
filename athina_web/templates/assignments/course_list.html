@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Courses{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item active">Courses</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>Courses</h3>
+<hr>
+<a class="btn btn-success mb-3" href="{% url 'assignments:course_create' %}">New Course</a>
+{% if courses %}
+<div class="table-responsive">
+<table class="table table-striped">
+<tr><th>Course</th><th>Students</th><th>Assignments</th><th>Options</th></tr>
+{% for course in courses %}
+<tr>
+<td><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></td>
+<td>{{ course.students.count }}</td>
+<td>{{ course.assignments.count }}</td>
+<td>
+<a class="btn btn-info btn-sm" href="{% url 'assignments:student_list' course_id=course.pk %}">Students</a>
+<a class="btn btn-warning btn-sm" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>
+<a class="btn btn-danger btn-sm confirm-delete{{ course.id }}" href="{% url 'assignments:course_delete' course_id=course.pk %}">Delete</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% else %}
+<p>No courses yet.</p>
+{% endif %}
+</div>
+{% endblock %}

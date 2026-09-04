@@ -1,0 +1,147 @@
+<!-- templates/home.html -->
+{% extends 'base.html' %}
+
+{% block title %}Create/Edit Assignment{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item active">New Assignment</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2 form-control">
+    {% if not active_providers %}
+    <div class="alert alert-warning">
+        <strong>No git provider configured.</strong>
+        Set your GitLab or GitHub credentials in your
+        <a href="{% url 'accounts:profile' %}">profile</a> before you can browse repositories.
+    </div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+
+        {% if active_providers %}
+        <div class="card mb-3">
+            <div class="card-header"><strong>Browse repositories from your providers</strong></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <div class="input-group mb-2">
+                        <div class="input-group-prepend">
+                            <select id="provider-select" class="form-control" style="width: auto;">
+                                {% for p in active_providers %}
+                                <option value="{{ p.name }}">{{ p.label }} ({{ p.url }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="input-group-append">
+                            <button type="button" class="btn btn-outline-info" id="refresh-repos">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="position-relative">
+                        <input type="text" class="form-control" id="repo-search"
+                               placeholder="Type to search repositories..." autocomplete="off">
+                        <div id="repo-results" class="list-group position-absolute w-100"
+                             style="z-index: 1000; max-height: 300px; overflow-y: auto; display: none;"></div>
+                    </div>
+                    <small class="form-text text-muted" id="repo-status">Loading repositories...</small>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <button class="btn btn-primary" type="submit">Save</button>
+        <input type="button" class="btn btn-secondary" value="Back"
+                   onclick="window.history.back();">
+    </form>
+</div>
+
+{% if active_providers %}
+<script>
+$(document).ready(function() {
+    var allRepos = [];
+
+    function loadRepos(forceRefresh) {
+        var provider = $('#provider-select').val();
+        var url = "{% url 'accounts:gitlab_repos' %}?provider=" + provider;
+        if (forceRefresh) url += "&refresh=1";
+        $('#repo-status').text('Loading repositories...');
+        $('#repo-results').hide();
+        $.getJSON(url, function(data) {
+            if (data.error) {
+                $('#repo-status').text('Error: ' + data.error);
+                return;
+            }
+            allRepos = data.repos;
+            if (allRepos.length === 0) {
+                $('#repo-status').text('No repositories found.');
+                return;
+            }
+            $('#repo-status').text(allRepos.length + ' repositories loaded. Start typing to search.');
+        });
+    }
+
+    function filterRepos(query) {
+        var q = query.toLowerCase();
+        var matches = [];
+        for (var i = 0; i < allRepos.length; i++) {
+            if (allRepos[i].full_path.toLowerCase().indexOf(q) !== -1 ||
+                allRepos[i].name.toLowerCase().indexOf(q) !== -1) {
+                matches.push(allRepos[i]);
+                if (matches.length >= 20) break;
+            }
+        }
+        return matches;
+    }
+
+    // Auto-load repos on page load (from cache if available)
+    loadRepos(false);
+
+    $('#refresh-repos').click(function() { loadRepos(true); });
+    $('#provider-select').change(function() { allRepos = []; loadRepos(); });
+
+    $('#repo-search').on('input', function() {
+        var val = $(this).val().trim();
+        var $results = $('#repo-results');
+        $results.empty();
+        if (val.length < 2 || allRepos.length === 0) {
+            $results.hide();
+            return;
+        }
+        var matches = filterRepos(val);
+        if (matches.length === 0) {
+            $results.append('<div class="list-group-item text-muted">No matches found</div>');
+        } else {
+            $.each(matches, function(i, repo) {
+                var $item = $('<a href="#" class="list-group-item list-group-item-action"></a>');
+                $item.text(repo.full_path);
+                $item.data('url', repo.http_url);
+                $results.append($item);
+            });
+        }
+        $results.show();
+    });
+
+    $('#repo-results').on('click', 'a', function(e) {
+        e.preventDefault();
+        var url = $(this).data('url');
+        var name = $(this).text();
+        $('input[name="git_source"]').val(url);
+        $('#repo-search').val(name);
+        $('#repo-results').hide();
+    });
+
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('#repo-search, #repo-results').length) {
+            $('#repo-results').hide();
+        }
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

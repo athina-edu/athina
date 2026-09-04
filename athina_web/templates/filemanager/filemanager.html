@@ -1,0 +1,61 @@
+<!-- templates/home.html -->
+{% extends 'base.html' %}
+
+{% block head_addition %}
+{% load static %}
+<script src='{% static "athina_web/jquery.min.js" %}'></script>
+{% endblock %}
+
+{% block title %}File Manager{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        <li class="breadcrumb-item active">{{ inner_path }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3><b>Viewing /{{ inner_path }}</b></h3>
+<div class="mb-3">
+    <a class="btn btn-secondary" href="{% url 'assignments:assignments' %}">Back to Courses</a>
+</div>
+
+<!--
+DEPRECATED: No need to upload anything since all assignment dirs are git based
+{% include 'filemanager/menu.html' %}
+
+-->
+
+{% if results|length > 0 %}
+<div class="table-responsive">
+    <table class="table">
+        <tr>
+            <th>Name</th>
+            <th>Date Modified</th>
+        </tr>
+        {% for result in results %}
+        <tr>
+            <td>
+                <div class="dir-listing {{ result.isfile|yesno:'isfile,isdir,' }}">
+                    {% if result.isfile %}
+                    <a href="{% url 'filemanager:view_file' inner_path=result.path %}">{{ result.name }}</a>
+                    {% else %}
+                    <a href="{% url 'filemanager:index' inner_path=result.path %}">{{ result.name }}</a>
+                    {% endif %}
+                </div>
+            </td>
+            <td>{{ result.date_modified }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% else %}
+There are no files in this folder.
+    Try <a href="{% url 'filemanager:upload' inner_path=inner_path_hyphened %}">uploading some</a>.
+{% endif %}
+</div>
+{% endblock %}

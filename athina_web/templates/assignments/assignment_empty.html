@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}{{ assignment.name }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        {% if assignment.course %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=assignment.course.pk %}">{{ assignment.course.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">{{ assignment.name }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>{{ assignment.name }}</h3>
+<hr>
+<div class="card">
+    <div class="card-body text-center py-5">
+        <h5 class="text-muted">{{ message }}</h5>
+        <div class="mt-4">
+            {% if assignment.course %}
+            <a class="btn btn-info" href="{% url 'assignments:course_detail' course_id=assignment.course.pk %}">Back to Course</a>
+            {% else %}
+            <a class="btn btn-info" href="{% url 'assignments:assignments' %}">Back to Courses</a>
+            {% endif %}
+            <a class="btn btn-secondary" href="{% url 'filemanager:index' inner_path=assignment.name %}">View Directory</a>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

@@ -2,6 +2,9 @@
 .pytest_cache
 athina/adata*/
 athina/__pycache__
+athina_web/__pycache__
+athina_web/**/__pycache__
+athina_web/db.sqlite3
 athina/assignment_*
 .dropbox.attr
 athina/athina.lock
@@ -27,3 +30,4 @@ user_data.sqlite3
 cc-test-reporter
 coverage.xml
 .env
+.env.*

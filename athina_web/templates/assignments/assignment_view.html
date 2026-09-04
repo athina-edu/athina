@@ -1,0 +1,116 @@
+<!-- templates/home.html -->
+{% extends 'base.html' %}
+
+{% block title %}View Assignment{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        {% if assignment.course %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=assignment.course.pk %}">{{ assignment.course.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">{{ assignment.name }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<div class="mb-3">
+    {% if assignment.course %}
+    <a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=assignment.course.pk %}">Back to Course</a>
+    {% else %}
+    <a class="btn btn-secondary" href="{% url 'assignments:assignments' %}">Back to Courses</a>
+    {% endif %}
+</div>
+
+
+    {% if users_len > 0 %}
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <tr>
+                <th>Name</th>
+                <th>Secondary ID</th>
+                <th>Info</th>
+                <th>Grade</th>
+                <th>Plagiarism Max/Avg</th>
+                <th>Reports</th>
+                <th>Actions</th>
+            </tr>
+            {% for user in users %}
+            <tr class="{{ user.3 }}">
+                <td>
+                    {{ user.1 }}
+                </td>
+                <td>{{ user.2 }}</td>
+                <td>
+                    {{ user.4 }}
+                    {% if user.3 == 'table-warning' and 'Forced' in user.4 %}
+                    <span class="badge badge-warning ml-1">⏳</span>
+                    {% endif %}
+                </td>
+                <td>{{ user.5 }}</td>
+                <td>{{ user.9 }} / {{ user.10 }}</td>
+                <td>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <a class="btn btn-outline-primary" href="{% url 'assignments:assignment_report' assignment_id=assignment.pk user_id=user.0 report_type='test' %}">📋 Test</a>
+                        <a class="btn btn-outline-secondary" href="{% url 'assignments:assignment_report' assignment_id=assignment.pk user_id=user.0 report_type='plagiarism' %}">🔍 Plagiarism</a>
+                    </div>
+                </td>
+                <td>
+                    <div class="btn-group btn-group-sm" role="group">
+                        {% if user.11 %}
+                        <button class="btn btn-success" onclick="showGuidance('{{ user.0 }}', '{% url 'assignments:assignment_guidance' assignment_id=assignment.pk user_id=user.0 %}')">🤖 AI Guidance</button>
+                        {% endif %}
+                        {% if gitlab_output and user.13 %}
+                        <a class="btn btn-info" href="{{ user.13 }}" target="_blank">🦊 GitLab</a>
+                        {% endif %}
+                        <a class="btn btn-warning" href="{% url 'assignments:assignment_force' assignment_id=assignment.pk user_id=user.0 %}">🔄 Force Rerun</a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    There are no assignments in your account. Try <a href="{% url 'assignments:create_assignment' %}">creating on</a>.
+    {% endif %}
+</div>
+
+<script>
+// Auto-refresh the page every 15 seconds to show updated grading results
+setInterval(function() { location.reload(); }, 15000);
+
+function showGuidance(userId, url) {
+    document.getElementById('guidanceModalLabel').textContent = 'AI Guidance for Student #' + userId;
+    document.getElementById('guidanceContent').textContent = 'Loading...';
+    $('#guidanceModal').modal('show');
+    $.getJSON(url)
+        .done(function(data) {
+            document.getElementById('guidanceContent').textContent = data.guidance || 'No AI guidance available for this student.';
+        })
+        .fail(function() {
+            document.getElementById('guidanceContent').textContent = 'Failed to load AI guidance.';
+        });
+}
+</script>
+
+<!-- AI Guidance Modal -->
+<div class="modal fade" id="guidanceModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="guidanceModalLabel">AI Guidance</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <pre id="guidanceContent" style="white-space: pre-wrap; font-family: inherit;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

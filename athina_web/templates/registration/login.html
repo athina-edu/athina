@@ -1,0 +1,19 @@
+<!-- templates/registration/login.html -->
+{% extends 'base.html' %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<div class="mt-2" style="max-width: 400px;">
+<h2>Login</h2>
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <div class="form-group form-check">
+    <input type="checkbox" class="form-check-input" id="remember_me" name="remember_me" checked>
+    <label class="form-check-label" for="remember_me">Keep me logged in for 30 days</label>
+  </div>
+  <button type="submit" class="btn btn-primary">Login</button>
+</form>
+</div>
+{% endblock %}

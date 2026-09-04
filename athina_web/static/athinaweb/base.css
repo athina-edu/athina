@@ -1,0 +1,12 @@
+.dir-listing.isdir {
+    color: mediumpurple;
+    font-weight: 700;
+}
+
+.file_contents {
+    display: block;
+    overflow: scroll;
+    font-family: monospace;
+    white-space: pre;
+    word-wrap: break-word;
+}

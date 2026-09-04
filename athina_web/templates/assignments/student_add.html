@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Add Student{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:student_list' course_id=course.pk %}">Students</a></li>
+        <li class="breadcrumb-item active">Add</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2 form-control">
+<h4>Add Student to {{ course.name }}</h4>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Add Student</button>
+    <input type="button" class="btn btn-secondary" value="Back" onclick="window.history.back();">
+</form>
+</div>
+{% endblock %}

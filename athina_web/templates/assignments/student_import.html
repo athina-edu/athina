@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Import Students{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:student_list' course_id=course.pk %}">Students</a></li>
+        <li class="breadcrumb-item active">Import</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2 form-control">
+<h4>Import Students to {{ course.name }}</h4>
+<p>Paste email addresses below, one per line. Usernames are derived from the part before @.
+If the course uses GitLab (no Canvas API), repos will be auto-created for each student.</p>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Import</button>
+    <input type="button" class="btn btn-secondary" value="Back" onclick="window.history.back();">
+</form>
+</div>
+{% endblock %}

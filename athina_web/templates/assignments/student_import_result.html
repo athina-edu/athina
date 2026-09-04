@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Import Complete{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item active">Import Complete</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h4>Import Complete</h4>
+<p>{{ created }} student(s) were added to {{ course.name }}.</p>
+<a class="btn btn-info" href="{% url 'assignments:student_list' course_id=course.pk %}">View Students</a>
+<a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
+</div>
+{% endblock %}

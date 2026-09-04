@@ -1,0 +1,17 @@
+<!-- templates/home.html -->
+{% extends 'base.html' %}
+
+{% block title %}Upload Files{% endblock %}
+
+{% block content %}
+<div class="mt-2 form-control">
+Uploading to /{{ inner_path }}
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button class="btn btn-primary" type="submit">Upload</button>
+    <input type="button" class="btn btn-secondary" value="Back"
+                   onclick="window.history.back();">
+</form>
+</div>
+{% endblock %}

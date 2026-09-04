@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block head_addition %}
+{% load static %}
+<script src='{% static "athina_web/jquery.min.js" %}'></script>
+{% endblock %}
+{% block title %}Assignments{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item active">Home</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<nav class="navbar navbar-expand-lg navbar-light bg-light justify-content-end">
+<input type="button" class="btn btn-success mr-2" value="New Course"
+       onclick="location.href = '{% url 'assignments:course_create' %}';">
+<input type="button" class="btn btn-info" value="New Assignment"
+                   onclick="location.href = '{% url 'assignments:create_assignment' %}';">
+</nav>
+
+{% for course in courses %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a>
+            <small class="text-muted">({{ course.assignments.count }} assignment{{ course.assignments.count|pluralize }})</small>
+        </h5>
+        <div>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'assignments:student_list' course_id=course.pk %}">
+                <i class="fa fa-users"></i> Students ({{ course.students.count }})
+            </a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+    {% if course.assignments.count > 0 %}
+    <div class="table-responsive">
+        <table class="table table-striped mb-0">
+            <tr><th>Name</th><th>Options</th></tr>
+            {% for assignment in course.assignments.all %}
+                {% if assignment.active %}
+                    <tr class="table-success">
+                {% else %}
+                    <tr class="table-danger">
+                {% endif %}
+                <td><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></td>
+                <td>
+                    <input type="button" class="btn btn-info btn-sm" value="View Users"
+                    onclick="location.href = '{% url 'assignments:assignment_view' assignment_id=assignment.pk %}';">
+                    <input type="button" class="btn btn-info btn-sm" value="View Dir"
+                    onclick="location.href = '{% url 'filemanager:index' inner_path=assignment.name %}';">
+                    <input type="button" class="btn btn-info btn-sm" value="View Log"
+                    onclick="location.href = '{% url 'assignments:assignment_log' assignment_id=assignment.pk %}';">
+                    <input type="button" class="btn btn-warning btn-sm" value="Edit"
+                    onclick="location.href = '{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}';">
+                    <a class="confirm-delete{{ assignment.id }} btn btn-danger btn-sm"
+                       href="{% url 'assignments:assignment_delete' assignment_id=assignment.pk %}">Delete</a>
+                </td>
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0 p-3">No assignments yet. <a href="{% url 'assignments:create_assignment' %}">Create one</a>.</p>
+    {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+{% if unassigned %}
+<div class="card mb-3">
+    <div class="card-header"><h5 class="mb-0">General (unassigned)</h5></div>
+    <div class="card-body p-0">
+    <div class="table-responsive">
+        <table class="table table-striped mb-0">
+            <tr><th>Name</th><th>Options</th></tr>
+            {% for assignment in unassigned %}
+                {% if assignment.active %}
+                    <tr class="table-success">
+                {% else %}
+                    <tr class="table-danger">
+                {% endif %}
+                <td><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></td>
+                <td>
+                    <input type="button" class="btn btn-info btn-sm" value="View Users"
+                    onclick="location.href = '{% url 'assignments:assignment_view' assignment_id=assignment.pk %}';">
+                    <input type="button" class="btn btn-info btn-sm" value="View Dir"
+                    onclick="location.href = '{% url 'filemanager:index' inner_path=assignment.name %}';">
+                    <input type="button" class="btn btn-info btn-sm" value="View Log"
+                    onclick="location.href = '{% url 'assignments:assignment_log' assignment_id=assignment.pk %}';">
+                    <input type="button" class="btn btn-warning btn-sm" value="Edit"
+                    onclick="location.href = '{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}';">
+                    <a class="confirm-delete{{ assignment.id }} btn btn-danger btn-sm"
+                       href="{% url 'assignments:assignment_delete' assignment_id=assignment.pk %}">Delete</a>
+                </td>
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not courses and not unassigned %}
+There are no courses or assignments yet. Try <a href="{% url 'assignments:course_create' %}">creating a course</a>.
+{% endif %}
+</div>
+{% endblock %}

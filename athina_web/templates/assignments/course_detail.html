@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block head_addition %}
+{% load static %}
+<script src='{% static "athina_web/jquery.min.js" %}'></script>
+{% endblock %}
+{% block title %}{{ course.name }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_list' %}">Courses</a></li>
+        <li class="breadcrumb-item active">{{ course.name }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>{{ course.name }}</h3>
+<hr>
+<div class="mb-3">
+<a class="btn btn-success" href="{% url 'assignments:create_assignment' %}">New Assignment</a>
+<a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import Students</a>
+<a class="btn btn-info" href="{% url 'assignments:student_list' course_id=course.pk %}">Manage Students</a>
+<a class="btn btn-warning" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>
+<a class="btn btn-danger confirm-delete-course" href="{% url 'assignments:course_delete' course_id=course.pk %}"
+   data-name="{{ course.name }}">Delete Course</a>
+<a class="btn btn-secondary" href="{% url 'assignments:assignments' %}">Back</a>
+</div>
+
+<h5>Assignments</h5>
+{% if assignments %}
+<div class="table-responsive">
+<table class="table table-striped">
+<tr><th>Name</th><th>Active</th><th>Options</th></tr>
+{% for assignment in assignments %}
+<tr class="{% if assignment.active %}table-success{% else %}table-danger{% endif %}">
+<td><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></td>
+<td>{{ assignment.active|yesno:"Active,Inactive" }}</td>
+<td>
+<a class="btn btn-info btn-sm" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Users</a>
+<a class="btn btn-warning btn-sm" href="{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}">Edit</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% else %}
+<p class="text-muted">No assignments in this course yet.</p>
+{% endif %}
+
+<h5 class="mt-4">Students ({{ students.count }})</h5>
+{% if students %}
+<div class="table-responsive">
+<table class="table table-striped">
+<tr><th>Email</th><th>Username</th><th>Options</th></tr>
+{% for student in students %}
+<tr>
+<td>{{ student.email }}</td>
+<td>{{ student.username }}</td>
+<td>
+    <a class="btn btn-warning btn-sm" href="{% url 'assignments:student_edit' course_id=course.pk student_id=student.pk %}">Edit</a>
+    <a class="btn btn-danger btn-sm confirm-delete-student" href="{% url 'assignments:student_delete' course_id=course.pk student_id=student.pk %}"
+       data-name="{{ student.email }}">Delete</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% else %}
+<p class="text-muted">No students enrolled yet. <a href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import some</a>.</p>
+{% endif %}
+</div>
+<script>
+$('.confirm-delete-course').click(function(e) {
+    var name = $(this).data('name');
+    if (!confirm('Delete the course "' + name + '"?\\n\\nAssignments will be unassigned (not deleted). Students will be removed.')) {
+        e.preventDefault();
+    }
+});
+</script>
+{% endblock %}
