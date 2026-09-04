@@ -31,20 +31,28 @@ from athina.users import *
 TEST_TMP_DIR = os.environ.get('ATHINA_TEST_TMPDIR', f"/tmp/athina_empty_{os.getuid()}")
 
 
-def wait_for_children_processes():
+def wait_for_children_processes(timeout=60):
+    """Wait for child processes to finish, with a hard timeout.
+    _spawn_worker() already calls os.waitpid() on all children,
+    so this is a safety net for any remaining orphans.
+    """
     current_process = psutil.Process()
-    time.sleep(5)
-    loop = True
-    while loop:
+    deadline = time.time() + timeout
+    time.sleep(2)
+    while time.time() < deadline:
         children = current_process.children(recursive=True)
-        if len(children) < 2:
-            # loop = False
-            # check one more time
-            time.sleep(10)
-            children = current_process.children(recursive=True)
-            loop = False if len(children) < 2 else True
-        time.sleep(5)
-    time.sleep(5)
+        if len(children) < 1:
+            break
+        # Log what we're waiting on for debugging
+        child_info = ["%d(%s)" % (c.pid, c.name()) for c in children[:5]]
+        print("wait_for_children_processes: %d children remaining: %s" % (len(children), child_info))
+        time.sleep(2)
+    # Final cleanup: send SIGKILL to any remaining children
+    for child in current_process.children(recursive=True):
+        try:
+            child.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
 
 
 def create_logger():
@@ -366,7 +374,6 @@ class TestFunctions(unittest.TestCase):
         # Parallel process
         configuration.processes = 5
         tester._spawn_worker([1, 2, 3, 4, 5])
-        wait_for_children_processes()
         obj = Users.get(Users.user_id == 1)
         self.assertEqual(obj.new_url, False)
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
@@ -424,7 +431,6 @@ class TestFunctions(unittest.TestCase):
         tester = Tester(user_data, logger, configuration, e_learning, repository)
         configuration.processes = 2
         tester.start_testing_db()
-        wait_for_children_processes()
         obj = Users.get(Users.user_id == 1)
         self.assertEqual(obj.new_url, False)
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
