@@ -330,6 +330,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(len(results), 3)
 
     @pytest.mark.requires_docker
+    @pytest.mark.timeout(600)
     def test_tester_docker(self):
         results = []
         logger = create_logger()
