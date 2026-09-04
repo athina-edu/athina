@@ -329,6 +329,8 @@ class TestFunctions(unittest.TestCase):
         print(results)
         self.assertEqual(len(results), 3)
 
+    @pytest.mark.slow
+    @pytest.mark.requires_docker
     def test_tester_docker(self):
         results = []
         logger = create_logger()
@@ -380,6 +382,8 @@ class TestFunctions(unittest.TestCase):
         self.assertGreater(obj.last_graded, datetime(1, 1, 1, 0, 0))
         self.assertEqual(obj.last_grade, 80)
 
+    @pytest.mark.slow
+    @pytest.mark.requires_docker
     def test_tester_docker_errors(self):
         results = []
         logger = create_logger()
