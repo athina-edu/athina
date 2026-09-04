@@ -142,6 +142,7 @@ def create_fake_user_db():
 
 class TestFunctions(unittest.TestCase):
     @pytest.mark.slow
+    @pytest.mark.timeout(600)
     def test_git_tester(self):
         results = []
         logger = create_logger()

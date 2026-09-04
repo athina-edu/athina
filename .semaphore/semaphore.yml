@@ -37,9 +37,15 @@ blocks:
         - name: ATHINA_MYSQL_PASSWORD
           value: "password"
       jobs:
-        - name: Execute python tests with coverage
+        - name: Unit tests (fast)
           commands:
-            - pytest --cov=athina --cov-report=xml --cov-branch
+            - pytest -m "not slow and not requires_docker" --cov=athina --cov-report=xml --cov-branch
+        - name: Docker integration tests
+          commands:
+            - pytest -m "requires_docker" -v --tb=short
+        - name: Integration tests (slow)
+          commands:
+            - pytest -m "slow" -v --tb=short
         - name: SonarCloud Scan
           commands:
             - |
@@ -47,7 +53,7 @@ blocks:
                 echo "Skipping SonarCloud scan: SONAR_LOGIN not configured"
                 exit 0
               fi
-            - pytest --cov=athina --cov-report=xml --cov-branch
+            - pytest -m "not slow and not requires_docker" --cov=athina --cov-report=xml --cov-branch
             - curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389.zip
             - unzip -q /tmp/sonar-scanner.zip -d /tmp/sonar-scanner-dir
             - export PATH="/tmp/sonar-scanner-dir/sonar-scanner-8.1.0.6389/bin:$PATH"
