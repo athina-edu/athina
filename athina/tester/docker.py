@@ -175,16 +175,21 @@ def docker_run(test_script, configuration, logger):
 
 def _terminate_container(container_name):
     try:
-        subprocess.Popen(["docker", "stop", "-t", "1", "%s" % container_name],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except FileNotFoundError:
-        # docker not present; nothing to terminate
-        return
+        proc = subprocess.Popen(["docker", "stop", "-t", "1", "%s" % container_name],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.communicate(timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        # docker not present or stop timed out; nothing to do
+        pass
 
 
 def _terminate_all_containers():
-    subprocess.Popen(["docker", "stop", "$(docker", "ps", "- a", "- q)"],
-                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        proc = subprocess.Popen(["docker", "stop", "$(docker", "ps", "- a", "- q)"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.communicate(timeout=30)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
 
 
 # This function will change permissions for any files created by docker that are not owned by the user running athina
