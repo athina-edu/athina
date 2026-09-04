@@ -6,7 +6,7 @@ SECRET_KEY = 'dev-secret-key-for-local-testing-only'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'testserver']
 
 # Database — SQLite for local development
 DATABASES = {

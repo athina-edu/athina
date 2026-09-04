@@ -405,6 +405,7 @@ class TestFunctions(unittest.TestCase):
         user_object = tester.process_student_assignment(1)
         assert "command not found" in user_object[0].last_report
 
+    @pytest.mark.slow
     def test_tester_db_testing(self):
         logger = create_logger()
         configuration = Configuration(logger=logger)
