@@ -94,11 +94,27 @@ def profile(request):
 @login_required
 def llm_models(request):
     """Fetch available models from the user's LLM endpoint."""
+    import re as _re
+    from urllib.parse import urlparse
+
     endpoint_url = request.GET.get('endpoint_url', '').strip().rstrip('/')
     api_key = request.GET.get('api_key', '').strip()
 
     if not endpoint_url or not api_key:
         return JsonResponse({"models": [], "error": "Enter endpoint URL and API key first."})
+
+    # SSRF protection: reject private/internal URLs
+    try:
+        parsed = urlparse(endpoint_url)
+        if parsed.scheme not in ('https', 'http'):
+            return JsonResponse({"models": [], "error": "Only http/https URLs are allowed."}, status=400)
+        hostname = parsed.hostname or ''
+        BLOCKED = {'169.254.169.254', 'metadata.google.internal', '127.0.0.1', 'localhost', '0.0.0.0',
+                    '169.254.170.2', 'fd00::ec2:internal'}
+        if hostname in BLOCKED or _re.match(r'^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)', hostname):
+            return JsonResponse({"models": [], "error": "Internal/private URLs are not allowed."}, status=400)
+    except Exception:
+        return JsonResponse({"models": [], "error": "Invalid URL format."}, status=400)
 
     try:
         url = "%s/models" % endpoint_url
@@ -123,6 +139,7 @@ def llm_models(request):
         return JsonResponse({"models": [], "error": str(e)})
 
 
+@login_required
 def gitlab_repos(request):
     """Return repositories from the user's active Git hosting providers as JSON.
     Results are cached for 5 minutes to avoid hammering the API on every page load."""

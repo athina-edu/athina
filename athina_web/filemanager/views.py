@@ -2,6 +2,7 @@ from django.shortcuts import render
 from django.conf import settings
 import os
 from django.contrib.auth.decorators import login_required
+from django.utils.text import get_valid_filename
 from . import utils
 from .forms import FileFieldForm
 from django.shortcuts import redirect
@@ -59,7 +60,12 @@ def upload(request, **kwargs):
         if form.is_valid():
             # Save files on disk
             for file in files:
-                with open('%s/%s' % (full_path, file.name), 'wb+') as destination:
+                safe_name = get_valid_filename(file.name)
+                dest_path = os.path.join(full_path, safe_name)
+                # Double-check: resolved path must still be within full_path
+                if not os.path.normpath(dest_path).startswith(os.path.normpath(full_path)):
+                    continue
+                with open(dest_path, 'wb+') as destination:
                     for chunk in file.chunks():
                         destination.write(chunk)
         if inner_path != "":

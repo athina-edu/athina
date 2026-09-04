@@ -326,7 +326,7 @@ def assignment_create(request, **kwargs):
                 assignment.save()
                 # Update .env with the course owner's current credentials
                 _write_assignment_env(assignment)  # uses course owner's profile
-            os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o777)
+            os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o755)
             return redirect('filemanager:index', inner_path="%s" % assignment.name)
     else:
         assignment_id = kwargs.get('assignment_id', None)
@@ -520,7 +520,11 @@ def assignment_report(request, assignment_id, user_id, report_type):
             row = cur.fetchone()
             conn.close()
             if row and row[0]:
-                return redirect(row[0])
+                from django.utils.http import url_has_allowed_host_and_scheme
+                report_url = row[0]
+                if url_has_allowed_host_and_scheme(report_url, allowed_hosts={request.get_host()}):
+                    return redirect(report_url)
+                return HttpResponse("Invalid report URL", status=400)
             return render(request, 'assignments/assignment_empty.html',
                           {"assignment": assignment,
                            "message": "No plagiarism report available for this assignment."})
