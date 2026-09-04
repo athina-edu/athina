@@ -60,6 +60,34 @@ def wait_for_mysql(host: str, port: int, timeout: int = 30) -> bool:
     return False
 
 
+def _is_docker_available() -> bool:
+    """Check if Docker daemon is running and accessible."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+# Auto-skip requires_docker tests when Docker is not available
+_docker_available = None
+
+
+def pytest_collection_modifyitems(config, items):
+    global _docker_available
+    if _docker_available is None:
+        _docker_available = _is_docker_available()
+    if not _docker_available:
+        skip_docker = pytest.mark.skip(reason="Docker daemon is not available")
+        for item in items:
+            if "requires_docker" in item.keywords:
+                item.add_marker(skip_docker)
+
+
 @pytest.fixture(scope="session")
 def mysql_container() -> Generator[dict, None, None]:
     """

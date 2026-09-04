@@ -13,6 +13,7 @@ NC='\033[0m' # No Color
 # Default values
 USE_DOCKER_MYSQL=0
 VERBOSE=0
+FAST=0
 TEST_PATH=""
 
 # Help message
@@ -27,9 +28,11 @@ Options:
     -d, --docker-mysql      Use MySQL in Docker (default: SQLite)
     -v, --verbose           Verbose output
     -c, --coverage          Run with coverage report
+    -f, --fast              Skip slow tests (e.g. git_tester, db_testing)
 
 Examples:
     ./run_tests.sh                              # Run all tests with SQLite
+    ./run_tests.sh -f                           # Skip slow tests for fast feedback
     ./run_tests.sh -d                           # Run all tests with Docker MySQL
     ./run_tests.sh -v tests/test_athina.py      # Run specific test file verbosely
     ./run_tests.sh -c                           # Run with coverage report
@@ -60,6 +63,10 @@ while [[ $# -gt 0 ]]; do
             USE_COVERAGE=1
             shift
             ;;
+        -f|--fast)
+            FAST=1
+            shift
+            ;;
         -*)
             echo -e "${RED}Unknown option: $1${NC}"
             show_help
@@ -86,7 +93,11 @@ if [ ! -d "$(pipenv --venv 2>/dev/null)" ]; then
 fi
 
 # Build pytest command
-PYTEST_CMD="pipenv run pytest -m \"not slow\""
+if [ $FAST -eq 1 ]; then
+    PYTEST_CMD="pipenv run pytest -m \"not slow\""
+else
+    PYTEST_CMD="pipenv run pytest"
+fi
 
 if [ $VERBOSE -eq 1 ]; then
     PYTEST_CMD="$PYTEST_CMD -v -s"
