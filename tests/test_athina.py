@@ -409,6 +409,7 @@ class TestFunctions(unittest.TestCase):
         assert "command not found" in user_object[0].last_report
 
     @pytest.mark.slow
+    @pytest.mark.timeout(600)
     def test_tester_db_testing(self):
         logger = create_logger()
         configuration = Configuration(logger=logger)
