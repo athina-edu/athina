@@ -171,6 +171,10 @@ class Tester:
                             self.logger.logger.info(">>> Initial issue #%s created for %s" % (
                                 initial_issue_iid, user_object.user_fullname))
 
+            # Pre-build Docker image if a Dockerfile exists (required before docker_run)
+            if os.path.isfile("%s/%s" % (self.configuration.config_dir, "Dockerfile")):
+                docker_build(configuration=self.configuration, logger=self.logger)
+
             # Run tests
             test_grades = []
             test_reports = []

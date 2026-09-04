@@ -120,8 +120,9 @@ def docker_run(test_script, configuration, logger):
             err_text = err.decode('utf-8', 'backslashreplace') if err else ''
         except Exception:
             err_text = str(err)
-        if 'permission denied' in err_text.lower() or 'docker daemon' in err_text.lower():
-            logger.logger.warning("Docker returned permission/daemon error.")
+        if ('permission denied' in err_text.lower() or 'docker daemon' in err_text.lower() or
+                'unable to find image' in err_text.lower() or 'pull access denied' in err_text.lower()):
+            logger.logger.warning("Docker returned permission/daemon/image error.")
             # If test mode enabled, fallback to local execution. Otherwise let caller handle failure.
             if os.environ.get('ATHINA_TEST_MODE', '') == '1':
                 logger.logger.warning("ATHINA_TEST_MODE=1 detected; falling back to local execution for tests.")

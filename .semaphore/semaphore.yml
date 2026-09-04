@@ -39,7 +39,7 @@ blocks:
       jobs:
         - name: Execute python tests with coverage
           commands:
-            - pytest -m "not slow" --cov=athina --cov-report=xml --cov-branch
+            - pytest --cov=athina --cov-report=xml --cov-branch
         - name: SonarCloud Scan
           commands:
             - |
@@ -47,7 +47,7 @@ blocks:
                 echo "Skipping SonarCloud scan: SONAR_LOGIN not configured"
                 exit 0
               fi
-            - pytest -m "not slow" --cov=athina --cov-report=xml --cov-branch
+            - pytest --cov=athina --cov-report=xml --cov-branch
             - curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389.zip
             - unzip -q /tmp/sonar-scanner.zip -d /tmp/sonar-scanner-dir
             - export PATH="/tmp/sonar-scanner-dir/sonar-scanner-8.1.0.6389/bin:$PATH"
