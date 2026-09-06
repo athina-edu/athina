@@ -69,3 +69,6 @@ blocks:
             - docker build -t latest .
             - docker tag latest athinaedu/athina:latest
             - docker push athinaedu/athina:latest
+            - docker build -f Dockerfile.web -t web-latest .
+            - docker tag web-latest athinaedu/athina-web:latest
+            - docker push athinaedu/athina-web:latest
