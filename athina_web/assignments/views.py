@@ -312,8 +312,12 @@ def assignment_create(request, **kwargs):
                 if assignment.course:
                     for student in Student.objects.filter(course=assignment.course):
                         if not student.repository_url:
-                            _provision_student_gitlab(assignment.course, student,
-                                                      assignment_name=assignment.name)
+                            result = _provision_student_gitlab(assignment.course, student,
+                                                                assignment_name=assignment.name)
+                            if result is not True and result:
+                                # result is an error string — surface it to the faculty
+                                messages.error(request, "Provisioning failed for %s: %s" %
+                                                (student.email, result))
                         # Ensure all students are synced to the grading DB
                         _sync_student_to_grading_db(student)
             else:  # Existing assignment, move folder
@@ -779,17 +783,24 @@ def provision_students(request, course_id):
 
     created = 0
     synced = 0
+    errors = []
     for student in Student.objects.filter(course=course):
         if not student.repository_url:
-            if _provision_student_gitlab(course, student, assignment_name=first_assignment.name):
+            result = _provision_student_gitlab(course, student, assignment_name=first_assignment.name)
+            if result is True:
                 created += 1
+            elif result:
+                # result is an error string — surface it to the faculty
+                errors.append("%s: %s" % (student.email, result))
         # Always sync to grading DB (handles students added before any assignment)
         _sync_student_to_grading_db(student)
         synced += 1
 
+    if errors:
+        messages.error(request, "Some students could not be provisioned:<br>" + "<br>".join(errors))
     if created:
         messages.success(request, "Provisioned %d new repo(s) and synced %d student(s) to the grading database." % (created, synced))
-    else:
+    elif not errors:
         messages.info(request, "All students already have repos. Synced %d student(s) to the grading database." % synced)
 
     return redirect('assignments:student_list', course_id=course.pk)
@@ -811,7 +822,10 @@ def student_add(request, course_id):
             if course.assignments.exists():
                 first_assignment = course.assignments.first()
                 assignment_name = first_assignment.name if first_assignment else course.name
-                _provision_student_gitlab(course, student, assignment_name=assignment_name)
+                result = _provision_student_gitlab(course, student, assignment_name=assignment_name)
+                if result is not True and result:
+                    # result is an error string — surface it to the faculty
+                    messages.error(request, "Student added, but repo provisioning failed: %s" % result)
                 _sync_student_to_grading_db(student)
             return redirect('assignments:student_list', course_id=course.pk)
     else:
@@ -846,7 +860,10 @@ def _run_bulk_import(course_id, emails, assignment_name, has_assignments):
                 )
                 if was_created:
                     if has_assignments:
-                        _provision_student_gitlab(course, student, assignment_name=assignment_name)
+                        result = _provision_student_gitlab(course, student, assignment_name=assignment_name)
+                        if result is not True and result:
+                            # result is an error string — log it so the faculty can resolve it
+                            logger.error("Provisioning failed for %s: %s" % (email, result))
                         _sync_student_to_grading_db(student)
                     created += 1
                     logger.info("Imported %s" % email)
@@ -999,13 +1016,32 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     """
     Create GitLab group + repo for a student (skips if they already exist).
     Repo naming: assignmentname-username (e.g. sql1-alice).
+
+    Returns True on success, or an error string describing the failure so the
+    caller can surface it to the faculty. The student's GitLab username is
+    validated BEFORE the repo is created, so we never create a private repo
+    that the student cannot access.
     """
     gitlab_url, gitlab_token = _get_gitlab_config(course)
     if not gitlab_url or not gitlab_token:
-        return False
+        return "GitLab is not configured for this course (missing URL or token)."
 
     headers = {"PRIVATE-TOKEN": gitlab_token}
     api_base = "https://%s/api/v4" % gitlab_url
+
+    # 0. Validate the student's GitLab username resolves to a real user BEFORE
+    #    creating the repo. If it doesn't, the student would be locked out of a
+    #    private repo, so fail loudly instead of creating it.
+    if not student.gitlab_username:
+        return ("Student '%s' has no GitLab username set. Add their GitLab "
+                "username to their student record before provisioning." % student.email)
+    user_resp = http_requests.get("%s/users" % api_base, headers=headers,
+                                  params={"username": student.gitlab_username}, timeout=10)
+    if not user_resp.ok or not user_resp.json():
+        return ("Could not find GitLab user '%s' for student '%s'. Verify the "
+                "username is correct and that the user exists on %s." %
+                (student.gitlab_username, student.email, gitlab_url))
+    gitlab_user_id = user_resp.json()[0]['id']
 
     # 1. Find or create the course group
     # Naming: athina-[facultyid]-[coursename]
@@ -1032,7 +1068,9 @@ def _provision_student_gitlab(course, student, assignment_name=None):
         if resp.ok:
             group = resp.json()
         else:
-            return False
+            return ("Failed to create GitLab group '%s' (HTTP %s). Check the "
+                    "faculty GitLab token has permission to create groups." %
+                    (group_name, resp.status_code))
 
     group_id = group['id']
 
@@ -1062,7 +1100,9 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     }, timeout=10)
 
     if not resp.ok:
-        return False
+        return ("Failed to create GitLab repo '%s' (HTTP %s). Check the faculty "
+                "GitLab token has permission to create projects in group '%s'." %
+                (repo_name, resp.status_code, group_name))
 
     project = resp.json()
     student.repository_url = project.get('http_url_to_repo', '')
@@ -1070,20 +1110,18 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     student.save()
 
     # 3. Add student as developer (skip if already a member)
-    if student.gitlab_username:
-        user_resp = http_requests.get("%s/users" % api_base, headers=headers,
-                                      params={"username": student.gitlab_username}, timeout=10)
-        if user_resp.ok and user_resp.json():
-            gitlab_user_id = user_resp.json()[0]['id']
-            # Check if already a member
-            member_check = http_requests.get(
-                "%s/projects/%s/members" % (api_base, project['id']),
-                headers=headers, timeout=10)
-            existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
-            if gitlab_user_id not in existing_ids:
-                http_requests.post("%s/projects/%s/members" % (api_base, project['id']),
-                                   headers=headers, data={
-                                       "user_id": gitlab_user_id,
-                                       "access_level": 30,
-                                   }, timeout=10)
+    member_check = http_requests.get(
+        "%s/projects/%s/members" % (api_base, project['id']),
+        headers=headers, timeout=10)
+    existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
+    if gitlab_user_id not in existing_ids:
+        member_resp = http_requests.post("%s/projects/%s/members" % (api_base, project['id']),
+                                         headers=headers, data={
+                                             "user_id": gitlab_user_id,
+                                             "access_level": 30,
+                                         }, timeout=10)
+        if not member_resp.ok:
+            return ("Created repo '%s' but failed to add student '%s' as a member "
+                    "(HTTP %s). The student cannot access their private repo until "
+                    "this is fixed." % (repo_name, student.gitlab_username, member_resp.status_code))
     return True
