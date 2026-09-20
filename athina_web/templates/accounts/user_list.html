@@ -1,73 +1,87 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% block title %}Users{% endblock %}
-
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item active">Users</li>
+    </ol>
+</nav>
+{% endblock %}
 {% block content %}
-<div class="container mt-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Users</h2>
-    <div>
-      {% if user_profile.role == 'admin' %}
-        <a href="{% url 'accounts:create_user' %}" class="btn btn-primary btn-sm"><i class="fa fa-plus"></i> Add Faculty</a>
-        <a href="{% url 'accounts:create_user' %}?role=ta" class="btn btn-outline-primary btn-sm"><i class="fa fa-plus"></i> Add TA</a>
-        <a href="{% url 'accounts:assign_tas' %}" class="btn btn-outline-secondary btn-sm"><i class="fa fa-link"></i> Assign TAs</a>
-      {% elif user_profile.role == 'faculty' %}
-        <a href="{% url 'accounts:create_user' %}" class="btn btn-primary btn-sm"><i class="fa fa-plus"></i> Add TA</a>
-        <a href="{% url 'accounts:assign_tas' %}" class="btn btn-outline-secondary btn-sm"><i class="fa fa-link"></i> Assign TAs</a>
-      {% endif %}
-    </div>
-  </div>
-
-  {% if messages %}
-    {% for msg in messages %}
-      <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
-    {% endfor %}
-  {% endif %}
-
-  <table class="table table-striped table-hover">
-    <thead class="thead-dark">
-      <tr>
-        <th>Username</th>
-        <th>Email</th>
-        <th>Role</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td>{{ u.username }}</td>
-        <td>{{ u.email|default:"—" }}</td>
-        <td>
-          {% if u.profile.role == 'admin' %}
-            <span class="badge badge-danger">Admin</span>
-          {% elif u.profile.role == 'faculty' %}
-            <span class="badge badge-primary">Faculty</span>
-          {% elif u.profile.role == 'ta' %}
-            <span class="badge badge-info">TA</span>
-          {% else %}
-            <span class="badge badge-secondary">{{ u.profile.role }}</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if u.is_active %}
-            <span class="text-success">Active</span>
-          {% else %}
-            <span class="text-muted">Inactive</span>
-          {% endif %}
-        </td>
-        <td>
-          <form method="post" action="{% url 'accounts:delete_user' u.id %}" class="d-inline"
-                onsubmit="return confirm('Delete user {{ u.username }}?');">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-danger btn-sm"><i class="fa fa-trash"></i></button>
-          </form>
-        </td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="5" class="text-center text-muted">No users to display.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="mt-2">
+<h3>Users</h3>
+<hr>
+<div class="mb-3">
+    {% if user_profile.role == 'admin' or user.is_superuser %}
+    <a class="btn btn-success" href="{% url 'accounts:create_user' %}">New Faculty</a>
+    <a class="btn btn-info" href="{% url 'accounts:create_user' %}?role=ta">New TA</a>
+    {% elif user_profile.role == 'faculty' %}
+    <a class="btn btn-success" href="{% url 'accounts:create_user' %}">New TA</a>
+    <a class="btn btn-info" href="{% url 'accounts:assign_tas' %}">Assign TAs</a>
+    {% endif %}
 </div>
+{% if messages %}
+{% for message in messages %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+</div>
+{% endfor %}
+{% endif %}
+{% if users %}
+<div class="table-responsive">
+<table class="table table-striped">
+<tr>
+    <th>Username</th>
+    <th>Email</th>
+    <th>Role</th>
+    {% if user_profile.role == 'admin' or user.is_superuser %}
+    <th>Associated Faculty</th>
+    {% endif %}
+    <th>Actions</th>
+</tr>
+{% for u in users %}
+<tr>
+<td>{{ u.username }}</td>
+<td>{{ u.email }}</td>
+<td>
+    <span class="badge badge-{% if u.profile.role == 'admin' %}danger{% elif u.profile.role == 'faculty' %}primary{% else %}success{% endif %}">
+        {{ u.profile.get_role_display }}
+    </span>
+</td>
+{% if user_profile.role == 'admin' or user.is_superuser %}
+<td>
+    {% if u.profile.role == 'ta' %}
+        {% for faculty in u.profile.managed_by.all %}
+            {{ faculty.username }}{% if not forloop.last %}, {% endif %}
+        {% empty %}
+            <span class="text-muted">None assigned</span>
+        {% endfor %}
+    {% else %}
+        <span class="text-muted">—</span>
+    {% endif %}
+</td>
+{% endif %}
+<td>
+    {% if u.profile.role == 'ta' and user_profile.role == 'faculty' or user.is_superuser %}
+    <a class="btn btn-danger btn-sm confirm-delete-user" href="{% url 'accounts:delete_user' user_id=u.pk %}"
+       data-name="{{ u.username }}">Delete</a>
+    {% endif %}
+</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% else %}
+<p class="text-muted">No users to display.</p>
+{% endif %}
+</div>
+<script>
+$('.confirm-delete-user').click(function(e) {
+    var name = $(this).data('name');
+    if (!confirm('Delete user "' + name + '"? This cannot be undone.')) {
+        e.preventDefault();
+    }
+});
+</script>
 {% endblock %}

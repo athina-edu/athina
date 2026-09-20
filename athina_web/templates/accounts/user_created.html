@@ -1,22 +1,43 @@
-{% extends "base.html" %}
-{% block title %}User Created{% endblock %}
-
+{% extends 'base.html' %}
+{% block title %}Account Created{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'accounts:user_list' %}">Users</a></li>
+        <li class="breadcrumb-item active">Account Created</li>
+    </ol>
+</nav>
+{% endblock %}
 {% block content %}
-<div class="container mt-4">
-  <div class="card">
-    <div class="card-header bg-success text-white"><i class="fa fa-check"></i> User Created Successfully</div>
-    <div class="card-body">
-      <p><strong>Username:</strong> {{ new_user.username }}</p>
-      <p><strong>Email:</strong> {{ new_user.email|default:"—" }}</p>
-      <p><strong>Role:</strong> {{ new_profile.get_role_display }}</p>
-
-      <div class="alert alert-warning">
-        <strong>Temporary Password:</strong> <code>{{ password }}</code><br>
-        Share this password with the user. They should change it after first login.
-      </div>
-
-      <a href="{% url 'accounts:user_list' %}" class="btn btn-primary">Back to Users</a>
-    </div>
-  </div>
+<div class="mt-2" style="max-width: 500px;">
+<h3>Account Created</h3>
+<hr>
+<div class="alert alert-success">
+    <strong>{{ new_user.username }}</strong> has been created as {{ new_profile.get_role_display }}.
 </div>
+<div class="card mb-3">
+    <div class="card-header"><strong>Temporary Password</strong></div>
+    <div class="card-body">
+        <p>Share this password with the user. They should change it after first login.</p>
+        <div class="input-group mb-2">
+            <input type="text" class="form-control" id="temp-password" value="{{ password }}" readonly>
+            <div class="input-group-append">
+                <button class="btn btn-outline-secondary" type="button" onclick="copyPassword()">
+                    Copy
+                </button>
+            </div>
+        </div>
+        <small class="text-muted" id="copy-status"></small>
+    </div>
+</div>
+<a class="btn btn-info" href="{% url 'accounts:user_list' %}">Back to Users</a>
+</div>
+<script>
+function copyPassword() {
+    var pw = document.getElementById('temp-password');
+    pw.select();
+    document.execCommand('copy');
+    document.getElementById('copy-status').textContent = 'Copied to clipboard!';
+}
+</script>
 {% endblock %}

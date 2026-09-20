@@ -1,27 +1,22 @@
-{% extends "base.html" %}
-{% block title %}Create TA{% endblock %}
-
+{% extends 'base.html' %}
+{% block title %}Create TA Account{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'accounts:user_list' %}">Users</a></li>
+        <li class="breadcrumb-item active">New TA</li>
+    </ol>
+</nav>
+{% endblock %}
 {% block content %}
-<div class="container mt-4">
-  <h2>Create Teaching Assistant Account</h2>
-  <div class="card">
-    <div class="card-body">
-      <form method="post">
-        {% csrf_token %}
-        {% for field in form %}
-          <div class="form-group">
-            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-            {{ field }}
-            {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
-            {% for error in field.errors %}
-              <div class="text-danger">{{ error }}</div>
-            {% endfor %}
-          </div>
-        {% endfor %}
-        <button type="submit" class="btn btn-primary">Create TA</button>
-        <a href="{% url 'accounts:user_list' %}" class="btn btn-secondary">Cancel</a>
-      </form>
-    </div>
-  </div>
+<div class="mt-2" style="max-width: 500px;">
+<h3>Create TA Account</h3>
+<hr>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Create Account</button>
+    <a class="btn btn-secondary" href="{% url 'accounts:user_list' %}">Cancel</a>
+</form>
 </div>
 {% endblock %}

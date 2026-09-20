@@ -1,77 +1,259 @@
-{% extends "base.html" %}
-{% block title %}Profile — {{ user.username }}{% endblock %}
-
+{% extends 'base.html' %}
+{% block title %}Profile - Git Credentials{% endblock %}
 {% block content %}
-<div class="container mt-4">
-  <h2>Profile — {{ user.username }}</h2>
-
-  {% if messages %}
-    {% for msg in messages %}
-      <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
-    {% endfor %}
-  {% endif %}
-
-  <div class="row">
-    <div class="col-md-6">
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa fa-user"></i> Account</div>
-        <div class="card-body">
-          <p><strong>Username:</strong> {{ user.username }}</p>
-          <p><strong>Email:</strong> {{ user.email|default:"—" }}</p>
-          <p><strong>Role:</strong> {{ user_profile.get_role_display }}</p>
-        </div>
-      </div>
-
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa fa-key"></i> Change Password</div>
-        <div class="card-body">
-          <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="change_password">
-            <div class="form-group">
-              <label>New Password</label>
-              <input type="password" name="new_password" class="form-control" required minlength="8">
-            </div>
-            <div class="form-group">
-              <label>Confirm Password</label>
-              <input type="password" name="confirm_password" class="form-control" required>
-            </div>
-            <button type="submit" class="btn btn-warning">Update Password</button>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6">
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa fa-code"></i> GitLab</div>
-        <div class="card-body">
-          <p><strong>Enabled:</strong> {% if user_profile.gitlab_enabled %}<span class="text-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</p>
-          <p><strong>URL:</strong> {{ user_profile.gitlab_url|default:"—" }}</p>
-          <p><strong>Username:</strong> {{ user_profile.gitlab_username|default:"—" }}</p>
-          <p><strong>Token:</strong> {% if user_profile.gitlab_token %}••••••••{% else %}—{% endif %}</p>
-        </div>
-      </div>
-
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa fa-github"></i> GitHub</div>
-        <div class="card-body">
-          <p><strong>Enabled:</strong> {% if user_profile.github_enabled %}<span class="text-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</p>
-          <p><strong>Username:</strong> {{ user_profile.github_username|default:"—" }}</p>
-          <p><strong>Token:</strong> {% if user_profile.github_token %}••••••••{% else %}—{% endif %}</p>
-        </div>
-      </div>
-
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa fa-robot"></i> LLM (AI Feedback)</div>
-        <div class="card-body">
-          <p><strong>Enabled:</strong> {% if user_profile.llm_enabled %}<span class="text-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</p>
-          <p><strong>Endpoint:</strong> {{ user_profile.llm_endpoint_url|default:"—" }}</p>
-          <p><strong>Model:</strong> {{ user_profile.llm_model|default:"—" }}</p>
-          <p><strong>API Key:</strong> {% if user_profile.llm_api_key %}••••••••{% else %}—{% endif %}</p>
-        </div>
-      </div>
-    </div>
-  </div>
+<div class="mt-2">
+<h3>Profile: {{ user.username }}</h3>
+<hr>
+{% if messages %}
+{% for message in messages %}
+<div class="alert alert-{% if message.tags == 'error' %}danger{% else %}success{% endif %} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
 </div>
+{% endfor %}
+{% endif %}
+<form method="post">
+    {% csrf_token %}
+
+    <!-- ── GitLab Section ──────────────────────────────────────── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fa fa-code-fork"></i> GitLab
+                {% if user_profile.gitlab_enabled %}
+                    <span class="badge badge-success ml-2">Active</span>
+                {% endif %}
+            </h5>
+            <div class="custom-control custom-switch">
+                <input type="checkbox" class="custom-control-input" id="gitlab_enabled"
+                       name="gitlab_enabled" {% if user_profile.gitlab_enabled %}checked{% endif %}
+                       onchange="document.getElementById('gitlab-fields').style.display = this.checked ? 'block' : 'none';">
+                <label class="custom-control-label" for="gitlab_enabled">Enabled</label>
+            </div>
+        </div>
+        <div class="card-body" id="gitlab-fields" style="display: {% if user_profile.gitlab_enabled %}block{% else %}none{% endif %};">
+            <div class="form-group">
+                <label for="gitlab_url"><strong>GitLab URL</strong></label>
+                <input type="text" class="form-control" id="gitlab_url" name="gitlab_url"
+                       value="{{ user_profile.gitlab_url|default:'gitlab.com' }}"
+                       placeholder="gitlab.com">
+                <small class="form-text text-muted">For self-hosted instances enter the full domain, e.g. <code>gitlab.myuni.edu</code>.</small>
+            </div>
+            <div class="form-group">
+                <label for="gitlab_username"><strong>Username</strong></label>
+                <input type="text" class="form-control" id="gitlab_username" name="gitlab_username"
+                       value="{{ user_profile.gitlab_username }}" placeholder="e.g. jsmith">
+            </div>
+            <div class="form-group">
+                <label for="gitlab_token"><strong>Personal Access Token</strong></label>
+                <input type="password" class="form-control" id="gitlab_token" name="gitlab_token"
+                       value="{{ user_profile.gitlab_token }}" placeholder="glpat-xxxxxxxxxxxxxxxxxxxx">
+                <small class="form-text text-muted">
+                    Create a token at
+                    <a href="https://gitlab.com/-/user_settings/personal_access_tokens" target="_blank">
+                        GitLab &gt; Settings &gt; Access Tokens</a>
+                    (or your instance's equivalent) with <code>read_repository</code> and <code>api</code> scopes.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── GitHub Section ──────────────────────────────────────── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fa fa-github"></i> GitHub
+                {% if user_profile.github_enabled %}
+                    <span class="badge badge-success ml-2">Active</span>
+                {% endif %}
+            </h5>
+            <div class="custom-control custom-switch">
+                <input type="checkbox" class="custom-control-input" id="github_enabled"
+                       name="github_enabled" {% if user_profile.github_enabled %}checked{% endif %}
+                       onchange="document.getElementById('github-fields').style.display = this.checked ? 'block' : 'none';">
+                <label class="custom-control-label" for="github_enabled">Enabled</label>
+            </div>
+        </div>
+        <div class="card-body" id="github-fields" style="display: {% if user_profile.github_enabled %}block{% else %}none{% endif %};">
+            <div class="form-group">
+                <label><strong>Instance</strong></label>
+                <p class="form-control-plaintext">github.com</p>
+            </div>
+            <div class="form-group">
+                <label for="github_username"><strong>Username</strong></label>
+                <input type="text" class="form-control" id="github_username" name="github_username"
+                       value="{{ user_profile.github_username }}" placeholder="e.g. jsmith">
+            </div>
+            <div class="form-group">
+                <label for="github_token"><strong>Personal Access Token</strong></label>
+                <input type="password" class="form-control" id="github_token" name="github_token"
+                       value="{{ user_profile.github_token }}" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+                <small class="form-text text-muted">
+                    Create a token at
+                    <a href="https://github.com/settings/tokens" target="_blank">
+                        GitHub &gt; Settings &gt; Developer settings &gt; Tokens</a>
+                    with <code>repo</code> scope.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── LLM (AI Feedback) Section ─────────────────────────── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fa fa-robot"></i> LLM / AI Feedback
+                {% if user_profile.llm_enabled %}
+                    <span class="badge badge-success ml-2">Active</span>
+                {% endif %}
+            </h5>
+            <div class="custom-control custom-switch">
+                <input type="checkbox" class="custom-control-input" id="llm_enabled"
+                       name="llm_enabled" {% if user_profile.llm_enabled %}checked{% endif %}
+                       onchange="document.getElementById('llm-fields').style.display = this.checked ? 'block' : 'none';">
+                <label class="custom-control-label" for="llm_enabled">Enabled</label>
+            </div>
+        </div>
+        <div class="card-body" id="llm-fields" style="display: {% if user_profile.llm_enabled %}block{% else %}none{% endif %};">
+            <div class="form-group">
+                <label for="llm_endpoint_url"><strong>API Endpoint URL</strong></label>
+                <input type="text" class="form-control" id="llm_endpoint_url" name="llm_endpoint_url"
+                       value="{{ user_profile.llm_endpoint_url|default:'https://api.openai.com/v1' }}"
+                       placeholder="https://api.openai.com/v1">
+                <small class="form-text text-muted">
+                    OpenAI-compatible endpoint. Works with OpenAI, Azure OpenAI, Ollama, LM Studio,
+                    vLLM, or any <code>/v1/chat/completions</code> compatible server.
+                    For Ollama use: <code>http://localhost:11434/v1</code>
+                </small>
+            </div>
+            <div class="form-group">
+                <label for="llm_api_key"><strong>API Key</strong></label>
+                <input type="password" class="form-control" id="llm_api_key" name="llm_api_key"
+                       value="{{ user_profile.llm_api_key }}" placeholder="sk-xxxxxxxxxxxxxxxxxxxx">
+                <small class="form-text text-muted">
+                    Your API key. For Ollama/local models, you can enter any value (e.g. "ollama").
+                </small>
+            </div>
+            <div class="form-group">
+                <label for="llm_model"><strong>Model</strong></label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="llm_model" name="llm_model"
+                           value="{{ user_profile.llm_model|default:'gpt-4o-mini' }}"
+                           placeholder="gpt-4o-mini" list="llm_model_list" autocomplete="off">
+                    <div class="input-group-append">
+                        <button class="btn btn-outline-secondary" type="button" id="fetchModelsBtn"
+                                onclick="fetchModels()">
+                            <i class="fa fa-sync"></i> Fetch Models
+                        </button>
+                    </div>
+                </div>
+                <datalist id="llm_model_list"></datalist>
+                <small class="form-text text-muted" id="modelStatus"></small>
+                <small class="form-text text-muted">
+                    Click <strong>Fetch Models</strong> after entering your endpoint URL and API key to get
+                    a list of available models, or type a model name manually
+                    (e.g. <code>gpt-4o-mini</code>, <code>llama3</code>).
+                </small>
+            </div>
+            <div class="alert alert-info mb-0">
+                <strong>How it works:</strong> After each student's code is graded, the LLM receives the
+                student's code and test results (but NOT the test source code) and generates pedagogical
+                guidance. This guidance helps students understand what went wrong without revealing solutions.
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Password Section ────────────────────────────────────── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fa fa-lock"></i> Password
+            </h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">Change your login password. Leave blank to keep the current password.</p>
+            <div class="form-group">
+                <label for="current_password"><strong>Current Password</strong></label>
+                <input type="password" class="form-control" id="current_password" name="current_password"
+                       placeholder="Enter current password">
+            </div>
+            <div class="form-group">
+                <label for="new_password"><strong>New Password</strong></label>
+                <input type="password" class="form-control" id="new_password" name="new_password"
+                       placeholder="Enter new password">
+            </div>
+            <div class="form-group">
+                <label for="confirm_password"><strong>Confirm New Password</strong></label>
+                <input type="password" class="form-control" id="confirm_password" name="confirm_password"
+                       placeholder="Confirm new password">
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a class="btn btn-secondary" href="javascript:history.back()">Back</a>
+</form>
+</div>
+
+<script>
+function fetchModels() {
+    var endpointUrl = document.getElementById('llm_endpoint_url').value.trim();
+    var apiKey = document.getElementById('llm_api_key').value.trim();
+    var statusEl = document.getElementById('modelStatus');
+    var inputEl = document.getElementById('llm_model');
+    var datalistEl = document.getElementById('llm_model_list');
+    var btn = document.getElementById('fetchModelsBtn');
+
+    if (!endpointUrl || !apiKey) {
+        statusEl.textContent = 'Please enter both the endpoint URL and API key first.';
+        statusEl.className = 'form-text text-danger';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Fetching...';
+    statusEl.textContent = 'Fetching models from endpoint...';
+    statusEl.className = 'form-text text-muted';
+
+    var url = '{% url "accounts:llm_models" %}?endpoint_url=' + encodeURIComponent(endpointUrl) + '&api_key=' + encodeURIComponent(apiKey);
+
+    fetch(url)
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-sync"></i> Fetch Models';
+
+            if (data.error) {
+                statusEl.textContent = data.error;
+                statusEl.className = 'form-text text-danger';
+                return;
+            }
+
+            if (!data.models || data.models.length === 0) {
+                statusEl.textContent = 'No models found. You can type a model name manually.';
+                statusEl.className = 'form-text text-warning';
+                return;
+            }
+
+            // Populate the datalist for autocomplete suggestions
+            datalistEl.innerHTML = '';
+            for (var i = 0; i < data.models.length; i++) {
+                var opt = document.createElement('option');
+                opt.value = data.models[i].id;
+                datalistEl.appendChild(opt);
+            }
+
+            inputEl.focus();
+            inputEl.click();
+            statusEl.textContent = data.models.length + ' model(s) loaded. Start typing to see suggestions, or pick one from the list.';
+            statusEl.className = 'form-text text-success';
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-sync"></i> Fetch Models';
+            statusEl.textContent = 'Error: ' + err.message;
+            statusEl.className = 'form-text text-danger';
+        });
+}
+</script>
 {% endblock %}
