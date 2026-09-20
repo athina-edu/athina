@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Assign TAs{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2>Assign Teaching Assistants</h2>
+  <div class="card">
+    <div class="card-body">
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+
+      <form method="post">
+        {% csrf_token %}
+        <div class="form-group">
+          <label>{{ field.label|default:"Select TAs to assign" }}</label>
+          {{ form.tas }}
+          {% if form.tas.help_text %}<small class="form-text text-muted">{{ form.tas.help_text }}</small>{% endif %}
+        </div>
+        <button type="submit" class="btn btn-primary">Save Assignments</button>
+        <a href="{% url 'accounts:user_list' %}" class="btn btn-secondary">Cancel</a>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

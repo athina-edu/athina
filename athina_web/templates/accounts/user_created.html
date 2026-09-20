@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}User Created{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <div class="card">
+    <div class="card-header bg-success text-white"><i class="fa fa-check"></i> User Created Successfully</div>
+    <div class="card-body">
+      <p><strong>Username:</strong> {{ new_user.username }}</p>
+      <p><strong>Email:</strong> {{ new_user.email|default:"—" }}</p>
+      <p><strong>Role:</strong> {{ new_profile.get_role_display }}</p>
+
+      <div class="alert alert-warning">
+        <strong>Temporary Password:</strong> <code>{{ password }}</code><br>
+        Share this password with the user. They should change it after first login.
+      </div>
+
+      <a href="{% url 'accounts:user_list' %}" class="btn btn-primary">Back to Users</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Profile — {{ user.username }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2>Profile — {{ user.username }}</h2>
+
+  {% if messages %}
+    {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa fa-user"></i> Account</div>
+        <div class="card-body">
+          <p><strong>Username:</strong> {{ user.username }}</p>
+          <p><strong>Email:</strong> {{ user.email|default:"—" }}</p>
+          <p><strong>Role:</strong> {{ user_profile.get_role_display }}</p>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa fa-key"></i> Change Password</div>
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="change_password">
+            <div class="form-group">
+              <label>New Password</label>
+              <input type="password" name="new_password" class="form-control" required minlength="8">
+            </div>
+            <div class="form-group">
+              <label>Confirm Password</label>
+              <input type="password" name="confirm_password" class="form-control" required>
+            </div>
+            <button type="submit" class="btn btn-warning">Update Password</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa fa-code"></i> GitLab</div>
+        <div class="card-body">
+          <p><strong>Enabled:</strong> {% if user_profile.gitlab_enabled %}<span class="text-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</p>
+          <p><strong>URL:</strong> {{ user_profile.gitlab_url|default:"—" }}</p>
+          <p><strong>Username:</strong> {{ user_profile.gitlab_username|default:"—" }}</p>
+          <p><strong>Token:</strong> {% if user_profile.gitlab_token %}••••••••{% else %}—{% endif %}</p>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa fa-github"></i> GitHub</div>
+        <div class="card-body">
+          <p><strong>Enabled:</strong> {% if user_profile.github_enabled %}<span class="text-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</p>
+          <p><strong>Username:</strong> {{ user_profile.github_username|default:"—" }}</p>
+          <p><strong>Token:</strong> {% if user_profile.github_token %}••••••••{% else %}—{% endif %}</p>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa fa-robot"></i> LLM (AI Feedback)</div>
+        <div class="card-body">
+          <p><strong>Enabled:</strong> {% if user_profile.llm_enabled %}<span class="text-success">Yes</span>{% else %}<span class="text-muted">No</span>{% endif %}</p>
+          <p><strong>Endpoint:</strong> {{ user_profile.llm_endpoint_url|default:"—" }}</p>
+          <p><strong>Model:</strong> {{ user_profile.llm_model|default:"—" }}</p>
+          <p><strong>API Key:</strong> {% if user_profile.llm_api_key %}••••••••{% else %}—{% endif %}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
