@@ -17,10 +17,10 @@ setup(
     ],
     extras_require={
         'web': [
-            'Django>=3.2,<4.0',
-            'djangorestframework>=3.12',
-            'django-registration>=3.1',
-            'gunicorn>=20.0',
+            'Django>=5.2,<6.0',
+            'djangorestframework>=3.15',
+            'django-registration>=3.4',
+            'gunicorn>=22.0',
         ],
         'test': [
             'pytest>=7.0', 'docker>=6.0',

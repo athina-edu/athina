@@ -11,8 +11,13 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 
 import os
-from .settings_secret import *
 import sys
+
+# PyMySQL as MySQLdb drop-in for Django's MySQL backend (avoids needing mysqlclient C library)
+import pymysql
+pymysql.install_as_MySQLdb()
+
+from .settings_secret import *
 
 # Allow opt-in test mode that forces SQLite in-memory DB so tests can run without a MySQL server.
 # To enable this locally or in CI, set the environment variable ATHINA_USE_SQLITE_FOR_TESTS=1
@@ -115,8 +120,6 @@ TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
-USE_L10N = True
-
 USE_TZ = True
 
 
@@ -140,6 +143,9 @@ CSRF_COOKIE_HTTPONLY = True
 INTERNAL_IPS = '127.0.0.1'
 
 MEDIA_ROOT = 'athina_files'
+
+# Default primary key field type
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 # django-registration-redux settings
 REGISTRATION_OPEN = False

@@ -8,7 +8,7 @@ def slashes_encode(string):
 
 
 def slashes_decode(string):
-    return re.sub("\|", "/", string)
+    return re.sub(r"\|", "/", string)
 
 
 def inner_path_process(inner_path, user_id):
