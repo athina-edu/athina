@@ -307,18 +307,10 @@ def assignment_create(request, **kwargs):
                     git.Repo.clone_from(assignment.git_source, assignment.absolute_path)
                 # Write .env with the COURSE OWNER's credentials (not the logged-in user)
                 _write_assignment_env(assignment)  # uses course owner's profile
-                # Provision GitLab repos for any existing students in this course
-                # who don't have a repo yet (they were added before any assignment existed).
+                # Sync all students to the grading DB but do NOT auto-provision repos.
+                # Faculty must click 'Provision Repos' manually.
                 if assignment.course:
                     for student in Student.objects.filter(course=assignment.course):
-                        if not student.repository_url:
-                            result = _provision_student_gitlab(assignment.course, student,
-                                                                assignment_name=assignment.name)
-                            if result is not True and result:
-                                # result is an error string — surface it to the faculty
-                                messages.error(request, "Provisioning failed for %s: %s" %
-                                                (student.email, result))
-                        # Ensure all students are synced to the grading DB
                         _sync_student_to_grading_db(student)
             else:  # Existing assignment, move folder
                 old_assignment = get_object_or_404(Assignment, pk=assignment_id)
@@ -817,16 +809,10 @@ def student_add(request, course_id):
             student = form.save(commit=False)
             student.course = course
             student.save()
-            # Only provision repos and sync to grading DB if the course has assignments.
-            # There's nothing to grade if there are no assignments, so skip provisioning.
-            if course.assignments.exists():
-                first_assignment = course.assignments.first()
-                assignment_name = first_assignment.name if first_assignment else course.name
-                result = _provision_student_gitlab(course, student, assignment_name=assignment_name)
-                if result is not True and result:
-                    # result is an error string — surface it to the faculty
-                    messages.error(request, "Student added, but repo provisioning failed: %s" % result)
-                _sync_student_to_grading_db(student)
+            # Sync to grading DB but do NOT auto-provision repos.
+            # Faculty must click 'Provision Repos' manually.
+            _sync_student_to_grading_db(student)
+            messages.info(request, "Student added. Click 'Provision Repos' to create their GitLab repository.")
             return redirect('assignments:student_list', course_id=course.pk)
     else:
         form = StudentForm()
@@ -859,12 +845,9 @@ def _run_bulk_import(course_id, emails, assignment_name, has_assignments):
                     defaults={'username': username},
                 )
                 if was_created:
-                    if has_assignments:
-                        result = _provision_student_gitlab(course, student, assignment_name=assignment_name)
-                        if result is not True and result:
-                            # result is an error string — log it so the faculty can resolve it
-                            logger.error("Provisioning failed for %s: %s" % (email, result))
-                        _sync_student_to_grading_db(student)
+                    # Sync to grading DB but do NOT auto-provision repos.
+                    # Faculty must click 'Provision Repos' manually.
+                    _sync_student_to_grading_db(student)
                     created += 1
                     logger.info("Imported %s" % email)
                 else:
