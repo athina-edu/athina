@@ -39,6 +39,10 @@ class UserProfile(models.Model):
     llm_model = models.CharField(max_length=128, default="gpt-4o-mini", blank=True,
                                   help_text="Model name, e.g. gpt-4o-mini, gpt-4o, claude-3-haiku")
 
+    # Email notification when student repo is created
+    notify_api_key = models.BooleanField(default=False,
+                                          help_text="Send email notification with API key when a student repo is created")
+
     # Legacy fields
     git_username = models.CharField(max_length=255, default="", blank=True)
     git_password = models.CharField(max_length=255, default="", blank=True)

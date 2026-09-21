@@ -42,7 +42,10 @@ class TAAssignForm(forms.Form):
                 (tp.user_id, "%s (%s)" % (tp.user.username, tp.user.email))
                 for tp in ta_profiles
             ]
+            # TAs whose managed_by includes this faculty user
             self.fields['tas'].initial = list(
-                UserProfile.objects.get(user=faculty_user)
-                .managed_by.values_list('id', flat=True)
+                UserProfile.objects.filter(
+                    role=UserProfile.ROLE_TA,
+                    managed_by=faculty_user
+                ).values_list('user__id', flat=True)
             )

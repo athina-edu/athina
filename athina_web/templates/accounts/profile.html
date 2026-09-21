@@ -163,6 +163,29 @@
         </div>
     </div>
 
+    <!-- ── Notifications Section ─────────────────────────────── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fa fa-envelope"></i> Notifications
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="custom-control custom-switch">
+                <input type="checkbox" class="custom-control-input" id="notify_api_key"
+                       name="notify_api_key" {% if user_profile.notify_api_key %}checked{% endif %}>
+                <label class="custom-control-label" for="notify_api_key">
+                    <strong>Resend API key on repo creation</strong>
+                </label>
+            </div>
+            <small class="form-text text-muted">
+                When enabled, an email notification containing your GitLab/GitHub API key will be sent
+                to your registered email address every time a student repository is created for one of
+                your courses. This helps you keep track of provisioning activity.
+            </small>
+        </div>
+    </div>
+
     <!-- ── Password Section ────────────────────────────────────── -->
     <div class="card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">

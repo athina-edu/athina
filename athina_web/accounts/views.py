@@ -54,6 +54,7 @@ def profile(request):
         user_profile.llm_endpoint_url = request.POST.get('llm_endpoint_url', 'https://api.openai.com/v1').strip() or 'https://api.openai.com/v1'
         user_profile.llm_api_key = request.POST.get('llm_api_key', '').strip()
         user_profile.llm_model = request.POST.get('llm_model', 'gpt-4o-mini').strip() or 'gpt-4o-mini'
+        user_profile.notify_api_key = request.POST.get('notify_api_key') == 'on'
         user_profile.save()
 
         # Refresh .env files for all assignments owned by this user
@@ -243,7 +244,7 @@ def user_list(request):
         users = User.objects.select_related('profile').exclude(
             id=request.user.id).order_by('username')
     elif user_profile.role == UserProfile.ROLE_FACULTY:
-        # Faculty sees their assigned TAs
+        # Faculty sees TAs whose profile.managed_by includes this faculty user
         users = User.objects.filter(
             profile__role=UserProfile.ROLE_TA,
             profile__managed_by=request.user
@@ -318,8 +319,15 @@ def assign_tas(request):
         if form.is_valid():
             selected_ids = form.cleaned_data['tas']
             selected_users = User.objects.filter(id__in=selected_ids)
-            profile, _ = UserProfile.objects.get_or_create(user=request.user)
-            profile.managed_by.set(selected_users)
+            # Set managed_by on each TA's profile pointing to this faculty user
+            for ta in selected_users:
+                ta_profile, _ = UserProfile.objects.get_or_create(user=ta)
+                ta_profile.managed_by.add(request.user)
+            # Remove managed_by for any TAs that were unselected
+            all_ta_profiles = UserProfile.objects.filter(role=UserProfile.ROLE_TA)
+            for ta_profile in all_ta_profiles:
+                if ta_profile.user.id not in selected_ids:
+                    ta_profile.managed_by.remove(request.user)
             messages.success(request, "TA assignments updated.")
             return redirect('accounts:user_list')
     else:

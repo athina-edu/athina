@@ -29,6 +29,7 @@ from datetime import timedelta
 import dateutil.parser
 import requests as http_requests
 import threading
+from django.core.mail import send_mail
 from athina_web.athina_db import db_info
 from athina_web.accounts.models import UserProfile
 
@@ -1107,4 +1108,37 @@ def _provision_student_gitlab(course, student, assignment_name=None):
             return ("Created repo '%s' but failed to add student '%s' as a member "
                     "(HTTP %s). The student cannot access their private repo until "
                     "this is fixed." % (repo_name, student.gitlab_username, member_resp.status_code))
+
+    # 4. Optionally notify the faculty via email
+    try:
+        faculty = User.objects.get(pk=course.owner)
+        faculty_profile = faculty.profile
+        if faculty_profile.notify_api_key:
+            provider_label = 'GitLab'
+            token = faculty_profile.gitlab_token
+            username = faculty_profile.gitlab_username
+            if not token:
+                # Try GitHub as fallback
+                token = faculty_profile.github_token
+                username = faculty_profile.github_username
+                provider_label = 'GitHub'
+            if token:
+                send_mail(
+                    subject='[Athina] Student repo created: %s' % repo_name,
+                    message=("A new %s repository has been created for student %s.\n\n"
+                             "Repository: %s\n"
+                             "Your %s API key / token: %s\n"
+                             "Your %s username: %s\n\n"
+                             "You can disable these notifications in your profile settings." %
+                             (provider_label, student.email,
+                              student.repository_url,
+                              provider_label, token,
+                              provider_label, username)),
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'athina@localhost'),
+                    recipient_list=[faculty.email],
+                    fail_silently=True,
+                )
+    except Exception:
+        pass
+
     return True
