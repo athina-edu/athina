@@ -171,18 +171,29 @@
             </h5>
         </div>
         <div class="card-body">
-            <div class="custom-control custom-switch">
-                <input type="checkbox" class="custom-control-input" id="notify_api_key"
-                       name="notify_api_key" {% if user_profile.notify_api_key %}checked{% endif %}>
-                <label class="custom-control-label" for="notify_api_key">
-                    <strong>Resend API key on repo creation</strong>
+            <div class="custom-control custom-switch mb-3">
+                <input type="checkbox" class="custom-control-input" id="notify_students"
+                       name="notify_students" {% if user_profile.notify_students %}checked{% endif %}
+                       onchange="document.getElementById('notification-api-key-field').style.display = this.checked ? 'block' : 'none';">
+                <label class="custom-control-label" for="notify_students">
+                    <strong>Notify students when repo is created</strong>
                 </label>
             </div>
             <small class="form-text text-muted">
-                When enabled, an email notification containing your GitLab/GitHub API key will be sent
-                to your registered email address every time a student repository is created for one of
-                your courses. This helps you keep track of provisioning activity.
+                When enabled, an email will be sent to each student when their repository is created,
+                telling them the repo URL and which course/assignment it belongs to.
             </small>
+            <div id="notification-api-key-field" style="display: {% if user_profile.notify_students %}block{% else %}none{% endif %};">
+                <div class="form-group mt-3">
+                    <label for="notification_api_key"><strong>Notification Service API Key</strong></label>
+                    <input type="password" class="form-control" id="notification_api_key" name="notification_api_key"
+                           value="{{ user_profile.notification_api_key }}" placeholder="sk-xxxxxxxxxxxxxxxxxxxx">
+                    <small class="form-text text-muted">
+                        API key for your email notification service (e.g. SendGrid, Mailgun, AWS SES).
+                        Required for sending emails to students.
+                    </small>
+                </div>
+            </div>
         </div>
     </div>
 

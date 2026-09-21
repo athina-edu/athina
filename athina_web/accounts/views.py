@@ -54,7 +54,8 @@ def profile(request):
         user_profile.llm_endpoint_url = request.POST.get('llm_endpoint_url', 'https://api.openai.com/v1').strip() or 'https://api.openai.com/v1'
         user_profile.llm_api_key = request.POST.get('llm_api_key', '').strip()
         user_profile.llm_model = request.POST.get('llm_model', 'gpt-4o-mini').strip() or 'gpt-4o-mini'
-        user_profile.notify_api_key = request.POST.get('notify_api_key') == 'on'
+        user_profile.notify_students = request.POST.get('notify_students') == 'on'
+        user_profile.notification_api_key = request.POST.get('notification_api_key', '').strip()
         user_profile.save()
 
         # Refresh .env files for all assignments owned by this user
