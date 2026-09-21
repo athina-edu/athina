@@ -29,7 +29,6 @@ from datetime import timedelta
 import dateutil.parser
 import requests as http_requests
 import threading
-from django.core.mail import send_mail
 from athina_web.athina_db import db_info
 from athina_web.accounts.models import UserProfile
 
@@ -1109,26 +1108,47 @@ def _provision_student_gitlab(course, student, assignment_name=None):
                     "(HTTP %s). The student cannot access their private repo until "
                     "this is fixed." % (repo_name, student.gitlab_username, member_resp.status_code))
 
-    # 4. Optionally notify the student via email
+    # 4. Optionally notify the student via Resend
     try:
         faculty = User.objects.get(pk=course.owner)
         faculty_profile = faculty.profile
-        if faculty_profile.notify_students and faculty_profile.notification_api_key and student.email:
-            send_mail(
-                subject='[Athina] Your repository for %s has been created' % course.name,
-                message=("Hello %s,\n\n"
-                         "A new repository has been created for you in the course '%s'.\n\n"
-                         "Assignment: %s\n"
-                         "Repository URL: %s\n\n"
-                         "You can start working on your assignment and push your code to this repository.\n\n"
-                         "If you have any questions, please contact your instructor.\n\n"
-                         "— Athina" %
-                         (student.email, course.name,
-                          assignment_name or 'Assignment',
-                          student.repository_url)),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'athina@localhost'),
-                recipient_list=[student.email],
-                fail_silently=True,
+        if (faculty_profile.notify_students and faculty_profile.notification_api_key
+                and student.email):
+            from athina_web.accounts.resend_email import send_email_safe
+            subject = "[Athina] Your repository for %s has been created" % course.name
+            text_body = (
+                "Hello,\n\n"
+                "A new repository has been created for you in the course '%s'.\n\n"
+                "Assignment: %s\n"
+                "Repository URL: %s\n\n"
+                "You can start working on your assignment and push your code to this "
+                "repository.\n\n"
+                "If you have any questions, please contact your instructor.\n\n"
+                "— Athina" % (course.name, assignment_name or 'Assignment',
+                              student.repository_url)
+            )
+            html_body = (
+                "<p>Hello,</p>"
+                "<p>A new repository has been created for you in the course "
+                "<strong>%s</strong>.</p>"
+                "<ul>"
+                "<li><strong>Assignment:</strong> %s</li>"
+                "<li><strong>Repository URL:</strong> "
+                "<a href=\"%s\">%s</a></li>"
+                "</ul>"
+                "<p>You can start working on your assignment and push your code to this "
+                "repository.</p>"
+                "<p>If you have any questions, please contact your instructor.</p>"
+                "<p>— Athina</p>" % (course.name, assignment_name or 'Assignment',
+                                      student.repository_url, student.repository_url)
+            )
+            send_email_safe(
+                api_key=faculty_profile.notification_api_key,
+                to=student.email,
+                subject=subject,
+                text=text_body,
+                html=html_body,
+                from_email=faculty_profile.notification_from_email or None,
             )
     except Exception:
         pass

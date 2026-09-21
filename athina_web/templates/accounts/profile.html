@@ -185,14 +185,30 @@
             </small>
             <div id="notification-api-key-field" style="display: {% if user_profile.notify_students %}block{% else %}none{% endif %};">
                 <div class="form-group mt-3">
-                    <label for="notification_api_key"><strong>Notification Service API Key</strong></label>
+                    <label for="notification_api_key"><strong>Resend API Key</strong></label>
                     <input type="password" class="form-control" id="notification_api_key" name="notification_api_key"
-                           value="{{ user_profile.notification_api_key }}" placeholder="sk-xxxxxxxxxxxxxxxxxxxx">
+                           value="{{ user_profile.notification_api_key }}" placeholder="re_xxxxxxxxxxxxxxxxxxxx">
                     <small class="form-text text-muted">
-                        API key for your email notification service (e.g. SendGrid, Mailgun, AWS SES).
+                        Create an API key at
+                        <a href="https://resend.com/api-keys" target="_blank">resend.com/api-keys</a>.
                         Required for sending emails to students.
                     </small>
                 </div>
+                <div class="form-group">
+                    <label for="notification_from_email"><strong>From Address</strong> <span class="text-muted">(optional)</span></label>
+                    <input type="text" class="form-control" id="notification_from_email" name="notification_from_email"
+                           value="{{ user_profile.notification_from_email }}"
+                           placeholder="Athina &lt;noreply@yourdomain.edu&gt;">
+                    <small class="form-text text-muted">
+                        A sender address verified in Resend. Leave blank to use Resend's sandbox sender
+                        (<code>onboarding@resend.dev</code>), which can only deliver to your own account email.
+                    </small>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="testResendBtn"
+                        onclick="testResend()">
+                    <i class="fa fa-paper-plane"></i> Send Test Email
+                </button>
+                <small class="form-text text-muted" id="resendStatus"></small>
             </div>
         </div>
     </div>
@@ -285,6 +301,53 @@ function fetchModels() {
         .catch(function(err) {
             btn.disabled = false;
             btn.innerHTML = '<i class="fa fa-sync"></i> Fetch Models';
+            statusEl.textContent = 'Error: ' + err.message;
+            statusEl.className = 'form-text text-danger';
+        });
+}
+
+function testResend() {
+    var apiKey = document.getElementById('notification_api_key').value.trim();
+    var fromEmail = document.getElementById('notification_from_email').value.trim();
+    var statusEl = document.getElementById('resendStatus');
+    var btn = document.getElementById('testResendBtn');
+
+    if (!apiKey) {
+        statusEl.textContent = 'Enter your Resend API key first.';
+        statusEl.className = 'form-text text-danger';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Sending...';
+    statusEl.textContent = 'Sending test email...';
+    statusEl.className = 'form-text text-muted';
+
+    var body = new FormData();
+    body.append('api_key', apiKey);
+    body.append('from_email', fromEmail);
+    body.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch('{% url "accounts:test_resend" %}', {
+        method: 'POST',
+        body: body,
+        headers: {'X-CSRFToken': '{{ csrf_token }}'}
+    })
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-paper-plane"></i> Send Test Email';
+            if (data.ok) {
+                statusEl.textContent = 'Test email sent to ' + data.to + '. Check your inbox.';
+                statusEl.className = 'form-text text-success';
+            } else {
+                statusEl.textContent = data.error || 'Failed to send test email.';
+                statusEl.className = 'form-text text-danger';
+            }
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-paper-plane"></i> Send Test Email';
             statusEl.textContent = 'Error: ' + err.message;
             statusEl.className = 'form-text text-danger';
         });

@@ -56,6 +56,7 @@ def profile(request):
         user_profile.llm_model = request.POST.get('llm_model', 'gpt-4o-mini').strip() or 'gpt-4o-mini'
         user_profile.notify_students = request.POST.get('notify_students') == 'on'
         user_profile.notification_api_key = request.POST.get('notification_api_key', '').strip()
+        user_profile.notification_from_email = request.POST.get('notification_from_email', '').strip()
         user_profile.save()
 
         # Refresh .env files for all assignments owned by this user
@@ -139,6 +140,44 @@ def llm_models(request):
         return JsonResponse({"models": models, "error": None})
     except Exception as e:
         return JsonResponse({"models": [], "error": str(e)})
+
+
+@login_required
+def test_resend(request):
+    """Send a test email through Resend using the credentials in the POST body.
+
+    Lets faculty verify their Resend API key and from-address before relying on
+    student notifications. The email is sent to the current user's own address.
+    """
+    from athina_web.accounts.resend_email import send_email, ResendError
+
+    api_key = request.POST.get('api_key', '').strip()
+    from_email = request.POST.get('from_email', '').strip()
+    to_email = request.POST.get('to_email', '').strip() or request.user.email
+
+    if not api_key:
+        return JsonResponse({"ok": False, "error": "Enter your Resend API key first."}, status=400)
+    if not to_email:
+        return JsonResponse({"ok": False, "error": "No recipient address available."}, status=400)
+
+    try:
+        message_id = send_email(
+            api_key=api_key,
+            to=to_email,
+            subject="[Athina] Resend test email",
+            text=("This is a test email from Athina.\n\n"
+                  "If you received this, your Resend API key and sender address are "
+                  "configured correctly and student notifications will be delivered."),
+            html=("<p>This is a test email from <strong>Athina</strong>.</p>"
+                  "<p>If you received this, your Resend API key and sender address are "
+                  "configured correctly and student notifications will be delivered.</p>"),
+            from_email=from_email or None,
+        )
+        return JsonResponse({"ok": True, "id": message_id, "to": to_email})
+    except ResendError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
 
 
 @login_required
