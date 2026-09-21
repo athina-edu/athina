@@ -357,16 +357,17 @@ def assign_tas(request):
     if request.method == "POST":
         form = TAAssignForm(faculty_user=request.user, data=request.POST)
         if form.is_valid():
-            selected_ids = form.cleaned_data['tas']
+            # MultipleChoiceField yields strings; normalise to ints so the
+            # membership test below compares like with like.
+            selected_ids = set(int(i) for i in form.cleaned_data['tas'])
             selected_users = User.objects.filter(id__in=selected_ids)
             # Set managed_by on each TA's profile pointing to this faculty user
             for ta in selected_users:
                 ta_profile, _ = UserProfile.objects.get_or_create(user=ta)
                 ta_profile.managed_by.add(request.user)
-            # Remove managed_by for any TAs that were unselected
-            all_ta_profiles = UserProfile.objects.filter(role=UserProfile.ROLE_TA)
-            for ta_profile in all_ta_profiles:
-                if ta_profile.user.id not in selected_ids:
+            # Remove this faculty from any TA that was unselected
+            for ta_profile in UserProfile.objects.filter(role=UserProfile.ROLE_TA):
+                if ta_profile.user_id not in selected_ids:
                     ta_profile.managed_by.remove(request.user)
             messages.success(request, "TA assignments updated.")
             return redirect('accounts:user_list')
