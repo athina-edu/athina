@@ -22,7 +22,7 @@
 </div>
 {% if messages %}
 {% for message in messages %}
-<div class="alert alert-success alert-dismissible fade show" role="alert">
+<div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags %}{{ message.tags }}{% else %}success{% endif %} alert-dismissible fade show" role="alert">
     {{ message }}
     <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
 </div>
@@ -63,9 +63,14 @@
 </td>
 {% endif %}
 <td>
-    {% if u.profile.role == 'ta' and user_profile.role == 'faculty' or user.is_superuser %}
+    {% if u.pk in manageable_ids %}
+    <a class="btn btn-warning btn-sm confirm-reset-password"
+       href="{% url 'accounts:reset_password' user_id=u.pk %}"
+       data-name="{{ u.username }}">Reset Password</a>
     <a class="btn btn-danger btn-sm confirm-delete-user" href="{% url 'accounts:delete_user' user_id=u.pk %}"
        data-name="{{ u.username }}">Delete</a>
+    {% else %}
+    <span class="text-muted">—</span>
     {% endif %}
 </td>
 </tr>
@@ -80,6 +85,13 @@
 $('.confirm-delete-user').click(function(e) {
     var name = $(this).data('name');
     if (!confirm('Delete user "' + name + '"? This cannot be undone.')) {
+        e.preventDefault();
+    }
+});
+$('.confirm-reset-password').click(function(e) {
+    var name = $(this).data('name');
+    if (!confirm('Reset the password for "' + name + '"?\n\n'
+                 + 'Their current password will stop working immediately.')) {
         e.preventDefault();
     }
 });

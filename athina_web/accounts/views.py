@@ -8,6 +8,7 @@ from django.contrib import messages
 from .models import UserProfile
 from .forms import FacultyCreateForm, TACreateForm, TAAssignForm
 import requests as http_requests
+import logging
 import re
 import secrets
 import string
@@ -295,7 +296,15 @@ def user_list(request):
     else:
         users = User.objects.none()
 
-    return render(request, 'accounts/user_list.html', {"users": users, "user_profile": user_profile})
+    # Tell the template who is reset/delete-able rather than re-deriving the
+    # permission rules in template logic (easy to get wrong with `and`/`or`).
+    manageable_ids = {u.pk for u in users if _can_manage_user(request.user, user_profile, u)}
+
+    return render(request, 'accounts/user_list.html', {
+        "users": users,
+        "user_profile": user_profile,
+        "manageable_ids": manageable_ids,
+    })
 
 
 @login_required
@@ -385,21 +394,77 @@ def delete_user(request, user_id):
     """Delete a user (admin can delete anyone, faculty can delete their TAs)."""
     user_profile = _get_user_profile_or_403(request.user)
     target = get_object_or_404(User, pk=user_id)
-    target_profile, _ = UserProfile.objects.get_or_create(user=target)
 
-    # Permission check
-    if request.user.is_superuser or user_profile.role == UserProfile.ROLE_ADMIN:
-        pass  # admin can delete anyone
-    elif (user_profile.role == UserProfile.ROLE_FACULTY and
-          target_profile.role == UserProfile.ROLE_TA and
-          request.user in target_profile.managed_by.all()):
-        pass  # faculty can delete their TAs
-    else:
+    if not _can_manage_user(request.user, user_profile, target):
         raise Http404
 
+    username = target.username
     target.delete()
-    messages.success(request, "User %s deleted." % target.username)
+    messages.success(request, "User %s deleted." % username)
     return redirect('accounts:user_list')
+
+
+@login_required
+def reset_password(request, user_id):
+    """Reset another user's password.
+
+    Admins may reset anyone; faculty may reset TAs assigned to them. A new
+    random password is generated and shown once so it can be passed on.
+    """
+    user_profile = _get_user_profile_or_403(request.user)
+    target = get_object_or_404(User, pk=user_id)
+
+    # An admin resetting their own password via this page would be confusing;
+    # they should use the profile page, which also verifies the old password.
+    if target.pk == request.user.pk:
+        messages.error(request, "Use your profile page to change your own password.")
+        return redirect('accounts:user_list')
+
+    if not _can_manage_user(request.user, user_profile, target):
+        raise Http404
+
+    if request.method != "POST":
+        # Require a POST so the reset can't be triggered by a stray GET/link.
+        return render(request, 'accounts/password_reset_confirm.html', {
+            "target": target,
+            "target_profile": _profile_for(target),
+        })
+
+    password = _generate_password()
+    target.set_password(password)
+    target.save(update_fields=['password'])
+
+    # A password reset is a security event — leave an audit trail.
+    logging.getLogger('athina_web').info(
+        "Password reset for user '%s' (id=%s) by '%s' (id=%s)",
+        target.username, target.pk, request.user.username, request.user.pk)
+
+    return render(request, 'accounts/password_reset_done.html', {
+        "target": target,
+        "target_profile": _profile_for(target),
+        "password": password,
+    })
+
+
+def _profile_for(user):
+    """Return the user's profile, creating a default one if absent."""
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    return profile
+
+
+def _can_manage_user(actor, actor_profile, target):
+    """Can `actor` manage (reset password / delete) `target`?
+
+    Admins and superusers may manage anyone. Faculty may manage only TAs
+    assigned to them. Everything else is denied.
+    """
+    if actor.is_superuser or actor_profile.role == UserProfile.ROLE_ADMIN:
+        return True
+    if actor_profile.role == UserProfile.ROLE_FACULTY:
+        target_profile = _profile_for(target)
+        return (target_profile.role == UserProfile.ROLE_TA and
+                actor in target_profile.managed_by.all())
+    return False
 
 
 def _get_user_profile_or_403(user):
