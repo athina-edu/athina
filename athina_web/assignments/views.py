@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.http import Http404
 from django.http import HttpResponse
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from .models import Assignment, Course, Student
 from .forms import AssignmentForm, CourseForm, StudentForm, StudentEditForm, StudentBulkForm
@@ -774,7 +775,11 @@ def student_list(request, course_id):
 
 @login_required
 def provision_students(request, course_id):
-    """Provision GitLab repos and sync to grading DB for all students missing a repo."""
+    """Provision GitLab repos and sync to grading DB for all students missing a repo.
+
+    Students who already have a repo are not re-provisioned, but they are still
+    emailed if they have never been notified (e.g. the repo was created before
+    notifications were enabled)."""
     course = get_object_or_404(Course, pk=course_id)
     if not _user_can_access_course(request.user, course):
         raise Http404
@@ -785,14 +790,25 @@ def provision_students(request, course_id):
 
     created = 0
     synced = 0
+    notified = 0
     errors = []
     for student in Student.objects.filter(course=course):
+        was_notified = student.notified_at
         if not student.repository_url:
             result = _provision_student_gitlab(course, student, assignment_name=first_assignment.name)
             if result is True:
                 created += 1
+                if student.notified_at and not was_notified:
+                    notified += 1
             elif result:
                 # result is an error string — surface it to the faculty
+                errors.append("%s: %s" % (student.email, result))
+        else:
+            # Repo already exists — still notify the student if we never did.
+            result = _notify_student_repo(course, student, assignment_name=first_assignment.name)
+            if result is True:
+                notified += 1
+            elif result:
                 errors.append("%s: %s" % (student.email, result))
         # Always sync to grading DB (handles students added before any assignment)
         _sync_student_to_grading_db(student)
@@ -804,6 +820,43 @@ def provision_students(request, course_id):
         messages.success(request, "Provisioned %d new repo(s) and synced %d student(s) to the grading database." % (created, synced))
     elif not errors:
         messages.info(request, "All students already have repos. Synced %d student(s) to the grading database." % synced)
+    if notified:
+        messages.success(request, "Sent %d notification email(s) to students." % notified)
+
+    return redirect('assignments:student_list', course_id=course.pk)
+
+
+@login_required
+def notify_students(request, course_id):
+    """Re-send the repository notification email to every student in the course."""
+    course = get_object_or_404(Course, pk=course_id)
+    if not _user_can_access_course(request.user, course):
+        raise Http404
+
+    first_assignment = course.assignments.first()
+    assignment_name = first_assignment.name if first_assignment else course.name
+
+    sent = 0
+    skipped = 0
+    errors = []
+    for student in Student.objects.filter(course=course):
+        if not student.repository_url:
+            skipped += 1
+            continue
+        result = _notify_student_repo(course, student, assignment_name=assignment_name, force=True)
+        if result is True:
+            sent += 1
+        elif result:
+            errors.append("%s: %s" % (student.email, result))
+        else:
+            skipped += 1
+
+    if errors:
+        messages.error(request, "Some notifications failed:<br>" + "<br>".join(errors))
+    if sent:
+        messages.success(request, "Sent %d notification email(s)." % sent)
+    if skipped and not sent and not errors:
+        messages.info(request, "No students were notified (%d skipped — no repo or notifications disabled)." % skipped)
 
     return redirect('assignments:student_list', course_id=course.pk)
 
@@ -1024,6 +1077,76 @@ def _get_gitlab_config(course):
     return None, None
 
 
+def _notify_student_repo(course, student, assignment_name=None, force=False):
+    """Email a student that their repository is ready.
+
+    Returns True when a message was sent, False when notifications are disabled
+    or the student has no address, or an error string when delivery failed.
+
+    By default a student who has already been notified (``notified_at`` set) is
+    skipped, so repeated "Provision Missing Repos" clicks do not spam them.
+    Pass ``force=True`` to re-send regardless.
+    """
+    if not student.email:
+        return False
+    if student.notified_at and not force:
+        return False
+
+    try:
+        faculty = User.objects.get(pk=course.owner)
+        faculty_profile = faculty.profile
+    except (User.DoesNotExist, UserProfile.DoesNotExist):
+        return False
+
+    if not (faculty_profile.notify_students and faculty_profile.notification_api_key):
+        return False
+
+    from athina_web.accounts.resend_email import send_email_safe
+
+    subject = "[Athina] Your repository for %s has been created" % course.name
+    text_body = (
+        "Hello,\n\n"
+        "A new repository has been created for you in the course '%s'.\n\n"
+        "Assignment: %s\n"
+        "Repository URL: %s\n\n"
+        "You can start working on your assignment and push your code to this "
+        "repository.\n\n"
+        "If you have any questions, please contact your instructor.\n\n"
+        "— Athina" % (course.name, assignment_name or 'Assignment',
+                      student.repository_url)
+    )
+    html_body = (
+        "<p>Hello,</p>"
+        "<p>A new repository has been created for you in the course "
+        "<strong>%s</strong>.</p>"
+        "<ul>"
+        "<li><strong>Assignment:</strong> %s</li>"
+        "<li><strong>Repository URL:</strong> "
+        "<a href=\"%s\">%s</a></li>"
+        "</ul>"
+        "<p>You can start working on your assignment and push your code to this "
+        "repository.</p>"
+        "<p>If you have any questions, please contact your instructor.</p>"
+        "<p>— Athina</p>" % (course.name, assignment_name or 'Assignment',
+                              student.repository_url, student.repository_url)
+    )
+
+    message_id = send_email_safe(
+        api_key=faculty_profile.notification_api_key,
+        to=student.email,
+        subject=subject,
+        text=text_body,
+        html=html_body,
+        from_email=faculty_profile.notification_from_email or None,
+    )
+    if message_id is None:
+        return "Could not send notification email to %s (check the Resend API key and sender address)." % student.email
+
+    student.notified_at = timezone.now()
+    student.save(update_fields=['notified_at'])
+    return True
+
+
 def _provision_student_gitlab(course, student, assignment_name=None):
     """
     Create GitLab group + repo for a student (skips if they already exist).
@@ -1138,48 +1261,6 @@ def _provision_student_gitlab(course, student, assignment_name=None):
                     "this is fixed." % (repo_name, student.gitlab_username, member_resp.status_code))
 
     # 4. Optionally notify the student via Resend
-    try:
-        faculty = User.objects.get(pk=course.owner)
-        faculty_profile = faculty.profile
-        if (faculty_profile.notify_students and faculty_profile.notification_api_key
-                and student.email):
-            from athina_web.accounts.resend_email import send_email_safe
-            subject = "[Athina] Your repository for %s has been created" % course.name
-            text_body = (
-                "Hello,\n\n"
-                "A new repository has been created for you in the course '%s'.\n\n"
-                "Assignment: %s\n"
-                "Repository URL: %s\n\n"
-                "You can start working on your assignment and push your code to this "
-                "repository.\n\n"
-                "If you have any questions, please contact your instructor.\n\n"
-                "— Athina" % (course.name, assignment_name or 'Assignment',
-                              student.repository_url)
-            )
-            html_body = (
-                "<p>Hello,</p>"
-                "<p>A new repository has been created for you in the course "
-                "<strong>%s</strong>.</p>"
-                "<ul>"
-                "<li><strong>Assignment:</strong> %s</li>"
-                "<li><strong>Repository URL:</strong> "
-                "<a href=\"%s\">%s</a></li>"
-                "</ul>"
-                "<p>You can start working on your assignment and push your code to this "
-                "repository.</p>"
-                "<p>If you have any questions, please contact your instructor.</p>"
-                "<p>— Athina</p>" % (course.name, assignment_name or 'Assignment',
-                                      student.repository_url, student.repository_url)
-            )
-            send_email_safe(
-                api_key=faculty_profile.notification_api_key,
-                to=student.email,
-                subject=subject,
-                text=text_body,
-                html=html_body,
-                from_email=faculty_profile.notification_from_email or None,
-            )
-    except Exception:
-        pass
+    _notify_student_repo(course, student, assignment_name=assignment_name)
 
     return True

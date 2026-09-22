@@ -15,6 +15,7 @@ urlpatterns = [
     path('courses/<int:course_id>/students/add/', views.student_add, name='student_add'),
     path('courses/<int:course_id>/students/import/', views.student_bulk_import, name='student_bulk_import'),
     path('courses/<int:course_id>/students/provision/', views.provision_students, name='provision_students'),
+    path('courses/<int:course_id>/students/notify/', views.notify_students, name='notify_students'),
     path('courses/<int:course_id>/students/import/progress/', views.import_progress, name='import_progress'),
     path('courses/<int:course_id>/students/import/progress/api/', views.import_progress_api, name='import_progress_api'),
     path('courses/<int:course_id>/students/<int:student_id>/edit/', views.student_edit, name='student_edit'),

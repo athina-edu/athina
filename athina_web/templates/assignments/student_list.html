@@ -23,19 +23,21 @@
 <a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Bulk Import</a>
 {% if has_assignments %}
 <a class="btn btn-warning" href="{% url 'assignments:provision_students' course_id=course.pk %}">Provision Missing Repos</a>
+<a class="btn btn-outline-warning" href="{% url 'assignments:notify_students' course_id=course.pk %}">Re-send Notifications</a>
 {% endif %}
 <a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
 </div>
 {% if students %}
 <div class="table-responsive">
 <table class="table table-striped">
-<tr><th>Email</th><th>Username</th><th>GitLab User</th><th>Repository URL</th><th>Actions</th></tr>
+<tr><th>Email</th><th>Username</th><th>GitLab User</th><th>Repository URL</th><th>Notified</th><th>Actions</th></tr>
 {% for student in students %}
 <tr>
 <td>{{ student.email }}</td>
 <td>{{ student.username }}</td>
 <td>{{ student.gitlab_username|default:"-" }}</td>
 <td>{{ student.repository_url|default:"-" }}</td>
+<td>{% if student.notified_at %}<span class="badge badge-success" title="{{ student.notified_at }}">Yes</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}</td>
 <td>
 <a class="btn btn-info btn-sm" href="{% url 'assignments:student_edit' course_id=course.pk student_id=student.pk %}">Edit</a>
 <a class="btn btn-danger btn-sm confirm-delete-student" href="{% url 'assignments:student_delete' course_id=course.pk student_id=student.pk %}"

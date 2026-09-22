@@ -31,6 +31,9 @@ class Student(models.Model):
     gitlab_username = models.CharField(max_length=255, blank=True, default="")
     repository_url = models.CharField(max_length=500, blank=True, default="")
     date_added = models.DateTimeField('Date Added', default=timezone.now, editable=False)
+    # When the student was last emailed about their repository. NULL means they
+    # have never been notified, so the provisioning flow will (re)send.
+    notified_at = models.DateTimeField('Notified At', null=True, blank=True, editable=False)
 
     class Meta:
         unique_together = ('course', 'email')

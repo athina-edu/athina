@@ -154,3 +154,38 @@ ACCOUNT_ACTIVATION_DAYS = 7
 # FIXME: at some point this needs to become a really email backend (currently it is not needed)
 EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
 
+# Logging — surface application warnings/errors (e.g. Resend delivery failures)
+# to stdout so they appear in `docker compose logs`.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.environ.get('ATHINA_LOG_LEVEL', 'INFO'),
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.environ.get('ATHINA_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'athina_web': {
+            'handlers': ['console'],
+            'level': os.environ.get('ATHINA_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}
+
