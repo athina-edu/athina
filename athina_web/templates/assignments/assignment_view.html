@@ -23,6 +23,16 @@
     {% else %}
     <a class="btn btn-secondary" href="{% url 'assignments:assignments' %}">Back to Courses</a>
     {% endif %}
+    {# Keep every assignment action reachable from here, so landing on this page
+       is not a dead end. #}
+    <a class="btn btn-info" href="{% url 'filemanager:index' inner_path=assignment.name %}">View Dir</a>
+    <a class="btn btn-info" href="{% url 'assignments:assignment_log' assignment_id=assignment.pk %}">View Log</a>
+    {% if can_manage %}
+    <a class="btn btn-warning" href="{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}">Edit Assignment</a>
+    {% endif %}
+    {% if assignment.course %}
+    <a class="btn btn-info" href="{% url 'assignments:student_list' course_id=assignment.course.pk %}">Students</a>
+    {% endif %}
 </div>
 
 

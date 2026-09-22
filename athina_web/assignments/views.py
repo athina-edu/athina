@@ -565,7 +565,10 @@ def assignment_view(request, assignment_id):
                                                                 # owner/superuser-only; hide it otherwise so TAs
                                                                 # are not shown a button that 404s.
                                                                 "can_force": (assignment.owner == request.user.id
-                                                                              or request.user.is_superuser)})
+                                                                              or request.user.is_superuser),
+                                                                # Same actions as the home page so this page is
+                                                                # self-sufficient rather than a dead end.
+                                                                "can_manage": _user_can_manage_courses(request.user)})
 
 
 @login_required
