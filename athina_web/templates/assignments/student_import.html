@@ -14,7 +14,9 @@
 {% block content %}
 <div class="mt-2 form-control">
 <h4>Import Students to {{ course.name }}</h4>
-<p>Paste email addresses below, one per line. Usernames are derived from the part before @.
+<p>Paste email addresses below, one per line. Optionally append each student's GitLab
+username after a comma (e.g. <code>alice@uni.edu,alice</code>) — when given, the GitLab
+username is used as the student's username; otherwise the part before @ is used.
 If the course uses GitLab (no Canvas API), repos will be auto-created for each student.</p>
 <form method="post">
     {% csrf_token %}

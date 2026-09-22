@@ -18,7 +18,7 @@
 <h3>{{ course.name }}</h3>
 <hr>
 <div class="mb-3">
-<a class="btn btn-success" href="{% url 'assignments:create_assignment' %}">New Assignment</a>
+<a class="btn btn-success" href="{% url 'assignments:create_assignment' %}?course={{ course.pk }}">New Assignment</a>
 <a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import Students</a>
 <a class="btn btn-info" href="{% url 'assignments:student_list' course_id=course.pk %}">Manage Students</a>
 <a class="btn btn-warning" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>

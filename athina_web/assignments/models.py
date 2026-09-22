@@ -40,8 +40,12 @@ class Student(models.Model):
         return "%s (%s)" % (self.email, self.course.name)
 
     def save(self, *args, **kwargs):
-        if not self.username and self.email:
-            self.username = self.email.split('@')[0]
+        if not self.username:
+            # Prefer the GitLab username when known, otherwise derive from the email prefix.
+            if self.gitlab_username:
+                self.username = self.gitlab_username
+            elif self.email:
+                self.username = self.email.split('@')[0]
         super(Student, self).save(*args, **kwargs)
 
 

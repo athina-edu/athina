@@ -333,6 +333,16 @@ def assignment_create(request, **kwargs):
             form = AssignmentForm(instance=assignment, user=request.user)
         else:
             form = AssignmentForm(user=request.user)
+            # Prefill the course when arriving from a course page
+            # (e.g. "New Assignment" button on the course detail page).
+            course_id = request.GET.get('course')
+            if course_id:
+                try:
+                    course = Course.objects.get(pk=int(course_id))
+                except (ValueError, TypeError, Course.DoesNotExist):
+                    course = None
+                if course and _user_can_access_course(request.user, course):
+                    form.fields['course'].initial = course.pk
     return render(request, 'assignments/assignment_create.html', {
         'form': form,
         'active_providers': active_providers,
@@ -823,18 +833,22 @@ def student_add(request, course_id):
 _import_progress = {}
 
 
-def _run_bulk_import(course_id, emails, assignment_name, has_assignments):
-    """Background thread: imports students and provisions GitLab repos."""
+def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
+    """Background thread: imports students and provisions GitLab repos.
+
+    `entries` is a list of (email, gitlab_username) tuples. When a GitLab
+    username is supplied it becomes the student's username; otherwise the
+    email prefix is used."""
     global _import_progress
     import logging
     logger = logging.getLogger('django')
     try:
         course = Course.objects.get(pk=course_id)
         created = 0
-        total = len(emails)
+        total = len(entries)
 
-        for i, email in enumerate(emails):
-            username = email.split('@')[0]
+        for i, (email, gitlab_username) in enumerate(entries):
+            username = gitlab_username or email.split('@')[0]
             _import_progress[course_id] = {
                 'total': total, 'current': i + 1, 'created': created,
                 'status': 'running', 'current_student': email,
@@ -842,7 +856,7 @@ def _run_bulk_import(course_id, emails, assignment_name, has_assignments):
             try:
                 student, was_created = Student.objects.get_or_create(
                     course=course, email=email,
-                    defaults={'username': username},
+                    defaults={'username': username, 'gitlab_username': gitlab_username},
                 )
                 if was_created:
                     # Sync to grading DB but do NOT auto-provision repos.
@@ -851,6 +865,11 @@ def _run_bulk_import(course_id, emails, assignment_name, has_assignments):
                     created += 1
                     logger.info("Imported %s" % email)
                 else:
+                    # Backfill a GitLab username on an existing record if we now have one
+                    if gitlab_username and not student.gitlab_username:
+                        student.gitlab_username = gitlab_username
+                        student.save()
+                        _sync_student_to_grading_db(student)
                     logger.info("Skipped %s (already exists)" % email)
             except Exception as e:
                 logger.error("Failed to import %s: %s" % (email, e))
@@ -877,9 +896,19 @@ def student_bulk_import(request, course_id):
         form = StudentBulkForm(request.POST)
         if form.is_valid():
             emails_raw = form.cleaned_data['emails']
-            emails = [line.strip() for line in emails_raw.strip().splitlines()
-                      if line.strip() and '@' in line.strip()]
-            total = len(emails)
+            # Each line is "email" or "email,gitlab_username" (comma/tab/space separated).
+            entries = []
+            for line in emails_raw.strip().splitlines():
+                line = line.strip()
+                if not line or '@' not in line:
+                    continue
+                parts = re.split(r'[,\t]+|\s+', line, maxsplit=1)
+                email = parts[0].strip()
+                gitlab_username = parts[1].strip() if len(parts) > 1 else ''
+                if '@' not in email:
+                    continue
+                entries.append((email, gitlab_username))
+            total = len(entries)
             if total == 0:
                 return render(request, 'assignments/student_import_result.html', {
                     "course": course, "created": 0, "total": 0,
@@ -899,7 +928,7 @@ def student_bulk_import(request, course_id):
             # Run import in background thread so the progress page can poll
             thread = threading.Thread(
                 target=_run_bulk_import,
-                args=(course.pk, emails, assignment_name, has_assignments),
+                args=(course.pk, entries, assignment_name, has_assignments),
                 daemon=True,
             )
             thread.start()
@@ -1060,7 +1089,9 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     # 2. Check if repo already exists, create if not
     prefix = re.sub(r'[^a-zA-Z0-9_-]', '-', assignment_name.lower()).strip('-') if assignment_name else 'assignment'
     prefix = re.sub(r'-+', '-', prefix)
-    repo_name = "%s-%s" % (prefix, student.username)
+    # Prefer the explicit GitLab username for repo naming; fall back to the derived username.
+    repo_owner_name = student.gitlab_username or student.username
+    repo_name = "%s-%s" % (prefix, repo_owner_name)
 
     # Check if the project already exists in this group
     check_resp = http_requests.get(
@@ -1071,7 +1102,6 @@ def _provision_student_gitlab(course, student, assignment_name=None):
         # Repo already exists — just record the URL
         project = check_resp.json()
         student.repository_url = project.get('http_url_to_repo', '')
-        student.gitlab_username = student.username
         student.save()
         return True
 
@@ -1089,7 +1119,6 @@ def _provision_student_gitlab(course, student, assignment_name=None):
 
     project = resp.json()
     student.repository_url = project.get('http_url_to_repo', '')
-    student.gitlab_username = student.username
     student.save()
 
     # 3. Add student as developer (skip if already a member)
