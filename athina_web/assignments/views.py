@@ -941,9 +941,9 @@ _import_progress = {}
 def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
     """Background thread: imports students and provisions GitLab repos.
 
-    `entries` is a list of (email, gitlab_username) tuples. When a GitLab
-    username is supplied it becomes the student's username; otherwise the
-    email prefix is used."""
+    `entries` is a list of (email, gitlab_username, username) tuples. The
+    username comes from the third field when given, otherwise the email prefix;
+    gitlab_username is the GitLab account used for repo access."""
     global _import_progress
     import logging
     logger = logging.getLogger('django')
@@ -952,8 +952,7 @@ def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
         created = 0
         total = len(entries)
 
-        for i, (email, gitlab_username) in enumerate(entries):
-            username = gitlab_username or email.split('@')[0]
+        for i, (email, gitlab_username, username) in enumerate(entries):
             _import_progress[course_id] = {
                 'total': total, 'current': i + 1, 'created': created,
                 'status': 'running', 'current_student': email,
@@ -1001,18 +1000,21 @@ def student_bulk_import(request, course_id):
         form = StudentBulkForm(request.POST)
         if form.is_valid():
             emails_raw = form.cleaned_data['emails']
-            # Each line is "email" or "email,gitlab_username" (comma/tab/space separated).
+            # Each line is "email", "email,gitlab_username" or
+            # "email,gitlab_username,username" (comma/tab/space separated).
+            # The username defaults to the part of the email before @.
             entries = []
             for line in emails_raw.strip().splitlines():
                 line = line.strip()
                 if not line or '@' not in line:
                     continue
-                parts = re.split(r'[,\t]+|\s+', line, maxsplit=1)
-                email = parts[0].strip()
-                gitlab_username = parts[1].strip() if len(parts) > 1 else ''
+                parts = [p.strip() for p in re.split(r'[,\t]+|\s+', line)]
+                email = parts[0]
                 if '@' not in email:
                     continue
-                entries.append((email, gitlab_username))
+                gitlab_username = parts[1] if len(parts) > 1 else ''
+                username = parts[2] if len(parts) > 2 and parts[2] else email.split('@')[0]
+                entries.append((email, gitlab_username, username))
             total = len(entries)
             if total == 0:
                 return render(request, 'assignments/student_import_result.html', {

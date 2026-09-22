@@ -36,8 +36,12 @@ class CourseForm(forms.ModelForm):
 class StudentForm(forms.ModelForm):
     class Meta:
         model = Student
-        fields = ('email', 'gitlab_username')
+        fields = ('email', 'username', 'gitlab_username')
         widgets = {
+            'username': forms.TextInput(attrs={
+                'placeholder': 'e.g. alice',
+                'class': 'form-control',
+            }),
             'gitlab_username': forms.TextInput(attrs={
                 'placeholder': 'e.g. alice',
                 'class': 'form-control',
@@ -45,8 +49,10 @@ class StudentForm(forms.ModelForm):
         }
         help_texts = {
             'email': 'Student email address.',
-            'gitlab_username': 'Optional. The student\'s GitLab username. '
-                               'Used as the username (and for repo naming) when set.',
+            'username': 'Defaults to the part of the email before @. Used as the '
+                        'student\'s username and for repository naming.',
+            'gitlab_username': 'Optional. The student\'s GitLab account name, used '
+                               'to grant them access to their private repository.',
         }
 
 
@@ -54,8 +60,12 @@ class StudentEditForm(forms.ModelForm):
     """Extended form for editing an existing student — includes GitLab username and repository URL."""
     class Meta:
         model = Student
-        fields = ('email', 'gitlab_username', 'repository_url')
+        fields = ('email', 'username', 'gitlab_username', 'repository_url')
         widgets = {
+            'username': forms.TextInput(attrs={
+                'placeholder': 'e.g. alice',
+                'class': 'form-control',
+            }),
             'gitlab_username': forms.TextInput(attrs={
                 'placeholder': 'e.g. alice',
                 'class': 'form-control',
@@ -66,6 +76,7 @@ class StudentEditForm(forms.ModelForm):
             }),
         }
         help_texts = {
+            'username': 'Used as the student\'s username and for repository naming.',
             'gitlab_username': 'The student\'s GitLab username. Required before provisioning a repo.',
             'repository_url': 'Optional. Set the student\'s Git repository URL for grading.',
         }
@@ -76,11 +87,11 @@ class StudentBulkForm(forms.Form):
     emails = forms.CharField(
         widget=forms.Textarea(attrs={
             'rows': 10,
-            'placeholder': 'one@email.com\nanother@email.com,gitlabuser\nthird@email.com\tgitlabuser2',
+            'placeholder': 'one@email.com\nanother@email.com,gitlabuser\nthird@email.com,gitlabuser2,customuser',
         }),
         label='Email addresses (one per line)',
-        help_text='Paste student email addresses, one per line. Optionally append the '
-                  'student\'s GitLab username after a comma, tab, or space '
-                  '(e.g. "alice@uni.edu,alice"). When a GitLab username is given it is '
-                  'used as the username; otherwise the part before @ is used.',
+        help_text='Paste student email addresses, one per line. The part before @ is used '
+                  'as the username. Optionally append the student\'s GitLab username after '
+                  'a comma (e.g. "alice@uni.edu,alicegit"), and a third value to override '
+                  'the username (e.g. "alice@uni.edu,alicegit,asmith22").',
     )

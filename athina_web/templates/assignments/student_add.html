@@ -21,4 +21,19 @@
     <input type="button" class="btn btn-secondary" value="Back" onclick="window.history.back();">
 </form>
 </div>
+<script>
+// Prefill the username with the part of the email before @, until the faculty
+// edits the username themselves.
+(function () {
+    var email = document.getElementById('id_email');
+    var username = document.getElementById('id_username');
+    if (!email || !username) { return; }
+    var edited = false;
+    username.addEventListener('input', function () { edited = true; });
+    email.addEventListener('input', function () {
+        if (edited) { return; }
+        username.value = email.value.split('@')[0];
+    });
+})();
+</script>
 {% endblock %}
