@@ -16,6 +16,7 @@ from .forms import AssignmentForm, CourseForm, StudentForm, StudentEditForm, Stu
 from athina_web.accounts.models import UserProfile
 import os
 import shutil
+import logging
 from rest_framework import generics
 from .serializers import AssignmentListSerializer
 import git
@@ -1144,6 +1145,10 @@ def _notify_student_repo(course, student, assignment_name=None, force=False):
 
     student.notified_at = timezone.now()
     student.save(update_fields=['notified_at'])
+    # Audit trail: every real send is logged so duplicate deliveries can be traced.
+    logging.getLogger('athina_web').info(
+        "Sent repo notification to %s for course '%s' (resend_id=%s)",
+        student.email, course.name, message_id)
     return True
 
 
