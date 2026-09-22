@@ -18,12 +18,14 @@
 <h3>{{ course.name }}</h3>
 <hr>
 <div class="mb-3">
-<a class="btn btn-success" href="{% url 'assignments:create_assignment' %}?course={{ course.pk }}">New Assignment</a>
+{% if can_manage %}<a class="btn btn-success" href="{% url 'assignments:create_assignment' %}?course={{ course.pk }}">New Assignment</a>{% endif %}
 <a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import Students</a>
 <a class="btn btn-info" href="{% url 'assignments:student_list' course_id=course.pk %}">Manage Students</a>
+{% if can_manage %}
 <a class="btn btn-warning" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>
 <a class="btn btn-danger confirm-delete-course" href="{% url 'assignments:course_delete' course_id=course.pk %}"
    data-name="{{ course.name }}">Delete Course</a>
+{% endif %}
 <a class="btn btn-secondary" href="{% url 'assignments:assignments' %}">Back</a>
 </div>
 
@@ -38,7 +40,7 @@
 <td>{{ assignment.active|yesno:"Active,Inactive" }}</td>
 <td>
 <a class="btn btn-info btn-sm" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Users</a>
-<a class="btn btn-warning btn-sm" href="{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}">Edit</a>
+{% if can_manage %}<a class="btn btn-warning btn-sm" href="{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}">Edit</a>{% endif %}
 </td>
 </tr>
 {% endfor %}

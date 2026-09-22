@@ -14,12 +14,14 @@
 
 {% block content %}
 <div class="mt-2">
+{% if can_manage %}
 <nav class="navbar navbar-expand-lg navbar-light bg-light justify-content-end">
 <input type="button" class="btn btn-success mr-2" value="New Course"
        onclick="location.href = '{% url 'assignments:course_create' %}';">
 <input type="button" class="btn btn-info" value="New Assignment"
                    onclick="location.href = '{% url 'assignments:create_assignment' %}';">
 </nav>
+{% endif %}
 
 {% for course in courses %}
 <div class="card mb-3">
@@ -32,7 +34,7 @@
             <a class="btn btn-sm btn-outline-primary" href="{% url 'assignments:student_list' course_id=course.pk %}">
                 <i class="fa fa-users"></i> Students ({{ course.students.count }})
             </a>
-            <a class="btn btn-sm btn-outline-secondary" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>
+            {% if can_manage %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>{% endif %}
         </div>
     </div>
     <div class="card-body p-0">
@@ -54,17 +56,19 @@
                     onclick="location.href = '{% url 'filemanager:index' inner_path=assignment.name %}';">
                     <input type="button" class="btn btn-info btn-sm" value="View Log"
                     onclick="location.href = '{% url 'assignments:assignment_log' assignment_id=assignment.pk %}';">
+                    {% if can_manage %}
                     <input type="button" class="btn btn-warning btn-sm" value="Edit"
                     onclick="location.href = '{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}';">
                     <a class="confirm-delete{{ assignment.id }} btn btn-danger btn-sm"
                        href="{% url 'assignments:assignment_delete' assignment_id=assignment.pk %}">Delete</a>
+                    {% endif %}
                 </td>
                 </tr>
             {% endfor %}
         </table>
     </div>
     {% else %}
-    <p class="text-muted mb-0 p-3">No assignments yet. <a href="{% url 'assignments:create_assignment' %}">Create one</a>.</p>
+    <p class="text-muted mb-0 p-3">No assignments yet.{% if can_manage %} <a href="{% url 'assignments:create_assignment' %}">Create one</a>.{% endif %}</p>
     {% endif %}
     </div>
 </div>
@@ -91,10 +95,12 @@
                     onclick="location.href = '{% url 'filemanager:index' inner_path=assignment.name %}';">
                     <input type="button" class="btn btn-info btn-sm" value="View Log"
                     onclick="location.href = '{% url 'assignments:assignment_log' assignment_id=assignment.pk %}';">
+                    {% if can_manage %}
                     <input type="button" class="btn btn-warning btn-sm" value="Edit"
                     onclick="location.href = '{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}';">
                     <a class="confirm-delete{{ assignment.id }} btn btn-danger btn-sm"
                        href="{% url 'assignments:assignment_delete' assignment_id=assignment.pk %}">Delete</a>
+                    {% endif %}
                 </td>
                 </tr>
             {% endfor %}
@@ -105,7 +111,7 @@
 {% endif %}
 
 {% if not courses and not unassigned %}
-There are no courses or assignments yet. Try <a href="{% url 'assignments:course_create' %}">creating a course</a>.
+There are no courses or assignments yet.{% if can_manage %} Try <a href="{% url 'assignments:course_create' %}">creating a course</a>.{% endif %}
 {% endif %}
 </div>
 {% endblock %}

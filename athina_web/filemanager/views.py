@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from django.conf import settings
+from django.http import Http404
 import os
 from django.contrib.auth.decorators import login_required
 from django.utils.text import get_valid_filename
@@ -13,7 +14,7 @@ import git
 @login_required
 def index(request, **kwargs):
     inner_path = kwargs.get('inner_path', None)
-    inner_path, inner_path_hyphened, full_path = utils.inner_path_process(inner_path, request.user.id)
+    inner_path, inner_path_hyphened, full_path = utils.inner_path_process(inner_path, utils.resolve_owner_id(request))
     results = []
 
     # Refresh git repo — always reset to remote (local changes are discarded)
@@ -23,6 +24,9 @@ def index(request, **kwargs):
         repo.git.reset("--hard", "origin/master")
     except (git.exc.InvalidGitRepositoryError, git.exc.GitCommandError, git.exc.NoSuchPathError):
         pass
+
+    if not os.path.isdir(full_path):
+        raise Http404("Directory not found for this account.")
 
     files = os.listdir(full_path)
     for file in files:
@@ -49,12 +53,14 @@ def index(request, **kwargs):
 @login_required
 def upload(request, **kwargs):
     inner_path = kwargs.get('inner_path', None)
-    inner_path, inner_path_hyphened, full_path = utils.inner_path_process(inner_path, request.user.id)
+    inner_path, inner_path_hyphened, full_path = utils.inner_path_process(inner_path, utils.resolve_owner_id(request))
     form = FileFieldForm(request.POST, request.FILES)
     if request.method != "POST":
         return render(request, 'filemanager/upload.html', {"form": form, "inner_path_hyphened": inner_path_hyphened,
                                                            "inner_path": inner_path})
     else:
+        if not os.path.isdir(full_path):
+            raise Http404("Directory not found for this account.")
         files = request.FILES.getlist('file_field')
         # TODO: Prompt for an overwrite question, by default for now we overwrite
         if form.is_valid():
@@ -77,7 +83,7 @@ def upload(request, **kwargs):
 @login_required
 def new_folder(request, **kwargs):
     inner_path = kwargs.get('inner_path', None)
-    inner_path, inner_path_hyphened, user_dir = utils.inner_path_process(inner_path, request.user.id)
+    inner_path, inner_path_hyphened, user_dir = utils.inner_path_process(inner_path, utils.resolve_owner_id(request))
 
     return 1
 
@@ -85,7 +91,9 @@ def new_folder(request, **kwargs):
 @login_required
 def view_file(request, **kwargs):
     inner_path = kwargs.get('inner_path', None)
-    inner_path, inner_path_hyphened, full_path = utils.inner_path_process(inner_path, request.user.id)
+    inner_path, inner_path_hyphened, full_path = utils.inner_path_process(inner_path, utils.resolve_owner_id(request))
+    if not os.path.isfile(full_path):
+        raise Http404("File not found.")
     with open(full_path, 'rb') as f:
         file_contents = f.read().decode("utf-8")
     reverse_view = kwargs.get('reverse', None)

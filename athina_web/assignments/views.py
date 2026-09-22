@@ -37,17 +37,36 @@ from athina_web.accounts.models import UserProfile
 
 def _user_can_access_course(user, course):
     """Check if a user can access a course based on their role."""
+    if course is None:
+        return user.is_superuser
     try:
         profile = user.profile
     except UserProfile.DoesNotExist:
         return user.is_superuser
     if user.is_superuser or profile.role == UserProfile.ROLE_ADMIN:
         return True
-    if profile.role == UserProfile.ROLE_FACULTY and course.owner == user.id:
-        return True
-    if profile.role == UserProfile.ROLE_TA and course.owner_id in profile.managed_by.values_list('id', flat=True):
-        return True
+    if profile.role == UserProfile.ROLE_FACULTY:
+        return course.owner == user.id
+    if profile.role == UserProfile.ROLE_TA:
+        # Course.owner is an IntegerField, so compare against ids directly.
+        # (Older code used course.owner_id, which Course has no attribute for.)
+        return profile.managed_by.filter(id=course.owner).exists()
     return False
+
+
+def _user_can_manage_courses(user):
+    """Can this user create/edit/delete courses and assignments?
+
+    TAs are read-only: they may view and grade for the faculty they assist,
+    but must not create courses or assignments.
+    """
+    if user.is_superuser:
+        return True
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        return False
+    return profile.role in (UserProfile.ROLE_ADMIN, UserProfile.ROLE_FACULTY)
 
 
 def _get_visible_courses(user):
@@ -264,12 +283,17 @@ def assignments(request):
     return render(request, 'assignments/assignments.html', {
         "courses": courses,
         "unassigned": unassigned,
+        "can_manage": _user_can_manage_courses(request.user),
     })
 
 
 @login_required
 def assignment_create(request, **kwargs):
     """View for creating and editing model Assignment using Assignment Form"""
+    # Creating/editing assignments is admin/faculty work — TAs are read-only.
+    if not _user_can_manage_courses(request.user):
+        raise Http404
+
     user_profile, _ = UserProfile.objects.get_or_create(user=request.user)
     active_providers = user_profile.get_active_providers()
 
@@ -677,6 +701,10 @@ def course_list(request):
 
 @login_required
 def course_create(request, **kwargs):
+    # Creating/editing courses is admin/faculty work — TAs are read-only.
+    if not _user_can_manage_courses(request.user):
+        raise Http404
+
     course_id = kwargs.get('course_id', None)
     if request.method == "POST":
         if course_id is not None:
@@ -739,6 +767,7 @@ def course_detail(request, course_id):
         "assignments": assignments_list,
         "students": students,
         "has_canvas": has_canvas,
+        "can_manage": _user_can_manage_courses(request.user),
     })
 
 
@@ -756,7 +785,6 @@ def course_delete(request, course_id):
     course.assignments.update(course=None)
     course.delete()
     return redirect('assignments:course_list')
-
 
 # =========================================================================
 #  Student management views
