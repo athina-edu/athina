@@ -47,6 +47,10 @@ class UserProfile(models.Model):
     notification_from_email = models.CharField(max_length=255, default="", blank=True,
                                                help_text="Verified sender address for Resend, e.g. 'Athina <noreply@yourdomain.edu>'. "
                                                          "Leave blank to use Resend's sandbox sender.")
+    notification_reply_to = models.CharField(max_length=255, default="", blank=True,
+                                              help_text="Optional reply-to address, e.g. 'Instructor <you@university.edu>'. "
+                                                        "Student replies will go here instead of to the from address. "
+                                                        "The address does not need to be verified in Resend.")
 
     # Legacy fields
     git_username = models.CharField(max_length=255, default="", blank=True)

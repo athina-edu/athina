@@ -57,6 +57,7 @@ def profile(request):
         user_profile.notify_students = request.POST.get('notify_students') == 'on'
         user_profile.notification_api_key = request.POST.get('notification_api_key', '').strip()
         user_profile.notification_from_email = request.POST.get('notification_from_email', '').strip()
+        user_profile.notification_reply_to = request.POST.get('notification_reply_to', '').strip()
         user_profile.save()
 
         # Refresh .env files for all assignments owned by this user
@@ -153,6 +154,7 @@ def test_resend(request):
 
     api_key = request.POST.get('api_key', '').strip()
     from_email = request.POST.get('from_email', '').strip()
+    reply_to = request.POST.get('reply_to', '').strip()
     to_email = request.POST.get('to_email', '').strip() or request.user.email
 
     if not api_key:
@@ -172,6 +174,7 @@ def test_resend(request):
                   "<p>If you received this, your Resend API key and sender address are "
                   "configured correctly and student notifications will be delivered.</p>"),
             from_email=from_email or None,
+            reply_to=reply_to or None,
         )
         return JsonResponse({"ok": True, "id": message_id, "to": to_email})
     except ResendError as e:

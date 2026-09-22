@@ -1139,6 +1139,7 @@ def _notify_student_repo(course, student, assignment_name=None, force=False):
         text=text_body,
         html=html_body,
         from_email=faculty_profile.notification_from_email or None,
+        reply_to=faculty_profile.notification_reply_to or None,
     )
     if message_id is None:
         return "Could not send notification email to %s (check the Resend API key and sender address)." % student.email

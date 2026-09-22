@@ -204,6 +204,18 @@
                         (<code>onboarding@resend.dev</code>), which can only deliver to your own account email.
                     </small>
                 </div>
+                <div class="form-group">
+                    <label for="notification_reply_to"><strong>Reply-To Address</strong> <span class="text-muted">(optional)</span></label>
+                    <input type="text" class="form-control" id="notification_reply_to" name="notification_reply_to"
+                           value="{{ user_profile.notification_reply_to }}"
+                           placeholder="Instructor &lt;you@university.edu&gt;">
+                    <small class="form-text text-muted">
+                        Where student replies are sent. Use this to route replies to your real inbox
+                        while still sending from a verified <em>From</em> address. This address does
+                        <strong>not</strong> need to be verified in Resend. Leave blank to send replies
+                        to the From address.
+                    </small>
+                </div>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="testResendBtn"
                         onclick="testResend()">
                     <i class="fa fa-paper-plane"></i> Send Test Email
@@ -309,6 +321,7 @@ function fetchModels() {
 function testResend() {
     var apiKey = document.getElementById('notification_api_key').value.trim();
     var fromEmail = document.getElementById('notification_from_email').value.trim();
+    var replyTo = document.getElementById('notification_reply_to').value.trim();
     var statusEl = document.getElementById('resendStatus');
     var btn = document.getElementById('testResendBtn');
 
@@ -326,6 +339,7 @@ function testResend() {
     var body = new FormData();
     body.append('api_key', apiKey);
     body.append('from_email', fromEmail);
+    body.append('reply_to', replyTo);
     body.append('csrfmiddlewaretoken', '{{ csrf_token }}');
 
     fetch('{% url "accounts:test_resend" %}', {
