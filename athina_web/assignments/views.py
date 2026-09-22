@@ -163,16 +163,34 @@ def _sync_student_to_grading_db(student):
                 (student.repository_url or '', student.email, student.username,
                  mysql_user_id, course_id_val, assignment_id_val))
         else:
-            # Insert new record
+            # Insert new record.
+            #
+            # The grading engine creates this table via Peewee, which applies its
+            # field defaults in Python — so the DDL has NO database-level defaults
+            # and most columns are NOT NULL. Every column must therefore be listed
+            # here explicitly, with the same defaults the Peewee model uses, or
+            # MySQL rejects the row with "Field '<x>' doesn't have a default value".
+            #
+            # changed_state=1 and new_url=1 mark the row so the daemon picks it up
+            # for its first grading run.
             cur.execute(
                 "INSERT INTO users (user_id, course_id, assignment_id, repository_url, "
-                "secondary_id, user_fullname, url_date, new_url, commit_date) "
-                "VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1, '0001-01-01 00:00:00')",
+                "secondary_id, user_fullname, url_date, new_url, commit_date, "
+                "same_url_flag, plagiarism_to_grade, last_plagiarism_check, last_graded, "
+                "changed_state, tester_active, tester_date, force_test, gitlab_issue_iid, "
+                "use_webhook, webhook_event, webhook_token) "
+                "VALUES (%s, %s, %s, %s, %s, %s, NOW(), 1, '0001-01-01 00:00:00', "
+                "0, 0, NOW(), '0001-01-01 00:00:00', 1, 0, '0001-01-01 00:00:00', "
+                "0, 0, 0, 0, '')",
                 (student.pk, course_id_val, assignment_id_val,
                  student.repository_url or '', student.email, student.username))
         conn.commit()
-    except Exception:
-        pass  # best-effort — don't break the web app if grading DB has issues
+    except Exception as exc:
+        # Best-effort: don't break the web app if the grading DB has issues — but
+        # log it, because a silent failure here means the daemon sees no students
+        # and grading simply never happens.
+        logging.getLogger('athina_web').error(
+            "Failed to sync student %s to the grading database: %s", student.email, exc)
     finally:
         conn.close()
 

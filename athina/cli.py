@@ -170,6 +170,16 @@ def main():
             run_list = request_url(ARGS.json, method="get", return_type="json")
         except requests.exceptions.ConnectionError:
             LOGGER.logger.error("Cannot connect to URL: %s" % ARGS.json)
+        # request_url() returns {} for any non-JSON response (an HTTP error page,
+        # an auth redirect, a DisallowedHost 400, ...). Without this check the
+        # loop below simply runs zero times and grading silently never happens.
+        if not run_list:
+            LOGGER.logger.error(
+                "No assignments returned by %s. Check that the URL is reachable "
+                "from this container and that its host is in Django ALLOWED_HOSTS."
+                % ARGS.json)
+        else:
+            LOGGER.logger.info("Fetched %d assignment(s) from %s" % (len(run_list), ARGS.json))
     elif ARGS.config is not None:
         run_list.append({'directory': ARGS.config})
     else:
