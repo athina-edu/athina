@@ -235,10 +235,13 @@ def _write_assignment_env(assignment, user_profile=None):
         lines.append("LLM_API_KEY=%s" % user_profile.llm_api_key)
         lines.append("LLM_MODEL=%s" % user_profile.llm_model)
 
-    # Output mode settings
-    lines.append("OUTPUT_METHOD=%s" % assignment.output_method)
-    if assignment.output_method == 'gitlab_issues' and assignment.gitlab_project_id:
-        lines.append("GITLAB_PROJECT_ID=%d" % assignment.gitlab_project_id)
+    # Output mode settings.
+    #
+    # The engine submits grades to Canvas only if a Canvas token exists; in a
+    # db-input course there is no Canvas at all, so writing OUTPUT_METHOD=canvas
+    # made every grade fail to upload and be silently dropped. Decide from the
+    # assignment's own YAML instead of the vestigial model default.
+    lines.append("OUTPUT_METHOD=%s" % _resolve_output_method(assignment))
 
     try:
         with open(env_path, 'w') as f:
@@ -246,6 +249,45 @@ def _write_assignment_env(assignment, user_profile=None):
         os.chmod(env_path, 0o600)
     except OSError:
         pass
+
+
+def _read_assignment_yaml(assignment):
+    """Return this assignment's athina.yaml as a dict (empty on any problem)."""
+    yaml_path = os.path.join(settings.BASE_DIR, assignment.absolute_path, 'athina.yaml')
+    if not os.path.exists(yaml_path):
+        return {}
+    try:
+        with open(yaml_path, 'r') as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def _resolve_output_method(assignment):
+    """Which output adapter the engine should use for this assignment.
+
+    The assignment's own athina.yaml wins, so a faculty member can change the
+    output mode by editing the YAML in the repo. A 'canvas' request is only
+    honoured when the YAML actually carries a Canvas API token — a db-input
+    course has no Canvas connection at all, so submitting there can never work
+    and the grade would be silently dropped.
+
+    The web app writes the result into the assignment .env. That matters
+    because the engine's .env loading is process-global and only fills in
+    variables that are not already set, so an absent OUTPUT_METHOD for one
+    assignment could otherwise inherit another assignment's value.
+    """
+    cfg = _read_assignment_yaml(assignment)
+    canvas_usable = bool(cfg.get('auth_token'))
+
+    requested = cfg.get('output_method')
+    if requested in ('canvas', 'gitlab_issues'):
+        if requested == 'canvas' and not canvas_usable:
+            return 'gitlab_issues'
+        return requested
+
+    # Nothing explicit: Canvas when it is actually wired up, else GitLab issues.
+    return 'canvas' if canvas_usable else 'gitlab_issues'
 
 
 def _get_owner_gitlab_host(assignment):

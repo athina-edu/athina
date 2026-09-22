@@ -278,7 +278,14 @@ class Configuration:
             self.logger.logger.warning(
                 "Unknown output_method '%s', defaulting to 'canvas'." % self.output_method)
             self.output_method = "canvas"
-        if self.output_method == "gitlab_issues" and self.gitlab_project_id == 0:
-            self.logger.logger.warning(
-                "output_method is 'gitlab_issues' but gitlab_project_id is not set. "
-                "GitLab issues will not be created.")
+
+        # db input mode means there is no Canvas connection at all, so submitting
+        # grades to Canvas can never work. Default to GitLab issues in that case,
+        # otherwise every grade is silently lost. Only do this when output_method
+        # is still the untouched default — an explicit choice is always respected.
+        if (self.input_method == "db" and self.output_method == "canvas"
+                and self.git_password):
+            self.logger.logger.info(
+                "input_method is 'db' and no Canvas is configured; using GitLab "
+                "issues for grade output. Set output_method explicitly to override.")
+            self.output_method = "gitlab_issues"
