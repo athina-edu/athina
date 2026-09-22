@@ -216,11 +216,15 @@ class Tester:
                     except Exception as e:
                         self.logger.logger.error("LLM feedback failed for %s: %s" % (current_user_id, str(e)))
 
-                # Append LLM feedback to the report so it's included in the GitLab issue / Canvas submission
+                # Build this student's report from a copy of the raw test output.
+                # Do NOT append to test_reports itself: several students can share one
+                # repository (group assignments, or same_url_limit > 1), so mutating the
+                # shared list would stack each student's feedback onto every later report.
+                student_reports = list(test_reports)
                 if llm_guidance:
-                    test_reports.append(("\nLLM Feedback:\n%s\n\n"
-                                         "Note: The LLM can make errors. Please review the feedback critically.\n"
-                                         % llm_guidance).encode("utf-8"))
+                    student_reports.append(("\nLLM Feedback:\n%s\n\n"
+                                            "Note: The LLM can make errors. Please review the feedback critically.\n"
+                                            % llm_guidance).encode("utf-8"))
 
                 # Submit grade: update existing issue or create new one (GitLab), or post to Canvas
                 issue_iid = initial_issue_iid  # reuse initial issue if one was created
@@ -233,7 +237,7 @@ class Tester:
                         student_name = getattr(current_user_object, 'user_fullname', '') or str(current_user_id)
                         title = "%s — %s" % (student_name, self.configuration.gitlab_issues_title_prefix)
                         full_report = "\n".join([t.decode("utf-8", "backslashreplace") if isinstance(t, bytes)
-                                                 else str(t) for t in test_reports])
+                                                 else str(t) for t in student_reports])
                         body = self.e_learning._build_issue_body(
                             user_id=current_user_id, student_name=student_name,
                             grade=grade, total_points=self.configuration.total_points,
@@ -243,12 +247,12 @@ class Tester:
                         ((self.configuration.group_assignment is True and submitted_once is False) or
                          self.configuration.group_assignment is False):
                     result = self.e_learning.submit_grade(user_id=current_user_id, user_values=current_user_object, grade=grade,
-                                                          test_reports=test_reports)
+                                                          test_reports=student_reports)
                     if result:
                         issue_iid = result
                     submitted_once = True
                 else:  # print instead
-                    for text in test_reports:
+                    for text in student_reports:
                         self.logger.logger.info(text.decode("utf-8", "backslashreplace"))
                 self.logger.logger.info(">>> Submitting new grade for %s: %s" % (current_user_id, grade))
 
@@ -258,7 +262,7 @@ class Tester:
                 current_user_object.force_test = False
                 current_user_object.last_grade = grade
                 # Store raw test output only (LLM feedback is in llm_guidance, appended by web view)
-                raw_reports = [t for t in test_reports if not (isinstance(t, (bytes, str)) and
+                raw_reports = [t for t in student_reports if not (isinstance(t, (bytes, str)) and
                               (b'LLM Feedback:' in t if isinstance(t, bytes) else 'LLM Feedback:' in t))]
                 current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") if isinstance(test, bytes)
                                                              else str(test) for test in raw_reports])

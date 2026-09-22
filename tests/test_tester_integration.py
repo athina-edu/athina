@@ -234,3 +234,78 @@ class TestProcessStudentAssignment(TestCase):
         tester = self._tester()
         tester.process_student_assignment(903)
         self.assertEqual(self.e_learning.submit_grade.call_count, 1)
+
+    # ---- Shared-repo feedback isolation --------------------------------
+
+    def _shared_repo_students(self):
+        self._student(user_id=905, user_fullname="Alice")
+        self._student(user_id=906, user_fullname="Bob")
+
+    def _captured_reports(self):
+        """Map user_id -> the reports list handed to submit_grade."""
+        captured = {}
+
+        def record(**kwargs):
+            captured[kwargs['user_id']] = list(kwargs['test_reports'])
+            return 0
+
+        self.e_learning.submit_grade.side_effect = record
+        return captured
+
+    @staticmethod
+    def _feedback_count(reports):
+        text = "".join(r.decode("utf-8", "replace") if isinstance(r, bytes) else str(r)
+                       for r in reports)
+        return text.count("LLM Feedback")
+
+    def test_llm_feedback_not_duplicated_across_shared_repo_students(self):
+        """Regression: feedback was appended to the shared list each iteration.
+
+        With two students on one repo and per-student submission, the second
+        student's report contained their feedback twice.
+        """
+        self._shared_repo_students()
+        self.configuration.llm_enabled = True
+        self.configuration.grade_publish = True
+        self.configuration.group_assignment = False
+        captured = self._captured_reports()
+        tester = self._tester()
+        with mock.patch('athina.tester.tester.generate_llm_feedback',
+                        return_value="ADVICE"):
+            tester.process_student_assignment(905)
+
+        self.assertEqual(sorted(captured), [905, 906])
+        for user_id, reports in captured.items():
+            self.assertEqual(self._feedback_count(reports), 1,
+                             "student %s received duplicated LLM feedback" % user_id)
+
+    def test_raw_reports_are_not_polluted_across_students(self):
+        """Each student's stored report must hold only the raw test output."""
+        self._shared_repo_students()
+        self.configuration.llm_enabled = True
+        self.configuration.grade_publish = True
+        self.configuration.group_assignment = False
+        tester = self._tester()
+        with mock.patch('athina.tester.tester.generate_llm_feedback',
+                        return_value="ADVICE"):
+            tester.process_student_assignment(905)
+
+        for user_id in (905, 906):
+            report = Users.get(Users.user_id == user_id).last_report
+            report = report.decode() if isinstance(report, bytes) else report
+            self.assertEqual(report.count("LLM Feedback"), 0)
+            self.assertIn("test report output", report)
+
+    def test_llm_feedback_present_exactly_once_without_grouping(self):
+        """A single student should still get their feedback in the submission."""
+        self._student(user_id=907)
+        self.configuration.llm_enabled = True
+        self.configuration.grade_publish = True
+        self.configuration.group_assignment = True
+        captured = self._captured_reports()
+        tester = self._tester()
+        with mock.patch('athina.tester.tester.generate_llm_feedback',
+                        return_value="ADVICE"):
+            tester.process_student_assignment(907)
+
+        self.assertEqual(self._feedback_count(captured[907]), 1)
