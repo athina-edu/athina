@@ -6,20 +6,16 @@ class AssignmentForm(forms.ModelForm):
 
     class Meta:
         model = Assignment
-        fields = ('name', 'course', 'active', 'git_source', 'output_method', 'gitlab_project_id')
+        # output_method and gitlab_project_id are intentionally NOT exposed here.
+        # They are grading-engine settings (defaults: 'canvas' / 0) that are
+        # written to the per-assignment .env by _refresh_env_for_user. The
+        # instructor only needs to supply the repository (git_source).
+        fields = ('name', 'course', 'active', 'git_source')
         widgets = {
             'git_source': forms.TextInput(attrs={
                 'placeholder': 'https://gitlab.com/group/template-repo.git',
                 'class': 'form-control',
             }),
-            'gitlab_project_id': forms.NumberInput(attrs={
-                'placeholder': 'e.g. 12345',
-                'class': 'form-control',
-            }),
-        }
-        help_texts = {
-            'output_method': 'Canvas LMS: grades submitted to Canvas. GitLab Issues: grades posted as GitLab issues.',
-            'gitlab_project_id': 'Required for GitLab Issues mode. Find it in your project Settings > General.',
         }
 
     def __init__(self, *args, **kwargs):
