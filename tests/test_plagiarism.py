@@ -84,6 +84,7 @@ class TestPlagiarism(TestCase):
         configuration.assignment_id = 1
         configuration.course_id = 1
         e_learning = mock.Mock()
-        with mock.patch('athina.plagiarism.return_all_students', return_value=[]):
+        # Patch the implementation module (athina.plagiarism re-exports it).
+        with mock.patch('athina.moss.return_all_students', return_value=[]):
             results = plagiarism_checks_on_users(logger, configuration, e_learning)
             self.assertEqual(results, [])
