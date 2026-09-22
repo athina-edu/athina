@@ -69,6 +69,16 @@ def _user_can_manage_courses(user):
     return profile.role in (UserProfile.ROLE_ADMIN, UserProfile.ROLE_FACULTY)
 
 
+def _user_can_manage_students(user, course):
+    """Can this user add/import/edit/delete students in this course?
+
+    TAs may only *view* the roster, repository links and test results — adding,
+    importing, editing, deleting, provisioning or notifying students is
+    admin/faculty work.
+    """
+    return _user_can_manage_courses(user) and _user_can_access_course(user, course)
+
+
 def _get_visible_courses(user):
     """Return courses visible to the current user based on their role."""
     try:
@@ -490,7 +500,12 @@ def assignment_view(request, assignment_id):
                                                                 "assignment": assignment, "plagiarism_report": plagiarism_report,
                                                                 "gitlab_project_id": assignment.gitlab_project_id,
                                                                 "gitlab_output": assignment.output_method == 'gitlab_issues',
-                                                                "gitlab_host": _get_owner_gitlab_host(assignment)})
+                                                                "gitlab_host": _get_owner_gitlab_host(assignment),
+                                                                # Force Rerun writes to the grading DB and is
+                                                                # owner/superuser-only; hide it otherwise so TAs
+                                                                # are not shown a button that 404s.
+                                                                "can_force": (assignment.owner == request.user.id
+                                                                              or request.user.is_superuser)})
 
 
 @login_required
@@ -695,8 +710,12 @@ class APIView(generics.ListCreateAPIView):
 
 @login_required
 def course_list(request):
-    courses = Course.objects.filter(owner=request.user.id).order_by('name')
-    return render(request, 'assignments/course_list.html', {"courses": courses})
+    """List the courses the current user can access (admin: all, faculty: own,
+    TA: those owned by the faculty they assist)."""
+    return render(request, 'assignments/course_list.html', {
+        "courses": _get_visible_courses(request.user).order_by('name'),
+        "can_manage": _user_can_manage_courses(request.user),
+    })
 
 
 @login_required
@@ -767,7 +786,10 @@ def course_detail(request, course_id):
         "assignments": assignments_list,
         "students": students,
         "has_canvas": has_canvas,
+        # can_manage gates course/assignment actions; can_manage_students gates
+        # the student roster actions (TAs may view students but not manage them).
         "can_manage": _user_can_manage_courses(request.user),
+        "can_manage_students": _user_can_manage_students(request.user, course),
     })
 
 
@@ -799,6 +821,7 @@ def student_list(request, course_id):
     return render(request, 'assignments/student_list.html', {
         "course": course, "students": students,
         "has_assignments": course.assignments.exists(),
+        "can_manage": _user_can_manage_students(request.user, course),
     })
 
 
@@ -810,7 +833,7 @@ def provision_students(request, course_id):
     emailed if they have never been notified (e.g. the repo was created before
     notifications were enabled)."""
     course = get_object_or_404(Course, pk=course_id)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
 
     first_assignment = course.assignments.first()
@@ -859,7 +882,7 @@ def provision_students(request, course_id):
 def notify_students(request, course_id):
     """Re-send the repository notification email to every student in the course."""
     course = get_object_or_404(Course, pk=course_id)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
 
     first_assignment = course.assignments.first()
@@ -893,7 +916,7 @@ def notify_students(request, course_id):
 @login_required
 def student_add(request, course_id):
     course = get_object_or_404(Course, pk=course_id)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
     if request.method == "POST":
         form = StudentForm(request.POST)
@@ -972,7 +995,7 @@ def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
 @login_required
 def student_bulk_import(request, course_id):
     course = get_object_or_404(Course, pk=course_id)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
     if request.method == "POST":
         form = StudentBulkForm(request.POST)
@@ -1025,15 +1048,22 @@ def student_bulk_import(request, course_id):
 def import_progress(request, course_id):
     """Show a live progress page that polls for status updates."""
     course = get_object_or_404(Course, pk=course_id)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
     return render(request, 'assignments/import_progress.html', {"course": course})
 
 
 @login_required
 def import_progress_api(request, course_id):
-    """JSON endpoint polled by the progress page."""
+    """JSON endpoint polled by the progress page.
+
+    The payload includes the email currently being imported, so it is gated the
+    same way as the import it reports on.
+    """
     from django.http import JsonResponse
+    course = get_object_or_404(Course, pk=course_id)
+    if not _user_can_manage_students(request.user, course):
+        raise Http404
     progress = _import_progress.get(course_id, None)
     if progress:
         return JsonResponse(progress)
@@ -1044,7 +1074,7 @@ def import_progress_api(request, course_id):
 def student_edit(request, course_id, student_id):
     course = get_object_or_404(Course, pk=course_id)
     student = get_object_or_404(Student, pk=student_id, course=course)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
     if request.method == "POST":
         form = StudentEditForm(request.POST, instance=student)
@@ -1062,7 +1092,7 @@ def student_edit(request, course_id, student_id):
 @login_required
 def student_delete(request, course_id, student_id):
     course = get_object_or_404(Course, pk=course_id)
-    if not _user_can_access_course(request.user, course):
+    if not _user_can_manage_students(request.user, course):
         raise Http404
     student = get_object_or_404(Student, pk=student_id, course=course)
     student.delete()

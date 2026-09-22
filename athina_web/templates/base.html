@@ -49,7 +49,7 @@
             </li>
             {% endif %}
 
-            {% url 'assignments:assignments' as courses_url %}
+            {% url 'assignments:course_list' as courses_url %}
             <li class="nav-item {% if request.get_full_path == courses_url %}active{% endif %}">
                 <a class="nav-link" href="{{ courses_url }}">Courses</a>
             </li>

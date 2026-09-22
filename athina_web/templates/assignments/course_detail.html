@@ -19,8 +19,8 @@
 <hr>
 <div class="mb-3">
 {% if can_manage %}<a class="btn btn-success" href="{% url 'assignments:create_assignment' %}?course={{ course.pk }}">New Assignment</a>{% endif %}
-<a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import Students</a>
-<a class="btn btn-info" href="{% url 'assignments:student_list' course_id=course.pk %}">Manage Students</a>
+{% if can_manage_students %}<a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import Students</a>{% endif %}
+<a class="btn btn-info" href="{% url 'assignments:student_list' course_id=course.pk %}">{% if can_manage_students %}Manage Students{% else %}View Students{% endif %}</a>
 {% if can_manage %}
 <a class="btn btn-warning" href="{% url 'assignments:course_edit' course_id=course.pk %}">Edit</a>
 <a class="btn btn-danger confirm-delete-course" href="{% url 'assignments:course_delete' course_id=course.pk %}"
@@ -60,16 +60,18 @@
 <td>{{ student.email }}</td>
 <td>{{ student.username }}</td>
 <td>
+    {% if can_manage_students %}
     <a class="btn btn-warning btn-sm" href="{% url 'assignments:student_edit' course_id=course.pk student_id=student.pk %}">Edit</a>
     <a class="btn btn-danger btn-sm confirm-delete-student" href="{% url 'assignments:student_delete' course_id=course.pk student_id=student.pk %}"
        data-name="{{ student.email }}">Delete</a>
+    {% else %}<span class="text-muted">—</span>{% endif %}
 </td>
 </tr>
 {% endfor %}
 </table>
 </div>
 {% else %}
-<p class="text-muted">No students enrolled yet. <a href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import some</a>.</p>
+<p class="text-muted">No students enrolled yet.{% if can_manage_students %} <a href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Import some</a>.{% endif %}</p>
 {% endif %}
 </div>
 <script>

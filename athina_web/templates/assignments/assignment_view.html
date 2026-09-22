@@ -66,7 +66,7 @@
                         {% if gitlab_output and user.13 %}
                         <a class="btn btn-info" href="{{ user.13 }}" target="_blank">🦊 GitLab</a>
                         {% endif %}
-                        <a class="btn btn-warning" href="{% url 'assignments:assignment_force' assignment_id=assignment.pk user_id=user.0 %}">🔄 Force Rerun</a>
+                        {% if can_force %}<a class="btn btn-warning" href="{% url 'assignments:assignment_force' assignment_id=assignment.pk user_id=user.0 %}">🔄 Force Rerun</a>{% endif %}
                     </div>
                 </td>
             </tr>

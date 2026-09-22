@@ -19,11 +19,13 @@
 <h3>Students: {{ course.name }}</h3>
 <hr>
 <div class="mb-3">
+{% if can_manage %}
 <a class="btn btn-success" href="{% url 'assignments:student_add' course_id=course.pk %}">Add Student</a>
 <a class="btn btn-primary" href="{% url 'assignments:student_bulk_import' course_id=course.pk %}">Bulk Import</a>
 {% if has_assignments %}
 <a class="btn btn-warning" href="{% url 'assignments:provision_students' course_id=course.pk %}">Provision Missing Repos</a>
 <a class="btn btn-outline-warning" href="{% url 'assignments:notify_students' course_id=course.pk %}">Re-send Notifications</a>
+{% endif %}
 {% endif %}
 <a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
 </div>
@@ -39,9 +41,11 @@
 <td>{{ student.repository_url|default:"-" }}</td>
 <td>{% if student.notified_at %}<span class="badge badge-success" title="{{ student.notified_at }}">Yes</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}</td>
 <td>
+{% if can_manage %}
 <a class="btn btn-info btn-sm" href="{% url 'assignments:student_edit' course_id=course.pk student_id=student.pk %}">Edit</a>
 <a class="btn btn-danger btn-sm confirm-delete-student" href="{% url 'assignments:student_delete' course_id=course.pk student_id=student.pk %}"
    data-name="{{ student.email }}">Remove</a>
+{% else %}<span class="text-muted">—</span>{% endif %}
 </td>
 </tr>
 {% endfor %}
