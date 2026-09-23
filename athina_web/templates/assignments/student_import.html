@@ -14,15 +14,14 @@
 {% block content %}
 <div class="mt-2 form-control">
 <h4>Import Students to {{ course.name }}</h4>
-<p>Paste email addresses below, one per line.
-The part of each address before <code>@</code> is used as the student's username.</p>
-<p class="mb-1">Optionally add the student's <strong>GitLab username</strong> after a comma —
-that is separate from the username above and is what grants the student access to their
-private repository. Add a third value to set the username explicitly.</p>
+<p>Paste email addresses below, one per line.</p>
+<p class="mb-1">For each student the part of the address before <code>@</code> is used as
+their <strong>username</strong> and as their <strong>GitLab account name</strong> — so
+<code>alice@uni.edu</code> expects a GitLab account called <code>alice</code>. If a
+student's GitLab account differs, add it after a comma:</p>
 <ul class="small text-muted">
-    <li><code>alice@uni.edu</code> — username <code>alice</code>, no GitLab account linked</li>
-    <li><code>alice@uni.edu,alicegit</code> — username <code>alice</code>, GitLab user <code>alicegit</code></li>
-    <li><code>alice@uni.edu,alicegit,asmith22</code> — username <code>asmith22</code>, GitLab user <code>alicegit</code></li>
+    <li><code>alice@uni.edu</code> — username <code>alice</code>, GitLab account <code>alice</code></li>
+    <li><code>alice@uni.edu,alicegit</code> — username <code>alice</code>, GitLab account <code>alicegit</code></li>
 </ul>
 <p>Commas, tabs or spaces all work as separators. Repos are not created here — use
 <em>Provision Missing Repos</em> on the Students page afterwards.</p>

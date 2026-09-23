@@ -34,38 +34,37 @@ class CourseForm(forms.ModelForm):
 
 
 class StudentForm(forms.ModelForm):
+    """Add a student.
+
+    `username` is deliberately NOT exposed: it is derived from the email prefix
+    (see Student.save()) and is only a display/repo-naming value. Having a
+    second editable field next to the GitLab username was confusing — the
+    autofilled one did nothing for provisioning while the GitLab username, the
+    one that actually matters, silently blocked it.
+    """
     class Meta:
         model = Student
-        fields = ('email', 'username', 'gitlab_username')
+        fields = ('email', 'gitlab_username')
         widgets = {
-            'username': forms.TextInput(attrs={
-                'placeholder': 'e.g. alice',
-                'class': 'form-control',
-            }),
             'gitlab_username': forms.TextInput(attrs={
                 'placeholder': 'e.g. alice',
                 'class': 'form-control',
             }),
         }
         help_texts = {
-            'email': 'Student email address.',
-            'username': 'Defaults to the part of the email before @. Used as the '
-                        'student\'s username and for repository naming.',
-            'gitlab_username': 'Optional. The student\'s GitLab account name, used '
-                               'to grant them access to their private repository.',
+            'email': 'Student email address. The part before @ becomes their username.',
+            'gitlab_username': 'The student\'s GitLab account name, which must already '
+                               'exist on your GitLab server. Used to give them access to '
+                               'their private repository, and required before provisioning.',
         }
 
 
 class StudentEditForm(forms.ModelForm):
-    """Extended form for editing an existing student — includes GitLab username and repository URL."""
+    """Edit an existing student — email, GitLab username and repository URL."""
     class Meta:
         model = Student
-        fields = ('email', 'username', 'gitlab_username', 'repository_url')
+        fields = ('email', 'gitlab_username', 'repository_url')
         widgets = {
-            'username': forms.TextInput(attrs={
-                'placeholder': 'e.g. alice',
-                'class': 'form-control',
-            }),
             'gitlab_username': forms.TextInput(attrs={
                 'placeholder': 'e.g. alice',
                 'class': 'form-control',
@@ -76,8 +75,8 @@ class StudentEditForm(forms.ModelForm):
             }),
         }
         help_texts = {
-            'username': 'Used as the student\'s username and for repository naming.',
-            'gitlab_username': 'The student\'s GitLab username. Required before provisioning a repo.',
+            'gitlab_username': 'The student\'s GitLab account name. Required before '
+                               'provisioning a repo, and must exist on your GitLab server.',
             'repository_url': 'Optional. Set the student\'s Git repository URL for grading.',
         }
 
@@ -87,11 +86,11 @@ class StudentBulkForm(forms.Form):
     emails = forms.CharField(
         widget=forms.Textarea(attrs={
             'rows': 10,
-            'placeholder': 'one@email.com\nanother@email.com,gitlabuser\nthird@email.com,gitlabuser2,customuser',
+            'placeholder': 'one@email.com\nanother@email.com,gitlabuser',
         }),
         label='Email addresses (one per line)',
-        help_text='Paste student email addresses, one per line. The part before @ is used '
-                  'as the username. Optionally append the student\'s GitLab username after '
-                  'a comma (e.g. "alice@uni.edu,alicegit"), and a third value to override '
-                  'the username (e.g. "alice@uni.edu,alicegit,asmith22").',
+        help_text='Paste student email addresses, one per line. The part before @ becomes '
+                  'the username and the expected GitLab account name. If a student\'s '
+                  'GitLab account differs, add it after a comma '
+                  '(e.g. "alice@uni.edu,alicegit").',
     )

@@ -1004,9 +1004,9 @@ _import_progress = {}
 def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
     """Background thread: imports students and provisions GitLab repos.
 
-    `entries` is a list of (email, gitlab_username, username) tuples. The
-    username comes from the third field when given, otherwise the email prefix;
-    gitlab_username is the GitLab account used for repo access."""
+    `entries` is a list of (email, gitlab_username) tuples. The GitLab account
+    defaults to the email prefix when not supplied, and the display username is
+    always derived from the email prefix (see Student.save())."""
     global _import_progress
     import logging
     logger = logging.getLogger('django')
@@ -1015,7 +1015,9 @@ def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
         created = 0
         total = len(entries)
 
-        for i, (email, gitlab_username, username) in enumerate(entries):
+        for i, (email, gitlab_username) in enumerate(entries):
+            # Convention: the GitLab account is the part of the email before @.
+            gitlab_username = gitlab_username or email.split('@')[0]
             _import_progress[course_id] = {
                 'total': total, 'current': i + 1, 'created': created,
                 'status': 'running', 'current_student': email,
@@ -1023,7 +1025,7 @@ def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
             try:
                 student, was_created = Student.objects.get_or_create(
                     course=course, email=email,
-                    defaults={'username': username, 'gitlab_username': gitlab_username},
+                    defaults={'gitlab_username': gitlab_username},
                 )
                 if was_created:
                     # Sync to grading DB but do NOT auto-provision repos.
@@ -1063,9 +1065,9 @@ def student_bulk_import(request, course_id):
         form = StudentBulkForm(request.POST)
         if form.is_valid():
             emails_raw = form.cleaned_data['emails']
-            # Each line is "email", "email,gitlab_username" or
-            # "email,gitlab_username,username" (comma/tab/space separated).
-            # The username defaults to the part of the email before @.
+            # Each line is "email" or "email,gitlab_username"
+            # (comma/tab/space separated). The GitLab account defaults to the
+            # part of the email before @.
             entries = []
             for line in emails_raw.strip().splitlines():
                 line = line.strip()
@@ -1076,8 +1078,7 @@ def student_bulk_import(request, course_id):
                 if '@' not in email:
                     continue
                 gitlab_username = parts[1] if len(parts) > 1 else ''
-                username = parts[2] if len(parts) > 2 and parts[2] else email.split('@')[0]
-                entries.append((email, gitlab_username, username))
+                entries.append((email, gitlab_username))
             total = len(entries)
             if total == 0:
                 return render(request, 'assignments/student_import_result.html', {
@@ -1293,19 +1294,32 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     headers = {"PRIVATE-TOKEN": gitlab_token}
     api_base = "https://%s/api/v4" % gitlab_url
 
-    # 0. Validate the student's GitLab username resolves to a real user BEFORE
-    #    creating the repo. If it doesn't, the student would be locked out of a
-    #    private repo, so fail loudly instead of creating it.
-    if not student.gitlab_username:
-        return ("Student '%s' has no GitLab username set. Add their GitLab "
-                "username to their student record before provisioning." % student.email)
+    # 0. Resolve the student's GitLab account BEFORE creating the repo. If it
+    #    does not exist they would be locked out of a private repo, so fail
+    #    loudly rather than creating one they cannot access.
+    #
+    #    The GitLab account defaults to the email prefix, which is the common
+    #    convention. An explicitly set gitlab_username always wins, so a student
+    #    whose GitLab handle differs can still be provisioned. The resolved name
+    #    is stored, so the repo name and issue titles stay consistent.
+    candidate = (student.gitlab_username or student.username or '').strip()
+    if not candidate:
+        return ("Student '%s' has no email address or GitLab username, so their "
+                "GitLab account cannot be determined." % student.email)
+
     user_resp = http_requests.get("%s/users" % api_base, headers=headers,
-                                  params={"username": student.gitlab_username}, timeout=10)
+                                  params={"username": candidate}, timeout=10)
     if not user_resp.ok or not user_resp.json():
-        return ("Could not find GitLab user '%s' for student '%s'. Verify the "
-                "username is correct and that the user exists on %s." %
-                (student.gitlab_username, student.email, gitlab_url))
+        return ("Could not find a GitLab account '%s' for student '%s' on %s. "
+                "If their GitLab username differs from their email prefix, set it "
+                "on the student record. Otherwise the account must be created on "
+                "GitLab first." % (candidate, student.email, gitlab_url))
+
     gitlab_user_id = user_resp.json()[0]['id']
+    # Store the name that actually resolved, so later steps and re-runs agree.
+    if student.gitlab_username != candidate:
+        student.gitlab_username = candidate
+        student.save(update_fields=['gitlab_username'])
 
     # 1. Find or create the course group
     # Naming: athina-[facultyid]-[coursename]

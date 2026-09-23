@@ -21,20 +21,4 @@
     <a class="btn btn-secondary" href="{% url 'assignments:student_list' course_id=course.pk %}">Cancel</a>
 </form>
 </div>
-<script>
-// When the email changes, keep the username in step with the email prefix —
-// but only while it still matches the old prefix, so a deliberate custom
-// username is never overwritten.
-(function () {
-    var email = document.getElementById('id_email');
-    var username = document.getElementById('id_username');
-    if (!email || !username) { return; }
-    var previousPrefix = email.value.split('@')[0];
-    email.addEventListener('input', function () {
-        if (username.value !== previousPrefix) { return; }
-        previousPrefix = email.value.split('@')[0];
-        username.value = previousPrefix;
-    });
-})();
-</script>
 {% endblock %}
