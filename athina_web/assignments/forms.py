@@ -42,6 +42,24 @@ class StudentForm(forms.ModelForm):
     autofilled one did nothing for provisioning while the GitLab username, the
     one that actually matters, silently blocked it.
     """
+    def __init__(self, *args, **kwargs):
+        self.course = kwargs.pop('course', None)
+        super().__init__(*args, **kwargs)
+
+    def clean_email(self):
+        """Reject an email already enrolled in this course.
+
+        (course, email) is unique, so saving a duplicate raised an
+        IntegrityError and the page returned a 500 instead of a message.
+        """
+        email = (self.cleaned_data.get('email') or '').strip()
+        if self.course and email:
+            clash = Student.objects.filter(course=self.course, email__iexact=email).exists()
+            if clash:
+                raise forms.ValidationError(
+                    "%s is already enrolled in this course." % email)
+        return email
+
     class Meta:
         model = Student
         fields = ('email', 'gitlab_username')
@@ -52,7 +70,8 @@ class StudentForm(forms.ModelForm):
             }),
         }
         help_texts = {
-            'email': 'Student email address. The part before @ becomes their username.',
+            'email': 'Student email address. The part before @ becomes their username '
+                     'and their GitLab account name.',
             'gitlab_username': 'The student\'s GitLab account name, which must already '
                                'exist on your GitLab server. Used to give them access to '
                                'their private repository, and required before provisioning.',
@@ -61,6 +80,19 @@ class StudentForm(forms.ModelForm):
 
 class StudentEditForm(forms.ModelForm):
     """Edit an existing student — email, GitLab username and repository URL."""
+    def clean_email(self):
+        """Reject an email that collides with another student in the same course."""
+        email = (self.cleaned_data.get('email') or '').strip()
+        if email and self.instance and self.instance.course_id:
+            clash = (Student.objects
+                     .filter(course_id=self.instance.course_id, email__iexact=email)
+                     .exclude(pk=self.instance.pk)
+                     .exists())
+            if clash:
+                raise forms.ValidationError(
+                    "%s is already enrolled in this course." % email)
+        return email
+
     class Meta:
         model = Student
         fields = ('email', 'gitlab_username', 'repository_url')

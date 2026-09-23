@@ -982,7 +982,7 @@ def student_add(request, course_id):
     if not _user_can_manage_students(request.user, course):
         raise Http404
     if request.method == "POST":
-        form = StudentForm(request.POST)
+        form = StudentForm(request.POST, course=course)
         if form.is_valid():
             student = form.save(commit=False)
             student.course = course
@@ -990,10 +990,12 @@ def student_add(request, course_id):
             # Sync to grading DB but do NOT auto-provision repos.
             # Faculty must click 'Provision Repos' manually.
             _sync_student_to_grading_db(student)
-            messages.info(request, "Student added. Click 'Provision Repos' to create their GitLab repository.")
+            messages.success(request, "Student %s added. Use 'Provision Missing Repos' "
+                                      "to create their GitLab repository." % student.email)
             return redirect('assignments:student_list', course_id=course.pk)
+        # Invalid: fall through and re-render with the errors shown.
     else:
-        form = StudentForm()
+        form = StudentForm(course=course)
     return render(request, 'assignments/student_add.html', {"course": course, "form": form})
 
 
@@ -1147,7 +1149,9 @@ def student_edit(request, course_id, student_id):
         if form.is_valid():
             form.save()
             _sync_student_to_grading_db(student)
+            messages.success(request, "Student %s updated." % student.email)
             return redirect('assignments:student_list', course_id=course.pk)
+        # Invalid: fall through and re-render with the errors shown.
     else:
         form = StudentEditForm(instance=student)
     return render(request, 'assignments/student_edit.html', {
