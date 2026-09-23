@@ -232,7 +232,7 @@ athina/
 │   ├── gitlab_issues.py     # GitLab issue integration
 │   ├── llm.py               # LLM feedback generation
 │   ├── plagiarism.py        # Plagiarism detection
-│   └── moss.py              # MOSS integration (deprecated)
+│   └── moss.py              # Plagiarism detection (CopyDetect; name is historical)
 ├── athina_web/              # Django web dashboard
 │   ├── accounts/            # User management
 │   ├── assignments/         # Course/assignment management
@@ -250,7 +250,7 @@ athina/
 
 ## Security
 
-- **Sandboxed execution** — all student code runs in Docker or firejail containers
+- **Sandboxed execution** — all student code runs in Docker containers
 - **Network isolation** — containers have configurable network access
 - **Memory limits** — prevents resource exhaustion
 - **Test timeouts** — kills infinite loops after configurable period

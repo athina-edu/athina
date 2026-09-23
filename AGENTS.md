@@ -13,11 +13,11 @@ It:
 
 1. Reads a YAML assignment configuration (tests, weights, Canvas credentials, etc.).
 2. Pulls student submissions from an e-learning platform (Canvas) as git repo URLs.
-3. Clones each repo, runs safety checks, sandboxes the code (Docker or firejail),
+3. Clones each repo, runs safety checks, sandboxes the code in Docker,
    and executes instructor-provided test scripts.
 4. Parses the last line of test output as a grade (0–100), then submits the grade
    and feedback back to the student's submission page.
-5. Optionally runs plagiarism checks (Moss) and reports similarity scores.
+5. Optionally runs plagiarism checks (CopyDetect, local similarity) and reports scores.
 
 There is also an optional web interface (`athina-web/`) for managing multiple
 assignments/instructors on one machine, plus a one-click Docker deployment
@@ -35,7 +35,7 @@ athina/                  # Main Python package (the microservice)
   users.py               # Peewee ORM models (Users, AssignmentData) + DB backend
   file_functions.py      # copy_dir / rm_dir helpers
   logger.py              # Logger class (file + console + rotating handlers)
-  moss.py                # Moss plagiarism integration
+  moss.py                # Plagiarism integration (CopyDetect; module name is historical)
   url.py                 # request_url() HTTP helper (requests wrapper)
   git/
     git.py               # Repository class: clone/pull, commit dates, chain-of-responsibility handlers
@@ -43,7 +43,7 @@ athina/                  # Main Python package (the microservice)
   tester/
     tester.py            # Tester class: orchestrates per-student testing
     docker.py            # docker build/run sandboxing
-    firejail.py          # firejail sandboxing + profile generation
+    firejail.py          # firejail sandboxing + profile generation (not reachable from the engine)
     server.profile       # firejail profile template
 
 bin/
@@ -94,8 +94,9 @@ Dockerfile               # Container build for the athina service
   duplicate URL, private-repo check, new URL, webhook, pull).
 - **Database** uses **Peewee ORM** with a pluggable backend: SQLite (dev/tests)
   or MySQL (production). Backend is chosen via env vars (`ATHINA_DB`, `ATHINA_TEST_MODE`).
-- **Sandboxing** is either Docker (`tester/docker.py`) or firejail
-  (`tester/firejail.py`), selected by `configuration.use_docker`.
+- **Sandboxing** is Docker (`tester/docker.py`). Every assignment must ship a
+  Dockerfile next to its config; the engine builds it and runs tests inside.
+  `tester/firejail.py` still exists but nothing calls it.
 - **Logging** is centralized in `logger.py`; the logger object can be deleted and
   recreated (workaround for multiprocessing/pickling).
 
@@ -128,8 +129,8 @@ Dockerfile               # Container build for the athina service
   - `create_fake_user_db()` — seeds a set of static user scenarios (normal, wrong
     URL, duplicate URLs, no URL, past-due, no-repo). **Do not change** — many tests
     depend on it.
-- **Sandbox fallback in tests:** when `ATHINA_TEST_MODE=1`, docker/firejail code
-  falls back to running the test script locally so tests pass without Docker/firejail.
+- **Sandbox fallback in tests:** when `ATHINA_TEST_MODE=1`, docker code
+  falls back to running the test script locally so tests pass without Docker.
 - **CI:** Semaphore (badge in README) + SonarCloud for quality gates. CI uses
   Python 3.12+ (3.14 not yet available on Semaphore).
 - **Requirements:** Python 3.14+ locally (pipenv), 3.12+ in CI, Docker for MySQL
@@ -153,7 +154,7 @@ Dockerfile               # Container build for the athina service
   private helpers prefixed with `_` (e.g., `_run_test`, `_trim_test_output`).
 - **Error handling:** broad `try/except` with logging via `self.logger.logger.*`
   (info/warning/error/debug). Some `except Exception` blocks are intentionally broad.
-- **Subprocess usage:** git/docker/firejail operations shell out via
+- **Subprocess usage:** git/docker operations shell out via
   `subprocess.Popen`/`subprocess.run` rather than using libraries where convenient.
 - **Security-conscious:** git credentials only sent to the configured `git_url`
   domain; student code is sandboxed; tests are force-timed-out; hidden files
