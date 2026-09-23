@@ -1,3 +1,5 @@
+import re
+
 from django.db import models
 from django.utils import timezone
 
@@ -49,6 +51,14 @@ class Student(models.Model):
                 self.username = self.gitlab_username
             elif self.email:
                 self.username = self.email.split('@')[0]
+        if not self.gitlab_username and self.email:
+            # Convention: the GitLab account matches the email prefix. Resolving it
+            # here (not only at provisioning time) means the student list shows it
+            # immediately and the record is correct however it was created — by the
+            # add form, bulk import, or the Django admin.
+            prefix = re.sub(r'[^A-Za-z0-9._-]', '', self.email.split('@')[0])
+            if prefix:
+                self.gitlab_username = prefix
         super(Student, self).save(*args, **kwargs)
 
 

@@ -72,9 +72,9 @@ class StudentForm(forms.ModelForm):
         help_texts = {
             'email': 'Student email address. The part before @ becomes their username '
                      'and their GitLab account name.',
-            'gitlab_username': 'The student\'s GitLab account name, which must already '
-                               'exist on your GitLab server. Used to give them access to '
-                               'their private repository, and required before provisioning.',
+            'gitlab_username': 'Defaults to the part of the email before @. Change it only '
+                               'if the student\'s GitLab account differs. The account must '
+                               'already exist on your GitLab server.',
         }
 
 
@@ -107,8 +107,9 @@ class StudentEditForm(forms.ModelForm):
             }),
         }
         help_texts = {
-            'gitlab_username': 'The student\'s GitLab account name. Required before '
-                               'provisioning a repo, and must exist on your GitLab server.',
+            'gitlab_username': 'Defaults to the part of the email before @. Change it only '
+                               'if the student\'s GitLab account differs — the account must '
+                               'already exist on your GitLab server.',
             'repository_url': 'Optional. Set the student\'s Git repository URL for grading.',
         }
 

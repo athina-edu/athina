@@ -16,3 +16,4 @@ class Migration(migrations.Migration):
             field=models.DateTimeField(blank=True, editable=False, null=True, verbose_name='Notified At'),
         ),
     ]
+
