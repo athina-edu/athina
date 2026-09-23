@@ -1,14 +1,44 @@
-# Auth token can be generated through Canvas profile page
+# How students and grades are read/written.
+#   input_method:  'canvas' fetch submissions from the Canvas API,
+#                  'db'     read them from the grading database (populated by
+#                           the Athina web interface or --import_submissions)
+#   output_method: 'canvas' post grades back to Canvas,
+#                  'gitlab_issues' create a GitLab issue in the student's own repo
+#
+# A db-input course has no Canvas connection, so output_method defaults to
+# gitlab_issues there. Set both explicitly to be unambiguous.
+input_method: db
+output_method: gitlab_issues
+
+# Auth token can be generated through Canvas profile page (input_method: canvas)
 auth_token: 0
 
 # Depending on the instution that is using canvas a different subdomain may be required
 canvas_url: www.instructure.com
 
-# Obtain from browser URL field
+# Obtain from browser URL field (input_method: canvas)
 course_id: 0
 
-# Obtain from browser URL field
+# Obtain from browser URL field (input_method: canvas)
 assignment_id: 0
+
+# Numeric GitLab project id, only used when output_method is 'gitlab_issues' AND
+# grades should go to a single project. Issues normally go to the student's own
+# repository, in which case leave this at 0.
+gitlab_project_id: 0
+
+# Mark created issues as confidential (only visible to the student and faculty)
+gitlab_issues_confidential: true
+
+# Prefix for the issue title, e.g. "Grade Report"
+gitlab_issues_title_prefix: Grade Report
+
+# --- AI feedback (optional) ---
+# Requires an OpenAI-compatible endpoint. The API key is normally supplied via
+# the assignment .env written by the Athina web profile, not this file.
+llm_enabled: false
+llm_endpoint_url: https://api.openai.com/v1
+llm_model: gpt-4o-mini
 
 # A command for testing whatever files exist in the user's repo.
 # Tests are independent and no information carries over (all directories reset to the repo state).
@@ -38,8 +68,9 @@ total_points: 80
 enforce_due_date: true
 
 # Plagiarism detection (CopyDetect - runs locally, no server needed)
-# File glob pattern for plagiarism detection
-plagiarism_pattern: *.py
+# File glob pattern for plagiarism detection. Quote it: a leading * is a YAML
+# alias marker and an unquoted *.py fails to parse.
+plagiarism_pattern: "*.py"
 
 # CopyDetect similarity threshold for display (0.0-1.0)
 copydetect_threshold: 0.33
@@ -93,11 +124,13 @@ pass_extra_params: false
 # Print debug msgs (this prints a bunch of stuff that you do not need to see unless you are debugging)
 print_debug_msgs: true
 
-# Docker is always used for test sandboxing.
-# A Dockerfile needs to be placed in the directory of the cfg file.
+# Docker is always used for test sandboxing. A Dockerfile must sit next to this
+# file; the engine builds the image from it before running any tests, installing
+# whatever runtimes (python3, R, ...) the tests need.
 
-# Whether the results of the tests along with grade are to be submitted to canvas or
-# have the results printed in the log and stored in sqlite (viewable through AthinaWeb)
+# Whether the test results and grade are submitted to the e-learning platform
+# (Canvas or GitLab issues, per output_method). If false they are only printed
+# to the log and stored for viewing through AthinaWeb.
 grade_publish: true
 
 # This option is the default setting for docker (i.e., secure container). If disabled, then
