@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Edit User{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'accounts:user_list' %}">Users</a></li>
+        <li class="breadcrumb-item active">Edit {{ target.username }}</li>
+    </ol>
+</nav>
+{% endblock %}
+{% block content %}
+<div class="mt-2" style="max-width: 500px;">
+<h3>Edit {{ target.username }}</h3>
+<hr>
+<form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+        <label for="gitlab_username"><strong>GitLab Username</strong></label>
+        <input type="text" class="form-control" id="gitlab_username" name="gitlab_username"
+               value="{{ target_profile.gitlab_username }}" placeholder="e.g. jsmith">
+        <small class="form-text text-muted">
+            Leave blank to use the email prefix of <code>{{ target.email }}</code>
+            (the part before <code>@</code>).
+            This must match the user's GitLab account so they can be added to course groups.
+        </small>
+    </div>
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-secondary" href="{% url 'accounts:user_list' %}">Cancel</a>
+</form>
+</div>
+{% endblock %}

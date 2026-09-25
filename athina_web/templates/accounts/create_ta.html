@@ -19,4 +19,18 @@
     <a class="btn btn-secondary" href="{% url 'accounts:user_list' %}">Cancel</a>
 </form>
 </div>
+<script>
+// Prefill the GitLab username from the email prefix until the user edits it manually.
+(function () {
+    var email = document.getElementById('id_email');
+    var gitlab = document.getElementById('id_gitlab_username');
+    if (!email || !gitlab) return;
+    var touched = gitlab.value.trim() !== '';
+    gitlab.addEventListener('input', function () { touched = true; });
+    email.addEventListener('input', function () {
+        if (touched) return;
+        gitlab.value = email.value.split('@')[0];
+    });
+})();
+</script>
 {% endblock %}

@@ -335,6 +335,8 @@ def create_user(request):
         if form.is_valid():
             username = form.cleaned_data['username']
             email = form.cleaned_data['email']
+            # Defaults to the email prefix when left blank (see BaseUserCreateForm).
+            gitlab_username = form.cleaned_data.get('gitlab_username') or email.split('@')[0]
             password = _generate_password()
 
             new_user = User.objects.create(
@@ -345,6 +347,7 @@ def create_user(request):
             )
             profile, _ = UserProfile.objects.get_or_create(user=new_user)
             profile.role = target_role
+            profile.gitlab_username = gitlab_username
             profile.save()
 
             messages.success(request, "Account created successfully.")
@@ -381,12 +384,53 @@ def assign_tas(request):
             for ta_profile in UserProfile.objects.filter(role=UserProfile.ROLE_TA):
                 if ta_profile.user_id not in selected_ids:
                     ta_profile.managed_by.remove(request.user)
-            messages.success(request, "TA assignments updated.")
+
+            # Propagate the change to GitLab: ensure the faculty owner and all
+            # assigned TAs are members of each course group they own, so TAs can
+            # access the student repositories.
+            from athina_web.assignments.views import sync_faculty_course_members
+            courses_synced, _members_ensured = sync_faculty_course_members(request.user)
+
+            if courses_synced:
+                messages.success(request, "TA assignments updated. Synced %d course "
+                                          "group(s) on GitLab." % courses_synced)
+            else:
+                messages.success(request, "TA assignments updated.")
             return redirect('accounts:user_list')
     else:
         form = TAAssignForm(faculty_user=request.user)
 
     return render(request, 'accounts/assign_tas.html', {"form": form})
+
+
+@login_required
+def edit_user(request, user_id):
+    """Edit a user's GitLab username (admin: anyone, faculty: their TAs).
+
+    The GitLab username is what lets the grading/group-sync code add the user to
+    course groups, so it is the one field worth correcting after creation.
+    """
+    user_profile = _get_user_profile_or_403(request.user)
+    target = get_object_or_404(User, pk=user_id)
+
+    if not _can_manage_user(request.user, user_profile, target):
+        raise Http404
+
+    target_profile = _profile_for(target)
+
+    if request.method == "POST":
+        gitlab_username = request.POST.get('gitlab_username', '').strip()
+        if not gitlab_username:
+            # Same convention as account creation: fall back to the email prefix.
+            gitlab_username = target.email.split('@')[0]
+        target_profile.gitlab_username = gitlab_username
+        target_profile.save()
+        messages.success(request, "Updated GitLab username for %s." % target.username)
+        return redirect('accounts:user_list')
+
+    return render(request, 'accounts/edit_user.html', {
+        "target": target, "target_profile": target_profile,
+    })
 
 
 @login_required

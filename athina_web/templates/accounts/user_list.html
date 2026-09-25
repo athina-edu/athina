@@ -35,6 +35,7 @@
     <th>Username</th>
     <th>Email</th>
     <th>Role</th>
+    <th>GitLab Username</th>
     {% if user_profile.role == 'admin' or user.is_superuser %}
     <th>Associated Faculty</th>
     {% endif %}
@@ -48,6 +49,10 @@
     <span class="badge badge-{% if u.profile.role == 'admin' %}danger{% elif u.profile.role == 'faculty' %}primary{% else %}success{% endif %}">
         {{ u.profile.get_role_display }}
     </span>
+</td>
+<td>
+    {% if u.profile.gitlab_username %}{{ u.profile.gitlab_username }}
+    {% else %}<span class="text-muted">—</span>{% endif %}
 </td>
 {% if user_profile.role == 'admin' or user.is_superuser %}
 <td>
@@ -64,6 +69,7 @@
 {% endif %}
 <td>
     {% if u.pk in manageable_ids %}
+    <a class="btn btn-secondary btn-sm" href="{% url 'accounts:edit_user' user_id=u.pk %}">Edit</a>
     <a class="btn btn-warning btn-sm confirm-reset-password"
        href="{% url 'accounts:reset_password' user_id=u.pk %}"
        data-name="{{ u.username }}">Reset Password</a>
