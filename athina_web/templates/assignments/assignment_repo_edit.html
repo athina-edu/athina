@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Repository - {{ student.email }} / {{ assignment.name }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Repositories</a></li>
+        <li class="breadcrumb-item active">{{ student.email }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>Repository</h3>
+<h6 class="text-muted">{{ student.email }} &mdash; {{ assignment.name }}</h6>
+<hr>
+
+<form method="post" class="col-lg-8 pl-0">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+    {% for field in form %}
+    <div class="form-group">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
+        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a class="btn btn-secondary" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Cancel</a>
+</form>
+</div>
+{% endblock %}

@@ -1,5 +1,5 @@
 from django import forms
-from .models import Assignment, Course, Student
+from .models import Assignment, Course, Student, AssignmentRepo
 
 
 class AssignmentForm(forms.ModelForm):
@@ -79,7 +79,7 @@ class StudentForm(forms.ModelForm):
 
 
 class StudentEditForm(forms.ModelForm):
-    """Edit an existing student — email, GitLab username and repository URL."""
+    """Edit an existing student — course-wide identity (email, GitLab username)."""
     def clean_email(self):
         """Reject an email that collides with another student in the same course."""
         email = (self.cleaned_data.get('email') or '').strip()
@@ -95,14 +95,13 @@ class StudentEditForm(forms.ModelForm):
 
     class Meta:
         model = Student
-        fields = ('email', 'gitlab_username', 'repository_url')
+        # `repository_url` is deliberately NOT here: a repository belongs to one
+        # assignment, and this form edits course-wide student identity. Set a
+        # repo per assignment from the assignment's Repositories page instead.
+        fields = ('email', 'gitlab_username')
         widgets = {
             'gitlab_username': forms.TextInput(attrs={
                 'placeholder': 'e.g. alice',
-                'class': 'form-control',
-            }),
-            'repository_url': forms.TextInput(attrs={
-                'placeholder': 'https://gitlab.com/group/student-repo.git',
                 'class': 'form-control',
             }),
         }
@@ -110,7 +109,27 @@ class StudentEditForm(forms.ModelForm):
             'gitlab_username': 'Defaults to the part of the email before @. Change it only '
                                'if the student\'s GitLab account differs — the account must '
                                'already exist on your GitLab server.',
-            'repository_url': 'Optional. Set the student\'s Git repository URL for grading.',
+        }
+
+
+class AssignmentRepoForm(forms.ModelForm):
+    """Set the repository URL for one student on one assignment.
+
+    This is the manual override for cases where provisioning should be skipped:
+    the student already has a repo, or it lives outside the managed GitLab group.
+    """
+    class Meta:
+        model = AssignmentRepo
+        fields = ('repository_url',)
+        widgets = {
+            'repository_url': forms.TextInput(attrs={
+                'placeholder': 'https://gitlab.com/group/student-repo.git',
+                'class': 'form-control',
+            }),
+        }
+        help_texts = {
+            'repository_url': 'Optional. The Git repository the student uses for this '
+                              'assignment. Leave blank to let provisioning create one.',
         }
 
 

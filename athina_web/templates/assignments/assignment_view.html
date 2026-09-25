@@ -29,12 +29,13 @@
     {% endcomment %}
     <a class="btn btn-info" href="{% url 'filemanager:index' inner_path=assignment.name %}">View Dir</a>
     <a class="btn btn-info" href="{% url 'assignments:assignment_log' assignment_id=assignment.pk %}">View Log</a>
+    {% if assignment.course %}
+    <a class="btn btn-primary" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Repositories</a>
+    {% endif %}
     {% if can_manage %}
     <a class="btn btn-warning" href="{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}">Edit Assignment</a>
     {% endif %}
-    {% if assignment.course %}
-    <a class="btn btn-info" href="{% url 'assignments:student_list' course_id=assignment.course.pk %}">Students</a>
-    {% endif %}
+    <a class="btn btn-secondary" href="{% url 'assignments:student_list' course_id=assignment.course.pk %}">Course Students</a>
 </div>
 
 
@@ -86,7 +87,16 @@
         </table>
     </div>
     {% else %}
-    There are no assignments in your account. Try <a href="{% url 'assignments:create_assignment' %}">creating on</a>.
+    <div class="alert alert-secondary">
+        No submissions recorded yet for <strong>{{ assignment.name }}</strong>.
+        Provision repositories for your students, then they will appear here once
+        they push code and grading has run.
+        {% if assignment.course %}
+        <div class="mt-2">
+            <a class="btn btn-warning btn-sm" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Provision Repositories</a>
+        </div>
+        {% endif %}
+    </div>
     {% endif %}
 </div>
 

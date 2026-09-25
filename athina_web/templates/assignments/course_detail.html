@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block head_addition %}
 {% load static %}
-<script src='{% static "athina_web/jquery.min.js" %}'></script>
+<script src="{% static 'athinaweb/jquery.min.js' %}"></script>
 {% endblock %}
 {% block title %}{{ course.name }}{% endblock %}
 {% block breadcrumbs %}
@@ -40,6 +40,7 @@
 <td>{{ assignment.active|yesno:"Active,Inactive" }}</td>
 <td>
 <a class="btn btn-info btn-sm" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Users</a>
+<a class="btn btn-primary btn-sm" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Repositories</a>
 <a class="btn btn-info btn-sm" href="{% url 'filemanager:index' inner_path=assignment.name %}">View Dir</a>
 <a class="btn btn-info btn-sm" href="{% url 'assignments:assignment_log' assignment_id=assignment.pk %}">View Log</a>
 {% if can_manage %}<a class="btn btn-warning btn-sm" href="{% url 'assignments:assignment_edit' assignment_id=assignment.pk %}">Edit</a>{% endif %}

@@ -15,15 +15,26 @@ urlpatterns = [
     path('courses/<int:course_id>/students/add/', views.student_add, name='student_add'),
     path('courses/<int:course_id>/students/import/', views.student_bulk_import, name='student_bulk_import'),
     path('courses/<int:course_id>/students/provision/', views.provision_students, name='provision_students'),
-    path('courses/<int:course_id>/students/notify/', views.notify_students, name='notify_students'),
-    path('courses/<int:course_id>/students/import/progress/', views.import_progress, name='import_progress'),
+    path('courses/<int:course_id>/students/notify/', views.notify_students, name='notify_students'),    path('courses/<int:course_id>/students/import/progress/', views.import_progress, name='import_progress'),
     path('courses/<int:course_id>/students/import/progress/api/', views.import_progress_api, name='import_progress_api'),
     path('courses/<int:course_id>/students/<int:student_id>/edit/', views.student_edit, name='student_edit'),
     path('courses/<int:course_id>/students/<int:student_id>/delete/', views.student_delete, name='student_delete'),
     # Assignment management
     path('new/', views.assignment_create, name='create_assignment'),
     path('<int:assignment_id>/', views.assignment_view, name='assignment_view'),
+    # Per-assignment repositories: these are the assignment-scoped equivalents of
+    # the course-level student routes below.
+    path('<int:assignment_id>/students/', views.assignment_students, name='assignment_students'),
+    path('<int:assignment_id>/students/provision/', views.assignment_provision_students,
+         name='assignment_provision_students'),
+    path('<int:assignment_id>/students/notify/', views.assignment_notify_students,
+         name='assignment_notify_students'),
+    path('<int:assignment_id>/students/<int:student_id>/repo/', views.assignment_repo_edit,
+         name='assignment_repo_edit'),
     path('<int:assignment_id>/log', views.assignment_log, name='assignment_log'),
+    # Accept the trailing-slash form too: the canonical URL above omits it, so a
+    # hand-typed or bookmarked ".../log/" would otherwise 404.
+    path('<int:assignment_id>/log/', views.assignment_log),
     path('<int:assignment_id>/edit', views.assignment_create, name='assignment_edit'),
     path('<int:assignment_id>/delete', views.assignment_delete, name='assignment_delete'),
     path('<int:assignment_id>/force/<int:user_id>', views.assignment_force, name='assignment_force'),

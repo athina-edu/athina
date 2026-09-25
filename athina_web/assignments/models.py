@@ -31,6 +31,15 @@ class Student(models.Model):
     username = models.CharField(max_length=255, blank=True,
                                 help_text="Derived from email prefix if left blank.")
     gitlab_username = models.CharField(max_length=255, blank=True, default="")
+    # NOTE: `repository_url` and `notified_at` are DEPRECATED.
+    #
+    # A student has one repository *per assignment*, not per course, so these
+    # course-scoped fields cannot express reality (a student enrolled in
+    # "SQL 1" and "SQL 2" has two repos, and being notified about one says
+    # nothing about the other). They are retained only so the historical
+    # values can be migrated into AssignmentRepo by migration 0024; the live
+    # per-assignment state now lives on AssignmentRepo. Do not read them in
+    # new code.
     repository_url = models.CharField(max_length=500, blank=True, default="")
     date_added = models.DateTimeField('Date Added', default=timezone.now, editable=False)
     # When the student was last emailed about their repository. NULL means they
@@ -92,3 +101,29 @@ class Assignment(models.Model):
         keep_characters = (' ', '.', '_', '-')
         self.name = "".join(c for c in self.name if c.isalnum() or c in keep_characters).rstrip()
         super(Assignment, self).save(*args, **kwargs)
+
+
+class AssignmentRepo(models.Model):
+    """The Git repository a student uses for ONE assignment.
+
+    Repositories are per-assignment, not per-course: "SQL 1" and "SQL 2" each
+    get their own repo named ``<assignment>-<gitlab_username>``. This model is
+    the authoritative source for that pairing and mirrors one row of the grading
+    engine's ``users`` table (keyed by course_id + assignment_id + student).
+
+    ``notified_at`` is tracked per assignment too, so provisioning "SQL 2" does
+    not believe the student has already been emailed because "SQL 1" was.
+    """
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='repos')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='assignment_repos')
+    repository_url = models.CharField(max_length=500, blank=True, default="")
+    notified_at = models.DateTimeField('Notified At', null=True, blank=True, editable=False)
+    date_created = models.DateTimeField('Date Created', default=timezone.now, editable=False)
+
+    class Meta:
+        # One repository per student per assignment.
+        unique_together = ('assignment', 'student')
+        ordering = ['student__email']
+
+    def __str__(self):
+        return "%s → %s" % (self.student.email, self.assignment.name)

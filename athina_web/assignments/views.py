@@ -11,8 +11,9 @@ from django.http import HttpResponse
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from .models import Assignment, Course, Student
-from .forms import AssignmentForm, CourseForm, StudentForm, StudentEditForm, StudentBulkForm
+from .models import Assignment, Course, Student, AssignmentRepo
+from .forms import (AssignmentForm, CourseForm, StudentForm, StudentEditForm,
+                    StudentBulkForm, AssignmentRepoForm)
 from athina_web.accounts.models import UserProfile
 import os
 import shutil
@@ -124,13 +125,19 @@ def _read_yaml_ids(assignment):
     return (assignment.course_id or assignment.pk, assignment.pk)
 
 
-def _sync_student_to_grading_db(student):
-    """Insert/update a student record in the grading engine's MySQL database.
-    This is needed because the grading engine reads from the MySQL 'users' table,
-    while the web app stores students in its own SQLite database.
-    
-    Reads course_id/assignment_id from the assignment YAML (the ground truth)
-    so that the DB record always matches what the CLI will query."""
+def _repo_url_for(student, assignment):
+    """The repository a student uses for one assignment ('' if not provisioned)."""
+    if assignment is None:
+        return ''
+    repo = AssignmentRepo.objects.filter(student=student, assignment=assignment).first()
+    return repo.repository_url if repo else ''
+
+
+def _write_grading_row(student, course_id_val, assignment_id_val, repo_url):
+    """Upsert one (student, course, assignment) row in the grading engine's DB.
+
+    Best-effort: failures are logged rather than raised, because a silent failure
+    here means the daemon sees no students and grading simply never happens."""
     try:
         conn = connect_to_db()
     except Exception:
@@ -138,13 +145,6 @@ def _sync_student_to_grading_db(student):
 
     try:
         cur = conn.cursor()
-        # Read IDs from the YAML (ground truth in the git repo)
-        assignment = student.course.assignments.first()
-        if assignment:
-            course_id_val, assignment_id_val = _read_yaml_ids(assignment)
-        else:
-            course_id_val = student.course.pk
-            assignment_id_val = student.course.pk
 
         # Check if record already exists — dedup by email (secondary_id) + course/assignment,
         # NOT by user_id (Django PK). This prevents duplicates when the same student appears
@@ -160,7 +160,7 @@ def _sync_student_to_grading_db(student):
                 "UPDATE users SET repository_url=%s, secondary_id=%s, user_fullname=%s, "
                 "new_url=1, changed_state=1, commit_date='0001-01-01 00:00:00' "
                 "WHERE user_id=%s AND course_id=%s AND assignment_id=%s",
-                (student.repository_url or '', student.email, student.username,
+                (repo_url or '', student.email, student.username,
                  mysql_user_id, course_id_val, assignment_id_val))
         else:
             # Insert new record.
@@ -183,16 +183,38 @@ def _sync_student_to_grading_db(student):
                 "0, 0, NOW(), '0001-01-01 00:00:00', 1, 0, '0001-01-01 00:00:00', "
                 "0, 0, 0, 0, '')",
                 (student.pk, course_id_val, assignment_id_val,
-                 student.repository_url or '', student.email, student.username))
+                 repo_url or '', student.email, student.username))
         conn.commit()
     except Exception as exc:
-        # Best-effort: don't break the web app if the grading DB has issues — but
-        # log it, because a silent failure here means the daemon sees no students
-        # and grading simply never happens.
         logging.getLogger('athina_web').error(
-            "Failed to sync student %s to the grading database: %s", student.email, exc)
+            "Failed to sync student %s (course=%s assignment=%s) to the grading database: %s",
+            student.email, course_id_val, assignment_id_val, exc)
     finally:
         conn.close()
+
+
+def _sync_student_to_grading_db(student, assignment=None):
+    """Sync a student to the grading engine's MySQL database.
+
+    The engine keys students by (course_id, assignment_id), so there is one row
+    per assignment and each carries that assignment's repository URL. Pass an
+    explicit `assignment` to sync only that one, or omit it to sync every
+    assignment in the student's course.
+
+    This is needed because the grading engine reads from the MySQL 'users' table
+    while the web app stores students in its own database. course_id/assignment_id
+    come from the assignment YAML (the ground truth), so the DB record always
+    matches what the CLI will query."""
+    assignments = [assignment] if assignment is not None else list(student.course.assignments.all())
+    if not assignments:
+        # No assignments exist yet. Write a course-level row so the student is not
+        # silently dropped from the grading database (historical behaviour).
+        _write_grading_row(student, student.course.pk, student.course.pk, '')
+        return
+
+    for each in assignments:
+        course_id_val, assignment_id_val = _read_yaml_ids(each)
+        _write_grading_row(student, course_id_val, assignment_id_val, _repo_url_for(student, each))
 
 
 def _write_assignment_env(assignment, user_profile=None):
@@ -551,10 +573,17 @@ def assignment_view(request, assignment_id):
         conn.close()
 
     if not users:
-        return render(request, 'assignments/assignment_empty.html',
-                      {"assignment": assignment,
-                       "message": "No student submissions recorded yet. "
-                                  "Students will appear here once they submit their repositories and grading has run."})
+        # Don't dead-end here: a brand new assignment (or one with no grading rows
+        # yet) still needs a way to provision repositories and reach the roster.
+        return render(request, 'assignments/assignment_view.html', {
+            "users": [], "users_len": 0,
+            "assignment": assignment, "plagiarism_report": plagiarism_report,
+            "gitlab_project_id": assignment.gitlab_project_id,
+            "gitlab_output": assignment.output_method == 'gitlab_issues',
+            "gitlab_host": _get_owner_gitlab_host(assignment),
+            "can_force": False,
+            "can_manage": _user_can_manage_courses(request.user),
+        })
 
     return render(request, 'assignments/assignment_view.html', {"users": users, "users_len": len(users),
                                                                 "assignment": assignment, "plagiarism_report": plagiarism_report,
@@ -883,88 +912,135 @@ def student_list(request, course_id):
     students = course.students.all().order_by('email')
     return render(request, 'assignments/student_list.html', {
         "course": course, "students": students,
+        # Repositories live on assignments, so link the instructor there for
+        # provisioning rather than offering a course-wide repo action here.
+        "assignments": course.assignments.all().order_by('name'),
         "has_assignments": course.assignments.exists(),
         "can_manage": _user_can_manage_students(request.user, course),
     })
 
 
 @login_required
-def provision_students(request, course_id):
-    """Provision GitLab repos and sync to grading DB for all students missing a repo.
+def provision_students(request, course_id, assignment_id=None):
+    """Provision per-assignment GitLab repos and sync to the grading DB.
 
-    Students who already have a repo are not re-provisioned, but they are still
-    emailed if they have never been notified (e.g. the repo was created before
-    notifications were enabled)."""
+    Repositories belong to an assignment, not a course, so this is driven by the
+    assignment: every student gets ``<assignment>-<gitlab_username>`` for THAT
+    assignment. Re-running it is safe — an existing repo is adopted rather than
+    recreated, and a student is only emailed once per assignment."""
     course = get_object_or_404(Course, pk=course_id)
     if not _user_can_manage_students(request.user, course):
         raise Http404
 
-    first_assignment = course.assignments.first()
-    if not first_assignment:
+    if assignment_id is not None:
+        assignment = get_object_or_404(Assignment, pk=assignment_id, course=course)
+        assignments = [assignment]
+    else:
+        # Backwards-compatible course-level entry point. Provisioning a course
+        # means "every assignment", which is what instructors expect when they
+        # click it from the course roster.
+        assignments = list(course.assignments.all())
+
+    if not assignments:
+        messages.warning(request, "This course has no assignments yet. Create an "
+                                  "assignment before provisioning repositories.")
         return redirect('assignments:student_list', course_id=course.pk)
 
     created = 0
+    adopted = 0
     synced = 0
     notified = 0
     errors = []
-    for student in Student.objects.filter(course=course):
-        was_notified = student.notified_at
-        if not student.repository_url:
-            result = _provision_student_gitlab(course, student, assignment_name=first_assignment.name)
-            if result is True:
-                created += 1
-                if student.notified_at and not was_notified:
-                    notified += 1
-            elif result:
-                # result is an error string — surface it to the faculty
-                errors.append("%s: %s" % (student.email, result))
-        else:
-            # Repo already exists — still notify the student if we never did.
-            result = _notify_student_repo(course, student, assignment_name=first_assignment.name)
-            if result is True:
-                notified += 1
-            elif result:
-                errors.append("%s: %s" % (student.email, result))
-        # Always sync to grading DB (handles students added before any assignment)
-        _sync_student_to_grading_db(student)
-        synced += 1
 
+    # Ensure the faculty owner and assigned TAs are members of the course group.
+    # This covers groups created before this feature existed, and is cheap
+    # (idempotent) when they are already members.
+    members_ensured = 0
+    gitlab_url, gitlab_token = _get_gitlab_config(course)
+    if gitlab_url and gitlab_token:
+        group_id, _group_name, _created = _ensure_course_group(course, gitlab_url, gitlab_token)
+        if group_id is not None:
+            members_ensured = _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
+
+    students = list(Student.objects.filter(course=course))
+    for assignment in assignments:
+        for student in students:
+            repo, _was_created = AssignmentRepo.objects.get_or_create(
+                student=student, assignment=assignment)
+            was_notified = repo.notified_at
+
+            if not repo.repository_url:
+                result = _provision_student_gitlab(course, student, assignment=assignment)
+                if result is True:
+                    created += 1
+                    repo.refresh_from_db()
+                    if repo.notified_at and not was_notified:
+                        notified += 1
+                elif result:
+                    # result is an error string — surface it to the faculty
+                    errors.append("%s (%s): %s" % (student.email, assignment.name, result))
+            else:
+                # Repo already exists — still notify the student if we never did.
+                adopted += 1
+                result = _notify_student_repo(course, student, assignment=assignment)
+                if result is True:
+                    notified += 1
+                elif result:
+                    errors.append("%s (%s): %s" % (student.email, assignment.name, result))
+
+            # Sync this assignment's row so the daemon sees the repo URL.
+            _sync_student_to_grading_db(student, assignment=assignment)
+            synced += 1
+
+    label = assignments[0].name if len(assignments) == 1 else "%d assignments" % len(assignments)
     if errors:
-        messages.error(request, "Some students could not be provisioned:<br>" + "<br>".join(errors))
+        messages.error(request, "Some repositories could not be provisioned:<br>" + "<br>".join(errors))
     if created:
-        messages.success(request, "Provisioned %d new repo(s) and synced %d student(s) to the grading database." % (created, synced))
+        messages.success(request, "Created %d new repo(s) for %s and synced %d student/assignment row(s)."
+                         % (created, label, synced))
     elif not errors:
-        messages.info(request, "All students already have repos. Synced %d student(s) to the grading database." % synced)
+        messages.info(request, "All students already have repos for %s. Synced %d row(s) to the grading database."
+                      % (label, synced))
+    if adopted and not created:
+        messages.info(request, "Adopted %d existing repo(s) for %s." % (adopted, label))
     if notified:
         messages.success(request, "Sent %d notification email(s) to students." % notified)
+    if members_ensured:
+        messages.info(request, "Ensured %d course member(s) (faculty/TAs) have group access." % members_ensured)
 
-    return redirect('assignments:student_list', course_id=course.pk)
+    return redirect('assignments:assignment_students', assignment_id=assignment.pk) \
+        if assignment_id is not None else redirect('assignments:student_list', course_id=course.pk)
 
 
 @login_required
-def notify_students(request, course_id):
-    """Re-send the repository notification email to every student in the course."""
+def notify_students(request, course_id, assignment_id=None):
+    """Re-send the repository notification email for an assignment (or a course)."""
     course = get_object_or_404(Course, pk=course_id)
     if not _user_can_manage_students(request.user, course):
         raise Http404
 
-    first_assignment = course.assignments.first()
-    assignment_name = first_assignment.name if first_assignment else course.name
+    if assignment_id is not None:
+        assignment = get_object_or_404(Assignment, pk=assignment_id, course=course)
+        assignments = [assignment]
+    else:
+        assignments = list(course.assignments.all())
 
     sent = 0
     skipped = 0
     errors = []
-    for student in Student.objects.filter(course=course):
-        if not student.repository_url:
-            skipped += 1
-            continue
-        result = _notify_student_repo(course, student, assignment_name=assignment_name, force=True)
-        if result is True:
-            sent += 1
-        elif result:
-            errors.append("%s: %s" % (student.email, result))
-        else:
-            skipped += 1
+    for assignment in assignments:
+        for student in Student.objects.filter(course=course):
+            repo = AssignmentRepo.objects.filter(student=student, assignment=assignment).first()
+            if not repo or not repo.repository_url:
+                skipped += 1
+                continue
+            result = _notify_student_repo(course, student, assignment=assignment, force=True)
+            if result is True:
+                sent += 1
+            elif result:
+                errors.append("%s (%s): %s" % (student.email, assignment.name, result))
+            else:
+                skipped += 1
 
     if errors:
         messages.error(request, "Some notifications failed:<br>" + "<br>".join(errors))
@@ -1169,6 +1245,99 @@ def student_delete(request, course_id, student_id):
     return redirect('assignments:student_list', course_id=course.pk)
 
 
+@login_required
+def assignment_students(request, assignment_id):
+    """Per-assignment roster: one repository per student for THIS assignment.
+
+    This is the page that answers "which students have a repo for this
+    assignment?" — the course-level student list deliberately shows only the
+    roster, because repositories are assignment-scoped.
+    """
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    course = assignment.course
+
+    # Access mirrors assignment_view: owner, admin, or anyone with course access.
+    has_access = (assignment.owner == request.user.id or request.user.is_superuser)
+    if not has_access and course:
+        has_access = _user_can_access_course(request.user, course)
+    if not has_access:
+        raise Http404
+
+    students = []
+    if course:
+        repo_by_student = {
+            repo.student_id: repo
+            for repo in AssignmentRepo.objects.filter(assignment=assignment)
+        }
+        for student in Student.objects.filter(course=course).order_by('email'):
+            students.append({
+                'student': student,
+                'repo': repo_by_student.get(student.pk),
+            })
+
+    provisioned = sum(1 for row in students if row['repo'] and row['repo'].repository_url)
+    return render(request, 'assignments/assignment_students.html', {
+        "assignment": assignment,
+        "course": course,
+        "students": students,
+        "provisioned": provisioned,
+        "missing": len(students) - provisioned,
+        "can_manage_students": bool(course) and _user_can_manage_students(request.user, course),
+    })
+
+
+@login_required
+def assignment_provision_students(request, assignment_id):
+    """Provision repositories for every student on ONE assignment."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None:
+        raise Http404
+    return provision_students(request, assignment.course_id, assignment_id=assignment.pk)
+
+
+@login_required
+def assignment_notify_students(request, assignment_id):
+    """Re-send repository notifications for ONE assignment."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None:
+        raise Http404
+    return notify_students(request, assignment.course_id, assignment_id=assignment.pk)
+
+
+@login_required
+def assignment_repo_edit(request, assignment_id, student_id):
+    """Manually set (or clear) one student's repository URL for one assignment.
+
+    Covers the provisioning escape hatches: the student already has a repo, or
+    it lives somewhere that is not managed by the GitLab integration.
+    """
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None:
+        raise Http404
+    course = assignment.course
+    if not _user_can_manage_students(request.user, course):
+        raise Http404
+    student = get_object_or_404(Student, pk=student_id, course=course)
+
+    repo, _created = AssignmentRepo.objects.get_or_create(student=student, assignment=assignment)
+
+    if request.method == "POST":
+        form = AssignmentRepoForm(request.POST, instance=repo)
+        if form.is_valid():
+            form.save()
+            # Push the change straight to the grading DB so the daemon picks it up.
+            _sync_student_to_grading_db(student, assignment=assignment)
+            messages.success(request, "Repository for %s updated." % student.email)
+            return redirect('assignments:assignment_students', assignment_id=assignment.pk)
+    else:
+        form = AssignmentRepoForm(instance=repo)
+
+    return render(request, 'assignments/assignment_repo_edit.html', {
+        "assignment": assignment, "course": course, "student": student,
+        "repo": repo, "form": form,
+    })
+
+
 # =========================================================================
 #  GitLab auto-provisioning helper
 # =========================================================================
@@ -1206,19 +1375,31 @@ def _get_gitlab_config(course):
     return None, None
 
 
-def _notify_student_repo(course, student, assignment_name=None, force=False):
-    """Email a student that their repository is ready.
+def _notify_student_repo(course, student, assignment=None, repo_url=None, force=False):
+    """Email a student that their repository for ONE assignment is ready.
 
     Returns True when a message was sent, False when notifications are disabled
     or the student has no address, or an error string when delivery failed.
 
-    By default a student who has already been notified (``notified_at`` set) is
-    skipped, so repeated "Provision Missing Repos" clicks do not spam them.
-    Pass ``force=True`` to re-send regardless.
+    ``notified_at`` is tracked on the AssignmentRepo, so a student who was told
+    about "SQL 1" is still notified when "SQL 2" is provisioned. Pass
+    ``force=True`` to re-send regardless.
     """
     if not student.email:
         return False
-    if student.notified_at and not force:
+
+    if assignment is None:
+        return False
+
+    # Resolve (and create if needed) the per-assignment repo record.
+    repo, _created = AssignmentRepo.objects.get_or_create(student=student, assignment=assignment)
+    if repo_url:
+        repo.repository_url = repo_url
+        repo.save(update_fields=['repository_url'])
+
+    if repo.notified_at and not force:
+        return False
+    if not repo.repository_url:
         return False
 
     try:
@@ -1232,6 +1413,7 @@ def _notify_student_repo(course, student, assignment_name=None, force=False):
 
     from athina_web.accounts.resend_email import send_email_safe
 
+    assignment_name = assignment.name
     subject = "[Athina] Your repository for %s has been created" % course.name
     text_body = (
         "Hello,\n\n"
@@ -1241,8 +1423,8 @@ def _notify_student_repo(course, student, assignment_name=None, force=False):
         "You can start working on your assignment and push your code to this "
         "repository.\n\n"
         "If you have any questions, please contact your instructor.\n\n"
-        "— Athina" % (course.name, assignment_name or 'Assignment',
-                      student.repository_url)
+        "— Athina" % (course.name, assignment_name,
+                      repo.repository_url)
     )
     html_body = (
         "<p>Hello,</p>"
@@ -1256,8 +1438,8 @@ def _notify_student_repo(course, student, assignment_name=None, force=False):
         "<p>You can start working on your assignment and push your code to this "
         "repository.</p>"
         "<p>If you have any questions, please contact your instructor.</p>"
-        "<p>— Athina</p>" % (course.name, assignment_name or 'Assignment',
-                              student.repository_url, student.repository_url)
+        "<p>— Athina</p>" % (course.name, assignment_name,
+                              repo.repository_url, repo.repository_url)
     )
 
     message_id = send_email_safe(
@@ -1272,16 +1454,238 @@ def _notify_student_repo(course, student, assignment_name=None, force=False):
     if message_id is None:
         return "Could not send notification email to %s (check the Resend API key and sender address)." % student.email
 
-    student.notified_at = timezone.now()
-    student.save(update_fields=['notified_at'])
+    repo.notified_at = timezone.now()
+    repo.save(update_fields=['notified_at'])
     # Audit trail: every real send is logged so duplicate deliveries can be traced.
     logging.getLogger('athina_web').info(
-        "Sent repo notification to %s for course '%s' (resend_id=%s)",
-        student.email, course.name, message_id)
+        "Sent repo notification to %s for course '%s' assignment '%s' (resend_id=%s)",
+        student.email, course.name, assignment_name, message_id)
     return True
 
 
-def _provision_student_gitlab(course, student, assignment_name=None):
+# GitLab access levels (https://docs.gitlab.com/ee/api/access_requests.html)
+GITLAB_ACCESS_DEVELOPER = 30
+GITLAB_ACCESS_MAINTAINER = 40
+GITLAB_ACCESS_OWNER = 50
+
+
+def _gitlab_find_user_id(api_base, headers, username):
+    """Resolve a GitLab username to a user id. Returns None if not found."""
+    if not username:
+        return None
+    try:
+        resp = http_requests.get("%s/users" % api_base, headers=headers,
+                                 params={"username": username}, timeout=10)
+        if resp.ok and resp.json():
+            return resp.json()[0]['id']
+    except Exception:
+        pass
+    return None
+
+
+def _gitlab_add_group_member(api_base, headers, group_id, username, access_level):
+    """Add a user to a GitLab group if not already a member (idempotent).
+
+    Returns True if the user is (now) a member, False otherwise.
+    """
+    user_id = _gitlab_find_user_id(api_base, headers, username)
+    if user_id is None:
+        return False
+    try:
+        member_check = http_requests.get(
+            "%s/groups/%s/members" % (api_base, group_id),
+            headers=headers, params={"per_page": 100}, timeout=10)
+        existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
+        if user_id in existing_ids:
+            return True
+        resp = http_requests.post(
+            "%s/groups/%s/members" % (api_base, group_id),
+            headers=headers,
+            data={"user_id": user_id, "access_level": access_level},
+            timeout=10)
+        return resp.ok
+    except Exception:
+        return False
+
+
+def _ensure_course_group(course, gitlab_url, gitlab_token):
+    """Find or create the GitLab group for a course.
+
+    Naming: athina-[facultyid]-[coursename].
+    Returns (group_id, group_name, created) or (None, None, False) on failure.
+    """
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    api_base = "https://%s/api/v4" % gitlab_url
+
+    faculty_id = course.owner
+    course_slug = re.sub(r'[^a-zA-Z0-9_-]', '-', course.name.lower()).strip('-')
+    group_name = "athina-%d-%s" % (faculty_id, course_slug)
+    group_name = re.sub(r'-+', '-', group_name)
+
+    resp = http_requests.get("%s/groups" % api_base, headers=headers,
+                             params={"search": group_name}, timeout=10)
+    group = None
+    if resp.ok:
+        for g in resp.json():
+            if g.get('path') == group_name:
+                group = g
+                break
+
+    if group is not None:
+        return group['id'], group_name, False
+
+    resp = http_requests.post("%s/groups" % api_base, headers=headers, data={
+        "name": "Athina - %s" % course.name,
+        "path": group_name,
+        "visibility": "private",
+    }, timeout=10)
+    if not resp.ok:
+        return None, None, False
+
+    return resp.json()['id'], group_name, True
+
+
+def _sync_course_group_members(course, gitlab_url, gitlab_token, group_id):
+    """Ensure the faculty owner and all assigned TAs are members of the course group.
+
+    Faculty owner -> Owner (50); assigned TAs -> Maintainer (40). Group-level
+    membership means they inherit access to every student repo in the group,
+    including repos created later. Returns the number of members ensured.
+
+    Note: TAs are stored as ``ta_profile.managed_by -> [faculty]`` (see the
+    repair migration 0009), so we look up TAs whose ``managed_by`` includes the
+    faculty owner — matching ``_user_can_access_course``.
+    """
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    api_base = "https://%s/api/v4" % gitlab_url
+    ensured = 0
+
+    try:
+        owner = User.objects.get(pk=course.owner)
+        owner_profile = owner.profile
+    except (User.DoesNotExist, UserProfile.DoesNotExist):
+        return 0
+
+    # Faculty owner (explicit, even though their token created the group)
+    if owner_profile.gitlab_username and _gitlab_add_group_member(
+            api_base, headers, group_id, owner_profile.gitlab_username, GITLAB_ACCESS_OWNER):
+        ensured += 1
+
+    # Assigned TAs: ta.profile.managed_by contains the faculty they assist.
+    ta_profiles = UserProfile.objects.filter(
+        role=UserProfile.ROLE_TA, managed_by=owner)
+    for ta_profile in ta_profiles:
+        ta_username = ta_profile.gitlab_username
+        if ta_username and _gitlab_add_group_member(
+                api_base, headers, group_id, ta_username, GITLAB_ACCESS_MAINTAINER):
+            ensured += 1
+
+    return ensured
+
+
+def sync_faculty_course_members(faculty_user):
+    """Sync group membership for every course owned by a faculty member.
+
+    Called when TA assignments change. Returns (courses_synced, members_ensured).
+    """
+    courses_synced = 0
+    members_ensured = 0
+    for course in Course.objects.filter(owner=faculty_user.id):
+        # Only sync courses that already have a group (i.e. have assignments)
+        if not course.assignments.exists():
+            continue
+        gitlab_url, gitlab_token = _get_gitlab_config(course)
+        if not gitlab_url or not gitlab_token:
+            continue
+        group_id, _group_name, _created = _ensure_course_group(course, gitlab_url, gitlab_token)
+        if group_id is None:
+            continue
+        members_ensured += _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
+        courses_synced += 1
+    return courses_synced, members_ensured
+
+
+def _build_readme(assignment):
+    """Build the README that is committed to every new student repository.
+
+    The top of the file explains how feedback is delivered (Canvas or GitLab
+    issues), followed by an important note asking students to keep personal
+    information out of the repository.
+    """
+    if assignment is not None and assignment.output_method == 'gitlab_issues':
+        feedback_lines = [
+            "Feedback for your submission will be posted as **GitLab issues** on this",
+            "repository. Watch this project (or check the Issues tab) after each",
+            "submission to see your grade and comments.",
+        ]
+    else:
+        feedback_lines = [
+            "Feedback and grades for your submission will be delivered through **Canvas LMS**.",
+            "Check the assignment in Canvas after each submission to see your results.",
+        ]
+
+    return "\n".join([
+        "# %s" % (assignment.name if assignment is not None else "Assignment"),
+        "",
+        "## How you will receive feedback",
+        "",
+    ] + feedback_lines + [
+        "",
+        "Feedback may be generated with the help of an automated grading system, which",
+        "can include AI-assisted analysis of your code and test results. A human",
+        "instructor always reviews final grades.",
+        "",
+        "---",
+        "",
+        "## IMPORTANT: Keep personal information out of this repository",
+        "",
+        "Do not put your name, email address, student ID, or any other personal",
+        "information inside this repository. We already know that this is your",
+        "repository, and it is linked to your account automatically.",
+        "",
+        "This assignment repository is private and shared only with the course",
+        "teaching team (instructors and teaching assistants). Keeping personal",
+        "details out of the code, comments, filenames, and commit messages protects",
+        "your privacy.",
+        "",
+        "You may delete this README once you have read it, or replace it with your",
+        "own documentation. The note above is provided for reference.",
+        "",
+    ])
+
+
+def _seed_repo_readme(gitlab_url, token, project_id, assignment):
+    """Create an initial commit containing a README.md via the GitLab Commit API.
+
+    Uses the Commit API (actions[]) so the repository gets a ``master`` branch
+    with one commit. This matters because the grading engine reads the latest
+    commit from ``master`` — a repo with only a .git dir has no branch, so the
+    engine would see no commit. Best-effort: returns True on success.
+    """
+    if project_id is None:
+        return False
+    try:
+        content = _build_readme(assignment)
+        resp = http_requests.post(
+            "https://%s/api/v4/projects/%s/repository/commits" % (gitlab_url, project_id),
+            headers={"PRIVATE-TOKEN": token},
+            json={
+                "branch": "master",
+                "commit_message": "Add README with feedback and privacy instructions",
+                "actions": [{
+                    "action": "create",
+                    "file_path": "README.md",
+                    "content": content,
+                }],
+            },
+            timeout=10,
+        )
+        return resp.ok
+    except Exception:
+        return False
+
+
+def _provision_student_gitlab(course, student, assignment_name=None, assignment=None):
     """
     Create GitLab group + repo for a student (skips if they already exist).
     Repo naming: assignmentname-username (e.g. sql1-alice).
@@ -1290,10 +1694,23 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     caller can surface it to the faculty. The student's GitLab username is
     validated BEFORE the repo is created, so we never create a private repo
     that the student cannot access.
+
+    New repositories are seeded with a README.md explaining how feedback is
+    delivered and asking students not to commit personal information.
+
+    The resulting URL is recorded on the (student, assignment) AssignmentRepo
+    row — repositories are per assignment, not per course.
     """
+    if assignment is None:
+        return "No assignment supplied, so a repository cannot be created."
+    assignment_name = assignment_name or assignment.name
+
     gitlab_url, gitlab_token = _get_gitlab_config(course)
     if not gitlab_url or not gitlab_token:
         return "GitLab is not configured for this course (missing URL or token)."
+
+    # The row that owns the repo URL for this student + assignment.
+    repo, _created = AssignmentRepo.objects.get_or_create(student=student, assignment=assignment)
 
     headers = {"PRIVATE-TOKEN": gitlab_token}
     api_base = "https://%s/api/v4" % gitlab_url
@@ -1326,35 +1743,16 @@ def _provision_student_gitlab(course, student, assignment_name=None):
         student.save(update_fields=['gitlab_username'])
 
     # 1. Find or create the course group
-    # Naming: athina-[facultyid]-[coursename]
-    faculty_id = course.owner
-    course_slug = re.sub(r'[^a-zA-Z0-9_-]', '-', course.name.lower()).strip('-')
-    group_name = "athina-%d-%s" % (faculty_id, course_slug)
-    group_name = re.sub(r'-+', '-', group_name)
+    group_id, group_name, group_created = _ensure_course_group(course, gitlab_url, gitlab_token)
+    if group_id is None:
+        return ("Failed to create GitLab group 'athina-%s' for course '%s'. Check "
+                "the faculty GitLab token has permission to create groups." %
+                (course.owner, course.name))
 
-    resp = http_requests.get("%s/groups" % api_base, headers=headers,
-                             params={"search": group_name}, timeout=10)
-    group = None
-    if resp.ok:
-        for g in resp.json():
-            if g.get('path') == group_name:
-                group = g
-                break
-
-    if group is None:
-        resp = http_requests.post("%s/groups" % api_base, headers=headers, data={
-            "name": "Athina - %s" % course.name,
-            "path": group_name,
-            "visibility": "private",
-        }, timeout=10)
-        if resp.ok:
-            group = resp.json()
-        else:
-            return ("Failed to create GitLab group '%s' (HTTP %s). Check the "
-                    "faculty GitLab token has permission to create groups." %
-                    (group_name, resp.status_code))
-
-    group_id = group['id']
+    # When the group is first created, add the faculty owner and any assigned TAs
+    # so they have access to every repo in the course (including future ones).
+    if group_created:
+        _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
 
     # 2. Check if repo already exists, create if not
     prefix = re.sub(r'[^a-zA-Z0-9_-]', '-', assignment_name.lower()).strip('-') if assignment_name else 'assignment'
@@ -1371,8 +1769,8 @@ def _provision_student_gitlab(course, student, assignment_name=None):
     if check_resp.status_code == 200:
         # Repo already exists — just record the URL
         project = check_resp.json()
-        student.repository_url = project.get('http_url_to_repo', '')
-        student.save()
+        repo.repository_url = project.get('http_url_to_repo', '')
+        repo.save(update_fields=['repository_url'])
         return True
 
     # Create the repo
@@ -1388,8 +1786,13 @@ def _provision_student_gitlab(course, student, assignment_name=None):
                 (repo_name, resp.status_code, group_name))
 
     project = resp.json()
-    student.repository_url = project.get('http_url_to_repo', '')
-    student.save()
+    repo.repository_url = project.get('http_url_to_repo', '')
+    repo.save(update_fields=['repository_url'])
+
+    # Seed an initial commit (README.md) so the repo has a 'master' branch that
+    # the grading engine can read. Best-effort — provisioning still succeeds if
+    # it fails, and we never touch repos that already existed.
+    _seed_repo_readme(gitlab_url, gitlab_token, project.get('id'), assignment)
 
     # 3. Add student as developer (skip if already a member)
     member_check = http_requests.get(
@@ -1400,7 +1803,7 @@ def _provision_student_gitlab(course, student, assignment_name=None):
         member_resp = http_requests.post("%s/projects/%s/members" % (api_base, project['id']),
                                          headers=headers, data={
                                              "user_id": gitlab_user_id,
-                                             "access_level": 30,
+                                             "access_level": GITLAB_ACCESS_DEVELOPER,
                                          }, timeout=10)
         if not member_resp.ok:
             return ("Created repo '%s' but failed to add student '%s' as a member "
@@ -1408,6 +1811,6 @@ def _provision_student_gitlab(course, student, assignment_name=None):
                     "this is fixed." % (repo_name, student.gitlab_username, member_resp.status_code))
 
     # 4. Optionally notify the student via Resend
-    _notify_student_repo(course, student, assignment_name=assignment_name)
+    _notify_student_repo(course, student, assignment=assignment, repo_url=repo.repository_url)
 
     return True
