@@ -10,6 +10,22 @@ from django.shortcuts import redirect
 import datetime
 import git
 
+# Logs are shown newest-last inside a fixed-height pane. A long grading log can
+# reach several megabytes, which makes every auto-refresh re-transfer the whole
+# file; cap the rendered tail instead.
+MAX_LOG_LINES = 500
+
+
+def _tail_lines(text, max_lines):
+    """Return the last `max_lines` lines of `text` plus the number dropped."""
+    if max_lines <= 0:
+        return text, 0
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text, 0
+    dropped = len(lines) - max_lines
+    return "\n".join(lines[dropped:]), dropped
+
 
 @login_required
 def index(request, **kwargs):
@@ -95,12 +111,18 @@ def view_file(request, **kwargs):
     if not os.path.isfile(full_path):
         raise Http404("File not found.")
     with open(full_path, 'rb') as f:
-        file_contents = f.read().decode("utf-8")
+        file_contents = f.read().decode("utf-8", "replace")
     reverse_view = kwargs.get('reverse', None)
     if reverse_view == "reverse":
         # TODO: reverse the printing of the view here
         file_contents = "\n".join(reversed(file_contents.split("\n")))
         pass
+    is_log = (reverse_view == "reverse" or '.log' in os.path.basename(full_path).lower())
+    truncated_lines = 0
+    if is_log:
+        file_contents, truncated_lines = _tail_lines(file_contents, MAX_LOG_LINES)
     return render(request, 'filemanager/view_file.html', {"file_contents": file_contents, "inner_path": inner_path,
+                                                          "is_log": is_log,
+                                                          "truncated_lines": truncated_lines,
                                                           "inner_path_hyphened": inner_path_hyphened})
 

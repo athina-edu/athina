@@ -3,10 +3,57 @@
     font-weight: 700;
 }
 
-.file_contents {
-    display: block;
-    overflow: scroll;
-    font-family: monospace;
-    white-space: pre;
-    word-wrap: break-word;
+/* File / log viewer.
+   A fixed-height scroll pane keeps long files (especially tailing logs) from
+   stretching the page: the viewer scrolls internally and the page itself keeps
+   at most one scrollbar. */
+.file-viewer,
+.log-viewer {
+    max-height: 72vh;
+    overflow: auto;
+    margin: 0;
+    padding: .75rem 1rem;
+    border-radius: .25rem;
+    font-family: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: .8rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
+}
+
+.file-viewer {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    color: #212529;
+}
+
+.log-viewer {
+    background: #1b1f23;
+    border: 1px solid #343a40;
+    color: #d7dde3;
+}
+
+/* Slim scrollbars so the pane reads as a console rather than a browser box. */
+.log-viewer::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.log-viewer::-webkit-scrollbar-track {
+    background: #14181c;
+}
+
+.log-viewer::-webkit-scrollbar-thumb {
+    background: #454d55;
+    border-radius: 5px;
+}
+
+.log-viewer::-webkit-scrollbar-thumb:hover {
+    background: #5a636b;
+}
+
+/* Keep the viewer toolbar buttons from wrapping awkwardly on narrow screens. */
+.viewer-toolbar .btn {
+    margin-left: .25rem;
 }

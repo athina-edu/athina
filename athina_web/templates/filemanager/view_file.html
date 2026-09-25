@@ -1,4 +1,4 @@
-<!-- templates/home.html -->
+<!-- templates/filemanager/view_file.html -->
 {% extends 'base.html' %}
 
 {% block title %}Viewing {{ inner_path }}{% endblock %}
@@ -15,12 +15,117 @@
 {% block content %}
 <div class="mt-2">
     <h4><b>Viewing /{{ inner_path }}</b></h4>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light justify-content-end">
-            <input type="button" class="btn btn-info" value="Back"
-                   onclick="window.history.back();">
-    </nav>
-    <pre class="pre">
-        {{file_contents}}
-    </pre>
+
+    <div class="d-flex align-items-center flex-wrap mb-2 viewer-toolbar">
+        <input type="button" class="btn btn-info" value="Back"
+               onclick="window.history.back();">
+
+        {% if is_log %}
+        <div class="custom-control custom-switch ml-3">
+            <input type="checkbox" class="custom-control-input" id="followToggle" checked>
+            <label class="custom-control-label" for="followToggle">Follow log</label>
+        </div>
+        <div class="custom-control custom-switch ml-3">
+            <input type="checkbox" class="custom-control-input" id="refreshToggle" checked>
+            <label class="custom-control-label" for="refreshToggle">Auto-refresh</label>
+        </div>
+        <small class="text-muted ml-3" id="statusText">watching for updates&hellip;</small>
+        {% endif %}
+    </div>
+
+    {% if truncated_lines %}
+    <div class="alert alert-secondary py-1 px-2 mb-2 small">
+        Showing the most recent entries only &mdash; {{ truncated_lines }} earlier
+        line{{ truncated_lines|pluralize }} hidden.
+    </div>
+    {% endif %}
+
+    <pre id="fileViewer"
+         class="{% if is_log %}log-viewer{% else %}file-viewer{% endif %}"
+    >{{ file_contents }}</pre>
 </div>
+
+{% if is_log %}
+<script>
+(function () {
+    "use strict";
+
+    var viewer = document.getElementById("fileViewer");
+    var followToggle = document.getElementById("followToggle");
+    var refreshToggle = document.getElementById("refreshToggle");
+    var statusText = document.getElementById("statusText");
+
+    var refreshUrl = "{{ request.get_full_path|escapejs }}";
+    var REFRESH_MS = 5000;
+    var BOTTOM_SLACK = 40; // px — treat "near the bottom" as pinned to the bottom
+
+    // Start at the newest entry.
+    viewer.scrollTop = viewer.scrollHeight;
+
+    function atBottom() {
+        return (viewer.scrollHeight - viewer.scrollTop - viewer.clientHeight) <= BOTTOM_SLACK;
+    }
+
+    function stamp(message) {
+        if (!statusText) { return; }
+        var now = new Date();
+        statusText.textContent = message + " \u00b7 " +
+            now.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+    }
+
+    var lastContents = viewer.textContent;
+
+    function refresh() {
+        if (document.hidden) { return; } // don't poll a background tab
+
+        // Re-read the same URL so we get the identical rendered view (reverse
+        // ordering and all) without re-implementing the view's logic here.
+        fetch(refreshUrl, {credentials: "same-origin", cache: "no-store"})
+            .then(function (response) {
+                if (!response.ok) { throw new Error("HTTP " + response.status); }
+                return response.text();
+            })
+            .then(function (html) {
+                var parsed = new DOMParser().parseFromString(html, "text/html");
+                var fresh = parsed.getElementById("fileViewer");
+                if (!fresh) { return; }
+
+                var contents = fresh.textContent;
+                if (contents === lastContents) {
+                    stamp("no changes");
+                    return;
+                }
+
+                var wasAtBottom = atBottom();
+                viewer.textContent = contents;
+                lastContents = contents;
+
+                if (followToggle.checked && wasAtBottom) {
+                    viewer.scrollTop = viewer.scrollHeight;
+                }
+                stamp(followToggle.checked ? "updated \u2014 following" : "updated \u2014 paused");
+            })
+            .catch(function () {
+                stamp("refresh failed");
+            });
+    }
+
+    setInterval(function () {
+        if (refreshToggle.checked) { refresh(); }
+    }, REFRESH_MS);
+
+    refreshToggle.addEventListener("change", function () {
+        stamp(this.checked ? "watching for updates\u2026" : "auto-refresh off");
+    });
+
+    // Jump back to the newest entry when follow is (re-)enabled.
+    followToggle.addEventListener("change", function () {
+        if (this.checked) {
+            viewer.scrollTop = viewer.scrollHeight;
+            stamp("following");
+        }
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}
