@@ -288,6 +288,31 @@ class TestTAInvitePage(TestCase):
         # Preview uses example values, not the real TA's password.
         self.assertIn('Alex Rivera', response.context['preview_body'])
 
+    def test_restore_buttons_receive_valid_json(self):
+        """Regression: `escapejs` escapes characters but does NOT add quotes.
+
+        Interpolating it into a JS string context produced
+        `subject.value = Hello {name};` — a syntax error that silently killed the
+        "Restore" buttons. The values are now handed over via json_script.
+        """
+        import json
+        import re
+
+        response = self.client.get(reverse('accounts:ta_invite'))
+        html = response.content.decode()
+
+        match = re.search(r'<script id="email-defaults"[^>]*>(.*?)</script>', html, re.S)
+        self.assertIsNotNone(match, "json_script payload missing")
+        payload = json.loads(match.group(1))          # raises if not valid JSON
+
+        for key in ('default_subject', 'default_body', 'saved_subject', 'saved_body'):
+            self.assertIn(key, payload)
+        self.assertTrue(payload['default_body'])
+
+        # The old, broken form must not appear.
+        self.assertNotIn('subject.value = Your Athina', html)
+        self.assertNotIn('body.value = Hello', html)
+
     def test_per_ta_page_previews_that_ta(self):
         response = self.client.get(
             reverse('accounts:ta_invite_one', kwargs={'user_id': self.ta.pk}))

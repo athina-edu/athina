@@ -751,6 +751,16 @@ def ta_invite(request, user_id=None):
         "has_email_config": has_email_config,
         "saved_subject": actor_profile.welcome_email_subject,
         "saved_body": actor_profile.welcome_email_body,
+        # Handed to the page as JSON (json_script) for the "restore" buttons.
+        # Interpolating these straight into the script would need manual quoting
+        # and escaping, which is how a syntax error crept in and silently broke
+        # the button once already.
+        "email_defaults": {
+            "default_subject": ta_email.DEFAULT_SUBJECT,
+            "default_body": ta_email.DEFAULT_BODY,
+            "saved_subject": actor_profile.welcome_email_subject or '',
+            "saved_body": actor_profile.welcome_email_body or '',
+        },
         # TAs with no sendable password. Sending generates one for them, so warn
         # before they click rather than after.
         "needs_password": needs_password,

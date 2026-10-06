@@ -156,6 +156,8 @@
 {% endif %}
 </div>
 
+{{ email_defaults|json_script:"email-defaults" }}
+
 <script>
 (function () {
     "use strict";
@@ -171,7 +173,7 @@
         username: "{{ preview_name|default:'arivera'|escapejs }}",
         password: "Temp-Passw0rd!23",
         email: "arivera@university.edu",
-        site_url: "{{ request.scheme }}://{{ request.get_host }}",
+        site_url: "{{ request.scheme|escapejs }}://{{ request.get_host|escapejs }}",
         faculty_name: "{{ user.get_full_name|default:user.username|escapejs }}",
         course_list: "CSCI 330, CSCI 424"
     };
@@ -193,12 +195,18 @@
         body.addEventListener("input", update);
     }
 
+    // The values below are injected as JSON, not as bare JS: `escapejs` escapes
+    // characters but does NOT add the surrounding quotes a JS string needs, so
+    // interpolating it directly produced `subject.value = Hello {name};` — a
+    // syntax error. json_script is the safe way to hand server data to a script.
+    var DEFAULTS = JSON.parse(document.getElementById('email-defaults').textContent);
+
     var resetDefault = document.getElementById("reset-default");
     if (resetDefault) {
         resetDefault.addEventListener("click", function (e) {
             e.preventDefault();
-            subject.value = {{ default_subject|escapejs }};
-            body.value = {{ default_body|escapejs }};
+            subject.value = DEFAULTS.default_subject;
+            body.value = DEFAULTS.default_body;
             update();
         });
     }
@@ -207,8 +215,8 @@
     if (restoreSaved) {
         restoreSaved.addEventListener("click", function (e) {
             e.preventDefault();
-            subject.value = {{ saved_subject|escapejs }};
-            body.value = {{ saved_body|escapejs }};
+            subject.value = DEFAULTS.saved_subject;
+            body.value = DEFAULTS.saved_body;
             update();
         });
     }
