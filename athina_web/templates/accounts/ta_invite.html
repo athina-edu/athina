@@ -1,0 +1,225 @@
+{% extends 'base.html' %}
+{% block title %}Email TA Credentials{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'accounts:user_list' %}">Users</a></li>
+        {% if single_target %}
+        <li class="breadcrumb-item active">Email {{ single_target.username }}</li>
+        {% else %}
+        <li class="breadcrumb-item active">Email TA Credentials</li>
+        {% endif %}
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>Email account credentials to TAs</h3>
+
+{% if not has_email_config %}
+<div class="alert alert-warning">
+    <strong>No email sender configured.</strong>
+    Set a Resend API key in your <a href="{% url 'accounts:profile' %}">profile</a>
+    before sending. You can still compose and preview the message here.
+</div>
+{% endif %}
+
+{% if not recipients %}
+<div class="alert alert-info">
+    You have no TAs assigned. <a href="{% url 'accounts:user_list' %}">Create or assign a TA</a> first.
+</div>
+{% else %}
+<p class="text-muted">
+    {% if single_target %}
+    This message will be sent to <strong>{{ single_target.username }}</strong>
+    {% if single_target.email %}({{ single_target.email }}){% else %}<span class="text-danger">— no email address on file</span>{% endif %}.
+    {% else %}
+    This message will be sent to {{ recipients|length }} TA(s):
+    {% for ta in recipients %}{{ ta.username }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+    {% endif %}
+    Placeholders are filled in per person.
+</p>
+{% endif %}
+
+{% if needs_password %}
+<div class="alert alert-info">
+    <strong>{{ needs_password|length }}</strong> TA(s) have no sendable temporary password —
+    their original one was never stored, or has expired. Django cannot recover a
+    password from its hash, so a new one is generated automatically when you send,
+    and they will be required to change it at first login.
+    <form method="post" action="{% url 'accounts:ta_invite_generate' %}" class="mt-2">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-primary">
+            Generate passwords now for {{ needs_password|length }} TA(s)
+        </button>
+        <small class="text-muted ml-2">Optional — sending does this anyway.</small>
+    </form>
+</div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="form-group">
+                <label for="subject">Subject</label>
+                <input type="text" class="form-control" id="subject" name="subject"
+                       value="{{ subject_template }}">
+            </div>
+            <div class="form-group">
+                <label for="body">Message</label>
+                <textarea class="form-control" id="body" name="body" rows="18"
+                          style="font-family: monospace; font-size: .85rem;">{{ body_template }}</textarea>
+                <small class="form-text text-muted">
+                    <a href="#" id="reset-default">Restore the default message</a>
+                    {% if saved_body %} &middot; <a href="#" id="restore-saved">Restore my saved message</a>{% endif %}
+                </small>
+            </div>
+            <div class="custom-control custom-checkbox mb-3">
+                <input type="checkbox" class="custom-control-input" id="save_as_default" name="save_as_default">
+                <label class="custom-control-label" for="save_as_default">
+                    Save as my default message for future TAs
+                </label>
+            </div>
+            {% if recipients %}
+            <button type="submit" class="btn btn-primary"
+                    {% if not has_email_config %}disabled{% endif %}>
+                {% if single_target %}Send to {{ single_target.username }}{% else %}Send to all {{ recipients|length }} TA(s){% endif %}
+            </button>
+            {% endif %}
+            <a class="btn btn-secondary" href="{% url 'accounts:user_list' %}">Cancel</a>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <strong>Preview</strong>
+                    {% if preview_name %}
+                    <span class="text-muted small">— as it will appear for {{ preview_name }}</span>
+                    {% else %}
+                    <span class="text-muted small">— with example values</span>
+                    {% endif %}
+                </div>
+                <div class="card-body" style="background: #f8f9fa;">
+                    <p class="mb-2"><strong id="preview-subject">{{ preview_subject }}</strong></p>
+                    <pre id="preview-body" style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: .85em;">{{ preview_body }}</pre>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header"><strong>Available placeholders</strong></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        {% for token, description in placeholders %}
+                        <tr>
+                            <td style="width: 9rem;"><code>{{ token }}</code></td>
+                            <td class="text-muted">{{ description }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if recipients %}
+<div class="card mt-3">
+    <div class="card-header"><strong>Recipients</strong></div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <tr>
+                <th>TA</th><th>Email</th><th>Temporary password</th><th></th>
+            </tr>
+            {% for ta in recipients %}
+            <tr>
+                <td>{{ ta.username }}</td>
+                <td>{{ ta.email|default:"—" }}</td>
+                <td>
+                    {% if ta.profile.temp_password_is_fresh %}
+                    <span class="badge badge-success">ready to send</span>
+                    {% else %}
+                    <span class="badge badge-warning">will be generated on send</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a class="btn btn-sm btn-outline-warning confirm-reset"
+                       href="{% url 'accounts:ta_invite_reset' user_id=ta.pk %}"
+                       data-name="{{ ta.username }}">Reset password</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</div>
+{% endif %}
+</div>
+
+<script>
+(function () {
+    "use strict";
+    var subject = document.getElementById("subject");
+    var body = document.getElementById("body");
+    var previewSubject = document.getElementById("preview-subject");
+    var previewBody = document.getElementById("preview-body");
+
+    // Mirrors accounts/ta_email.py: substitutes known placeholders and leaves
+    // anything unexpected untouched, so the preview never breaks on a stray brace.
+    var VALUES = {
+        name: "{{ preview_name|default:'Alex Rivera'|escapejs }}",
+        username: "{{ preview_name|default:'arivera'|escapejs }}",
+        password: "Temp-Passw0rd!23",
+        email: "arivera@university.edu",
+        site_url: "{{ request.scheme }}://{{ request.get_host }}",
+        faculty_name: "{{ user.get_full_name|default:user.username|escapejs }}",
+        course_list: "CSCI 330, CSCI 424"
+    };
+
+    function fill(text) {
+        return text.replace(/\{(\w+)\}/g, function (match, key) {
+            return Object.prototype.hasOwnProperty.call(VALUES, key) ? VALUES[key] : match;
+        });
+    }
+
+    function update() {
+        if (!previewSubject || !previewBody) { return; }
+        previewSubject.textContent = fill(subject.value).replace(/\s+/g, " ");
+        previewBody.textContent = fill(body.value);
+    }
+
+    if (subject && body) {
+        subject.addEventListener("input", update);
+        body.addEventListener("input", update);
+    }
+
+    var resetDefault = document.getElementById("reset-default");
+    if (resetDefault) {
+        resetDefault.addEventListener("click", function (e) {
+            e.preventDefault();
+            subject.value = {{ default_subject|escapejs }};
+            body.value = {{ default_body|escapejs }};
+            update();
+        });
+    }
+
+    var restoreSaved = document.getElementById("restore-saved");
+    if (restoreSaved) {
+        restoreSaved.addEventListener("click", function (e) {
+            e.preventDefault();
+            subject.value = {{ saved_subject|escapejs }};
+            body.value = {{ saved_body|escapejs }};
+            update();
+        });
+    }
+
+    $('.confirm-reset').click(function (e) {
+        var name = $(this).data('name');
+        if (!confirm('Generate a new temporary password for "' + name + '"?\n\n' +
+                     'Their current password stops working immediately, and they will be ' +
+                     'asked to choose a new one at next login.')) {
+            e.preventDefault();
+        }
+    });})();
+</script>
+{% endblock %}

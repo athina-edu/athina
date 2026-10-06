@@ -1,5 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
+from datetime import timedelta
 
 
 class UserProfile(models.Model):
@@ -51,6 +53,43 @@ class UserProfile(models.Model):
                                               help_text="Optional reply-to address, e.g. 'Instructor <you@university.edu>'. "
                                                         "Student replies will go here instead of to the from address. "
                                                         "The address does not need to be verified in Resend.")
+
+    # --- Welcome email to TAs ---
+    # A template the faculty member can edit once and reuse. Placeholders are
+    # substituted per TA when the message is composed, so a single saved body
+    # covers everyone. Rendered with str.format, so {name} etc. must survive
+    # being stored verbatim.
+    welcome_email_subject = models.CharField(
+        max_length=255, default="", blank=True,
+        help_text="Subject line for the TA account email. Leave blank to use the default.")
+    welcome_email_body = models.TextField(
+        default="", blank=True,
+        help_text="Body of the TA account email. Leave blank to use the default.")
+
+    # Marks that a user's password was set by an admin and has not yet been
+    # changed by the user. Until it is cleared, the user is redirected to the
+    # password-change page on login.
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text="Force the user to choose a new password at next login.")
+
+    # Temp passwords cannot be recovered (Django stores only a hash), so the
+    # plaintext is kept here only long enough for the faculty member to email it.
+    # See UserProfile.temp_password_is_fresh().
+    temp_password = models.CharField(max_length=128, default="", blank=True)
+    temp_password_created_at = models.DateTimeField(null=True, blank=True)
+
+    def temp_password_is_fresh(self, max_age_hours=24):
+        """Is the stored temporary password recent enough to still send?
+
+        Django only stores password hashes, so a temp password cannot be
+        re-derived later. We keep the plaintext briefly so the faculty member can
+        email it, then treat it as expired — after which the only safe option is
+        to reset it.
+        """
+        if not self.temp_password or self.temp_password_created_at is None:
+            return False
+        return (timezone.now() - self.temp_password_created_at) <= timedelta(hours=max_age_hours)
 
     # Legacy fields
     git_username = models.CharField(max_length=255, default="", blank=True)

@@ -18,6 +18,7 @@
     {% elif user_profile.role == 'faculty' %}
     <a class="btn btn-success" href="{% url 'accounts:create_user' %}">New TA</a>
     <a class="btn btn-info" href="{% url 'accounts:assign_tas' %}">Assign TAs</a>
+    <a class="btn btn-primary" href="{% url 'accounts:ta_invite' %}">Email TA Credentials</a>
     {% endif %}
 </div>
 {% if messages %}
@@ -70,6 +71,7 @@
 <td>
     {% if u.pk in manageable_ids %}
     <a class="btn btn-secondary btn-sm" href="{% url 'accounts:edit_user' user_id=u.pk %}">Edit</a>
+    <a class="btn btn-primary btn-sm" href="{% url 'accounts:ta_invite_one' user_id=u.pk %}">Email Credentials</a>
     <a class="btn btn-warning btn-sm confirm-reset-password"
        href="{% url 'accounts:reset_password' user_id=u.pk %}"
        data-name="{{ u.username }}">Reset Password</a>
@@ -97,7 +99,8 @@ $('.confirm-delete-user').click(function(e) {
 $('.confirm-reset-password').click(function(e) {
     var name = $(this).data('name');
     if (!confirm('Reset the password for "' + name + '"?\n\n'
-                 + 'Their current password will stop working immediately.')) {
+                 + 'Their current password will stop working immediately, and they will be '
+                 + 'asked to choose a new one at next login.')) {
         e.preventDefault();
     }
 });
