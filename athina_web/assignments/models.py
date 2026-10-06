@@ -94,6 +94,15 @@ class Assignment(models.Model):
     gitlab_project_id = models.PositiveIntegerField(default=0,
                                                      help_text="Numeric GitLab project ID. Find it in your GitLab project's Settings > General.")
 
+    # Group vs individual work. When set, students can be organised into groups
+    # (see StudentGroup) and provisioning creates ONE repository per group
+    # instead of one per student. Off by default: most assignments are individual.
+    is_group_assignment = models.BooleanField(
+        default=False,
+        verbose_name='Group assignment',
+        help_text="Students work in groups sharing one repository. Leave unchecked "
+                  "for individual work, where every student gets their own repository.")
+
     def __str__(self):
         return self.name
 
@@ -127,3 +136,78 @@ class AssignmentRepo(models.Model):
 
     def __str__(self):
         return "%s → %s" % (self.student.email, self.assignment.name)
+
+
+class StudentGroup(models.Model):
+    """A set of students who share one repository on one assignment.
+
+    The grading engine has no explicit group concept: it infers a group from
+    students whose ``repository_url`` is identical (see
+    ``Tester._get_group_user_list``), gated by ``same_url_limit``. This model is
+    the source of truth the web app uses to *create* that situation — group
+    members are provisioned one shared repository, so every member ends up with
+    the same URL and the engine treats them as a group.
+
+    Groups are per assignment, matching how repositories work.
+    """
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='groups')
+    name = models.CharField(max_length=200)
+    # Stable number used to build the repository name ("<assignment>-g<N>").
+    # Stored rather than derived from position, so deleting group 2 does not
+    # renumber group 3 and point it at a different repository.
+    repo_index = models.PositiveIntegerField(default=0)
+    date_created = models.DateTimeField('Date Created', default=timezone.now, editable=False)
+
+    class Meta:
+        ordering = ['repo_index', 'name']
+        unique_together = ('assignment', 'name')
+
+    def __str__(self):
+        return "%s / %s" % (self.assignment.name, self.name)
+
+    @property
+    def slug(self):
+        """A GitLab-safe name fragment, e.g. 'Team Rocket' -> 'team-rocket'."""
+        slug = re.sub(r'[^a-z0-9]+', '-', (self.name or '').lower()).strip('-')
+        return re.sub(r'-+', '-', slug)
+
+    def next_repo_index(self):
+        """The next unused repo index within this group's assignment."""
+        used = StudentGroup.objects.filter(assignment=self.assignment).aggregate(
+            models.Max('repo_index'))['repo_index__max']
+        return (used or 0) + 1
+
+
+class GroupMembership(models.Model):
+    """Which students belong to a StudentGroup.
+
+    A student may appear in at most one group per assignment — a second
+    membership would mean two repositories for the same assignment, which the
+    grading engine cannot express. That is enforced by
+    ``UniqueConstraint(assignment)`` below rather than only in the views, so a
+    concurrent drag-and-drop cannot create two memberships at once.
+    """
+    group = models.ForeignKey(StudentGroup, on_delete=models.CASCADE, related_name='memberships')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='group_memberships')
+    # Denormalised from group.assignment so the uniqueness constraint below can
+    # be expressed in the database. Kept in sync by save().
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE,
+                                   related_name='group_memberships', null=True)
+    date_added = models.DateTimeField('Date Added', default=timezone.now, editable=False)
+
+    class Meta:
+        unique_together = ('group', 'student')
+        ordering = ['student__email']
+        constraints = [
+            # One group per student per assignment.
+            models.UniqueConstraint(fields=('assignment', 'student'),
+                                    name='one_group_per_student_per_assignment'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.assignment_id is None and self.group_id is not None:
+            self.assignment_id = self.group.assignment_id
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return "%s in %s" % (self.student.email, self.group)

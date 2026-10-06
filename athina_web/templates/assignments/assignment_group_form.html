@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}{% if group %}{{ group.name }}{% else %}New Group{% endif %} - {{ assignment.name }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_groups' assignment_id=assignment.pk %}">Groups</a></li>
+        <li class="breadcrumb-item active">{% if group %}Edit {{ group.name }}{% else %}New Group{% endif %}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>{% if group %}Edit Group: {{ group.name }}{% else %}New Group{% endif %}</h3>
+<h6 class="text-muted">{{ assignment.name }}</h6>
+<hr>
+
+<form method="post" class="col-lg-8 pl-0">
+    {% csrf_token %}
+
+    {% for field in form %}
+    <div class="form-group">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        <div class="input-group">
+            {{ field }}
+            <div class="input-group-append">
+                <button type="button" class="btn btn-outline-secondary" id="random-name"
+                        title="Pick a random name not already used on this assignment">Random</button>
+            </div>
+        </div>
+        {% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}
+        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+    {% endfor %}
+
+    <div class="form-group">
+        <label>Members</label>
+        {% if group %}
+        <div class="border rounded p-2" style="max-height: 24rem; overflow: auto;">
+            {% for field in members_form %}{{ field }}{% endfor %}
+        </div>
+        <small class="form-text text-muted">
+            Students already in another group on this assignment are not listed —
+            a student can only have one repository per assignment.
+        </small>
+        {% else %}
+        <div class="border rounded p-2" style="max-height: 24rem; overflow: auto;">
+            {% for student in eligible %}
+            <div class="custom-control custom-checkbox">
+                <input type="checkbox" class="custom-control-input" id="member-{{ student.pk }}"
+                       name="members" value="{{ student.pk }}">
+                <label class="custom-control-label" for="member-{{ student.pk }}">{{ student.email }}</label>
+            </div>
+            {% empty %}
+            <span class="text-muted">No ungrouped students available.</span>
+            {% endfor %}
+        </div>
+        <small class="form-text text-muted">
+            You can also add and move members later by dragging them on the
+            <a href="{% url 'assignments:assignment_groups' assignment_id=assignment.pk %}">Groups</a> board.
+        </small>
+        {% endif %}
+    </div>
+
+    <div class="alert alert-secondary py-2 small">
+        The repository is named from the assignment and the group number, not the group
+        name{% if group %} — this group is <code>{{ assignment.name|slugify }}-g{{ group.repo_index }}</code>{% endif %}.
+        {% if group %}Every member is pointed at that repository when you provision.{% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a class="btn btn-secondary" href="{% url 'assignments:assignment_groups' assignment_id=assignment.pk %}">Cancel</a>
+</form>
+
+<script>
+(function () {
+    "use strict";
+    var button = document.getElementById("random-name");
+    if (!button) { return; }
+    var input = document.getElementById("id_name");
+    var url = "{% url 'assignments:assignment_group_random_name' assignment_id=assignment.pk %}";
+
+    button.addEventListener("click", function () {
+        button.disabled = true;
+        fetch(url, {credentials: "same-origin"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.name && input) { input.value = data.name; }
+            })
+            .catch(function () { /* leave the field alone if it fails */ })
+            .then(function () { button.disabled = false; });
+    });
+})();
+</script>
+{% endblock %}

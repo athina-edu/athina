@@ -11,11 +11,13 @@ from django.http import HttpResponse
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from .models import Assignment, Course, Student, AssignmentRepo
+from .models import Assignment, Course, Student, AssignmentRepo, StudentGroup, GroupMembership
 from .forms import (AssignmentForm, CourseForm, StudentForm, StudentEditForm,
-                    StudentBulkForm, AssignmentRepoForm)
+                    StudentBulkForm, AssignmentRepoForm, StudentGroupForm,
+                    GroupMembersForm)
 from athina_web.accounts.models import UserProfile
 import os
+import random
 import shutil
 import logging
 from rest_framework import generics
@@ -123,6 +125,50 @@ def _read_yaml_ids(assignment):
         pass
     # Fallback to Django model PKs
     return (assignment.course_id or assignment.pk, assignment.pk)
+
+
+def _write_group_settings(assignment, has_groups):
+    """Record whether this assignment is a group assignment, for the engine.
+
+    The engine reads GROUP_ASSIGNMENT / SAME_URL_LIMIT from the assignment YAML,
+    but the web app cannot reliably edit that file — the assignment directory is
+    reset from git, so a local edit would be discarded. Configuration now falls
+    back to the environment for these two keys, and this writes them into the
+    per-assignment .env the web app already owns.
+
+    SAME_URL_LIMIT is set to the largest group size. The engine flags any URL
+    shared by MORE than `same_url_limit` students as a duplicate and refuses to
+    test them, so a group of N needs a limit of at least N. Using the biggest
+    group means smaller groups pass too.
+
+    Never edits the YAML: if it already sets these keys, the YAML wins.
+    """
+    env_path = os.path.join(settings.BASE_DIR, assignment.absolute_path, '.env')
+    if not os.path.isfile(env_path):
+        return
+
+    largest = 0
+    for group in assignment.groups.all():
+        largest = max(largest, group.memberships.count())
+
+    try:
+        with open(env_path) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return
+
+    # Drop any previous values so re-running does not stack duplicates.
+    lines = [ln for ln in lines
+             if not ln.startswith('GROUP_ASSIGNMENT=') and not ln.startswith('SAME_URL_LIMIT=')]
+    lines.append("GROUP_ASSIGNMENT=%s" % ('true' if has_groups else 'false'))
+    lines.append("SAME_URL_LIMIT=%d" % max(largest, 1))
+
+    try:
+        with open(env_path, 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
 
 
 def _repo_url_for(student, assignment):
@@ -964,10 +1010,47 @@ def provision_students(request, course_id, assignment_id=None):
 
     students = list(Student.objects.filter(course=course))
     for assignment in assignments:
+        # Group assignments only: grouped students are provisioned once per GROUP,
+        # not per student, because the whole group shares one repository. On an
+        # individual assignment any leftover groups are ignored — the checkbox in
+        # the assignment form is the source of truth.
+        grouped_student_ids = set()
+        groups = list(assignment.groups.all()) if assignment.is_group_assignment else []
+        # Remember what we wrote to the .env so we can tell the operator.
+        _write_group_settings(assignment, has_groups=bool(groups))
+
+        for group in groups:
+            grouped_student_ids.update(
+                group.memberships.values_list('student_id', flat=True))
+
+        for group in groups:
+            # Skip a group that already has a repo recorded.
+            member_ids = list(group.memberships.values_list('student_id', flat=True))
+            already = (AssignmentRepo.objects
+                       .filter(assignment=assignment, student_id__in=member_ids)
+                       .exclude(repository_url='')
+                       .exists())
+            if already:
+                adopted += 1
+                continue
+
+            result = _provision_group_gitlab(course, assignment, group)
+            if result is True:
+                created += 1
+                notified += 1  # group provisioning notifies every member
+            elif result:
+                errors.append("%s (%s): %s" % (group.name, assignment.name, result))
+
         for student in students:
             repo, _was_created = AssignmentRepo.objects.get_or_create(
                 student=student, assignment=assignment)
             was_notified = repo.notified_at
+
+            # Grouped students were handled above; just sync their row.
+            if student.pk in grouped_student_ids:
+                _sync_student_to_grading_db(student, assignment=assignment)
+                synced += 1
+                continue
 
             if not repo.repository_url:
                 result = _provision_student_gitlab(course, student, assignment=assignment)
@@ -1282,8 +1365,346 @@ def assignment_students(request, assignment_id):
         "students": students,
         "provisioned": provisioned,
         "missing": len(students) - provisioned,
+        "group_count": assignment.groups.count(),
+        "ungrouped": _ungrouped_students(assignment).count() if course else 0,
         "can_manage_students": bool(course) and _user_can_manage_students(request.user, course),
     })
+
+
+def _ungrouped_students(assignment):
+    """Roster students with no group on this assignment."""
+    if assignment.course_id is None:
+        return Student.objects.none()
+    grouped = (GroupMembership.objects
+               .filter(group__assignment=assignment)
+               .values_list('student_id', flat=True))
+    return Student.objects.filter(course=assignment.course).exclude(pk__in=list(grouped))
+
+
+def _assignment_access_or_404(user, assignment):
+    """Mirror assignment_view's access rule; raise 404 when it fails."""
+    has_access = (assignment.owner == user.id or user.is_superuser)
+    if not has_access and assignment.course:
+        has_access = _user_can_access_course(user, assignment.course)
+    if not has_access:
+        raise Http404
+
+
+def _group_repo_name(assignment, group):
+    """The repository name a group is provisioned with: <assignment>-g<N>."""
+    return "%s-g%d" % (_group_repo_prefix(assignment), group.repo_index)
+
+
+def _group_repo_prefix(assignment):
+    prefix = re.sub(r'[^a-zA-Z0-9_-]', '-', (assignment.name or '').lower()).strip('-')
+    return re.sub(r'-+', '-', prefix) or 'assignment'
+
+
+def _groups_board_context(assignment, can_manage):
+    """Shared context for the drag-and-drop grouping board."""
+    groups = []
+    for group in assignment.groups.all():
+        members = [m.student for m in group.memberships.select_related('student')]
+        member_ids = [s.pk for s in members]
+        url = (AssignmentRepo.objects
+               .filter(assignment=assignment, student_id__in=member_ids)
+               .exclude(repository_url='')
+               .values_list('repository_url', flat=True)
+               .first() or '')
+        groups.append({
+            'group': group,
+            'members': members,
+            'repo_url': url,
+            'repo_name': _group_repo_name(assignment, group),
+        })
+
+    return {
+        "assignment": assignment,
+        "course": assignment.course,
+        "groups": groups,
+        # Students with no group: the "Unassigned" column.
+        "ungrouped": list(_ungrouped_students(assignment).order_by('email')),
+        "student_count": Student.objects.filter(course=assignment.course).count(),
+        # JSON for the drag-and-drop script (ids, names, memberships).
+        "board_json": {
+            "groups": [
+                {"id": row['group'].pk, "name": row['group'].name,
+                 "members": [s.pk for s in row['members']]}
+                for row in groups
+            ],
+            "ungrouped": [s.pk for s in _ungrouped_students(assignment)],
+        },
+        "can_manage_students": can_manage,
+    }
+
+
+@login_required
+def assignment_groups(request, assignment_id):
+    """The group board: drag students between groups and Unassigned."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    _assignment_access_or_404(request.user, assignment)
+    context = _groups_board_context(
+        assignment, _user_can_manage_students(request.user, assignment.course))
+    # A group page for an individual assignment is a dead end; send the
+    # instructor somewhere useful instead of showing an empty board.
+    context["is_group_assignment"] = assignment.is_group_assignment
+    return render(request, 'assignments/assignment_groups.html', context)
+
+
+@login_required
+def assignment_group_create(request, assignment_id):
+    """Create a group, optionally with its first members."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+
+    if request.method == "POST":
+        form = StudentGroupForm(request.POST, assignment=assignment)
+        if form.is_valid():
+            group = form.save(commit=False)
+            group.assignment = assignment
+            group.repo_index = StudentGroup(assignment=assignment).next_repo_index()
+            group.save()
+
+            # Optional initial members, passed as repeated 'members' values.
+            member_ids = request.POST.getlist('members')
+            _set_group_members(group, member_ids)
+            # Creating a group is what makes an assignment a group assignment.
+            if not assignment.is_group_assignment:
+                assignment.is_group_assignment = True
+                assignment.save(update_fields=['is_group_assignment'])
+            messages.success(request, "Group '%s' created." % group.name)
+            return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+    else:
+        form = StudentGroupForm(assignment=assignment)
+
+    return render(request, 'assignments/assignment_group_form.html', {
+        "assignment": assignment, "course": assignment.course, "group": None,
+        "form": form,
+        "eligible": _ungrouped_students(assignment).order_by('email'),
+    })
+
+
+def _next_group_name(assignment):
+    """A random team name not already used on this assignment."""
+    from .team_names import random_team_name
+    taken = assignment.groups.values_list('name', flat=True)
+    return random_team_name(taken)
+
+
+@login_required
+def assignment_group_random_name(request, assignment_id):
+    """Return a random unused team name as JSON (used by the Random button)."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+    return JsonResponse({"name": _next_group_name(assignment)})
+
+
+@login_required
+def assignment_group_move(request, assignment_id):
+    """Move a student into a group (or out to 'Unassigned') — drag and drop.
+
+    POST body: student=<id> and either group=<id> or group="" for Unassigned.
+
+    Moving is the only mutation the board performs, so it lives in one place:
+    a membership is replaced rather than added, keeping the "one group per
+    student per assignment" rule true even if the board is used concurrently.
+    """
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required."}, status=405)
+
+    student = get_object_or_404(Student, pk=request.POST.get('student'), course=assignment.course)
+    group_id = (request.POST.get('group') or '').strip()
+
+    # Clear any existing membership first: this is a move, not an add.
+    GroupMembership.objects.filter(assignment=assignment, student=student).delete()
+
+    if group_id:
+        group = get_object_or_404(StudentGroup, pk=group_id, assignment=assignment)
+        GroupMembership.objects.create(group=group, student=student, assignment=assignment)
+        # Adopt the group's shared repository, if it has one. Only a URL held by
+        # two or more members counts, so the arriving student's own individual
+        # URL is never mistaken for the group's.
+        url = _group_shared_url(
+            assignment, [m.student_id for m in group.memberships.all()])
+        # update_or_create (not filter().update()) so the row always exists: an
+        # absent row and an empty URL are equivalent for grading, but an explicit
+        # row keeps the board and the database agreeing.
+        AssignmentRepo.objects.update_or_create(
+            assignment=assignment, student=student,
+            defaults={'repository_url': url})
+        # Grouping a student is what makes an assignment a group assignment, so
+        # flip the flag the same way creating a group does. Otherwise the groups
+        # would exist but provisioning would ignore them.
+        if not assignment.is_group_assignment:
+            assignment.is_group_assignment = True
+            assignment.save(update_fields=['is_group_assignment'])
+    else:
+        # Moved back to Unassigned: they no longer share anyone's repository.
+        AssignmentRepo.objects.update_or_create(
+            assignment=assignment, student=student,
+            defaults={'repository_url': ''})
+
+    _sync_student_to_grading_db(student, assignment=assignment)
+
+    return JsonResponse({
+        "ok": True,
+        "student": student.pk,
+        "group": int(group_id) if group_id else None,
+    })
+
+
+@login_required
+def assignment_group_edit(request, assignment_id, group_id):
+    """Rename a group and change its members."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+    group = get_object_or_404(StudentGroup, pk=group_id, assignment=assignment)
+
+    if request.method == "POST":
+        form = StudentGroupForm(request.POST, instance=group, assignment=assignment)
+        members_form = GroupMembersForm(request.POST, group=group)
+        if form.is_valid() and members_form.is_valid():
+            form.save()
+            _set_group_members(
+                group,
+                [s.pk for s in members_form.cleaned_data['students']])
+            messages.success(request, "Group '%s' updated." % group.name)
+            return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+    else:
+        form = StudentGroupForm(instance=group, assignment=assignment)
+        members_form = GroupMembersForm(group=group)
+
+    return render(request, 'assignments/assignment_group_form.html', {
+        "assignment": assignment, "course": assignment.course, "group": group,
+        "form": form, "members_form": members_form,
+    })
+
+
+def _group_shared_url(assignment, student_ids):
+    """The repository URL genuinely shared by a group, or '' if there isn't one.
+
+    A URL held by only ONE member is that member's individual repository, not the
+    group's, so adopting it would silently hand the whole group one student's
+    repo. Requiring at least two members to hold the same URL distinguishes a
+    provisioned group repository from an individual one.
+    """
+    from collections import Counter
+    urls = (AssignmentRepo.objects
+            .filter(assignment=assignment, student_id__in=list(student_ids))
+            .exclude(repository_url='')
+            .values_list('repository_url', flat=True))
+    counts = Counter(urls)
+    for url, count in counts.most_common():
+        if count >= 2:
+            return url
+    return ''
+
+
+def _set_group_members(group, student_ids):
+    """Replace a group's membership with `student_ids`.
+
+    Also drops any AssignmentRepo rows for members that no longer have a repo —
+    a student moved out of a group should not keep the group's repository URL,
+    or they would be graded against it while their group-mates are not.
+    """
+    wanted = {int(pk) for pk in student_ids}
+    existing = {m.student_id for m in group.memberships.all()}
+
+    group.memberships.filter(student_id__in=existing - wanted).delete()
+    for student_id in wanted - existing:
+        # A student can only be in one group per assignment, so drop any other
+        # membership before creating this one. The DB constraint enforces it too.
+        GroupMembership.objects.filter(
+            assignment=group.assignment, student_id=student_id).delete()
+        GroupMembership.objects.create(
+            group=group, student_id=student_id, assignment=group.assignment)
+
+    # Keep the shared repo URL consistent across all current members. Only a URL
+    # already held by two or more members counts as the group's.
+    url = _group_shared_url(group.assignment, wanted)
+    if url:
+        AssignmentRepo.objects.filter(
+            assignment=group.assignment, student_id__in=wanted).update(repository_url=url)
+    else:
+        # No shared repo yet, so no member may keep an individual URL that the
+        # rest of the group does not have.
+        AssignmentRepo.objects.filter(
+            assignment=group.assignment, student_id__in=wanted).update(repository_url='')
+
+
+@login_required
+def assignment_group_delete(request, assignment_id, group_id):
+    """Delete a group. Members keep their roster entry but lose the group repo."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+    group = get_object_or_404(StudentGroup, pk=group_id, assignment=assignment)
+
+    member_ids = list(group.memberships.values_list('student_id', flat=True))
+    # Deleting the group cascades its memberships. Clear the shared repo URL so
+    # the members are not left pointing at a repo that is no longer theirs.
+    AssignmentRepo.objects.filter(
+        assignment=assignment, student_id__in=member_ids).update(repository_url='')
+    name = group.name
+    group.delete()
+    messages.success(request, "Group '%s' deleted." % name)
+    return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+
+
+@login_required
+def assignment_group_autogroup(request, assignment_id):
+    """Randomly group the remaining ungrouped students into groups of `size`."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+    if request.method != "POST":
+        return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+
+    try:
+        size = int(request.POST.get('size', 2))
+    except (TypeError, ValueError):
+        size = 2
+    if size < 2:
+        messages.error(request, "Group size must be at least 2.")
+        return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+
+    remaining = list(_ungrouped_students(assignment).values_list('pk', flat=True))
+    if not remaining:
+        messages.info(request, "Every student is already in a group.")
+        return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+
+    random.shuffle(remaining)
+    created = 0
+    for chunk in [remaining[i:i + size] for i in range(0, len(remaining), size)]:
+        # Compute the index once: next_repo_index() reads the max each call, so
+        # calling it twice for name and index would produce mismatched values.
+        index = StudentGroup(assignment=assignment).next_repo_index()
+        group = StudentGroup.objects.create(
+            assignment=assignment,
+            name=_next_group_name(assignment),
+            repo_index=index,
+        )
+        for student_id in chunk:
+            GroupMembership.objects.create(
+                group=group, student_id=student_id, assignment=assignment)
+        created += 1
+
+    # Auto-grouping only makes sense on a group assignment; flip the flag so
+    # provisioning creates shared repos rather than one per student.
+    if created and not assignment.is_group_assignment:
+        assignment.is_group_assignment = True
+        assignment.save(update_fields=['is_group_assignment'])
+
+    messages.success(request, "Created %d group(s) from %d ungrouped student(s)."
+                     % (created, len(remaining)))
+    return redirect('assignments:assignment_groups', assignment_id=assignment.pk)
+
 
 
 @login_required
@@ -1483,6 +1904,36 @@ def _gitlab_find_user_id(api_base, headers, username):
     return None
 
 
+def _gitlab_list_group_members(api_base, headers, group_id, max_pages=50):
+    """Every member of a GitLab group, following pagination.
+
+    GitLab caps a single response at `per_page`, so without paging a group with
+    more members than one page reports only the first batch. Existing members
+    past that point then look absent, causing repeated re-add attempts that
+    GitLab rejects (the sync would report a spurious failure).
+
+    Returns a list of member dicts, or None when the request failed.
+    """
+    members = []
+    page = 1
+    while page <= max_pages:
+        try:
+            resp = http_requests.get(
+                "%s/groups/%s/members" % (api_base, group_id),
+                headers=headers, params={"per_page": 100, "page": page}, timeout=10)
+        except Exception:
+            return None
+        if not resp.ok:
+            return None
+        batch = resp.json() or []
+        members.extend(batch)
+        # A short page means there is no next one.
+        if len(batch) < 100:
+            break
+        page += 1
+    return members
+
+
 def _gitlab_add_group_member(api_base, headers, group_id, username, access_level):
     """Add a user to a GitLab group if not already a member (idempotent).
 
@@ -1492,11 +1943,10 @@ def _gitlab_add_group_member(api_base, headers, group_id, username, access_level
     if user_id is None:
         return False
     try:
-        member_check = http_requests.get(
-            "%s/groups/%s/members" % (api_base, group_id),
-            headers=headers, params={"per_page": 100}, timeout=10)
-        existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
-        if user_id in existing_ids:
+        existing = _gitlab_list_group_members(api_base, headers, group_id)
+        if existing is None:
+            return False
+        if user_id in [m.get('id') for m in existing]:
             return True
         resp = http_requests.post(
             "%s/groups/%s/members" % (api_base, group_id),
@@ -1504,6 +1954,24 @@ def _gitlab_add_group_member(api_base, headers, group_id, username, access_level
             data={"user_id": user_id, "access_level": access_level},
             timeout=10)
         return resp.ok
+    except Exception:
+        return False
+
+
+def _gitlab_remove_group_member(api_base, headers, group_id, user_id):
+    """Remove a user from a GitLab group. Returns True when they are gone.
+
+    Used to revoke a TA's access when they are unassigned. Without this, a
+    de-assigned TA keeps Maintainer rights on the group and can still clone
+    every student repository, even though the web app has already revoked their
+    Django-side access.
+    """
+    try:
+        resp = http_requests.delete(
+            "%s/groups/%s/members/%s" % (api_base, group_id, user_id),
+            headers=headers, timeout=10)
+        # 404 means they are already gone, which is the state we want.
+        return resp.ok or resp.status_code == 404
     except Exception:
         return False
 
@@ -1583,13 +2051,20 @@ def _sync_course_group_members(course, gitlab_url, gitlab_token, group_id):
     return ensured
 
 
-def sync_faculty_course_members(faculty_user):
+def sync_faculty_course_members(faculty_user, removed_ta_ids=()):
     """Sync group membership for every course owned by a faculty member.
 
-    Called when TA assignments change. Returns (courses_synced, members_ensured).
+    Called when TA assignments change. Returns
+    (courses_synced, members_ensured, members_removed).
+
+    `removed_ta_ids` are TAs the caller has just unassigned from this faculty.
+    They are revoked from every course group, because the add-only sync below
+    cannot see them: it iterates the *current* TA list, so an unassigned TA would
+    otherwise keep Maintainer access to all student repositories forever.
     """
     courses_synced = 0
     members_ensured = 0
+    members_removed = 0
     for course in Course.objects.filter(owner=faculty_user.id):
         # Only sync courses that already have a group (i.e. have assignments)
         if not course.assignments.exists():
@@ -1602,7 +2077,28 @@ def sync_faculty_course_members(faculty_user):
             continue
         members_ensured += _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
         courses_synced += 1
-    return courses_synced, members_ensured
+
+        # Revoke anyone just unassigned. Look up their GitLab id per course,
+        # since the token and host can differ between courses.
+        for ta_id in removed_ta_ids:
+            try:
+                ta_profile = UserProfile.objects.get(user_id=ta_id, role=UserProfile.ROLE_TA)
+            except UserProfile.DoesNotExist:
+                continue
+            if not ta_profile.gitlab_username:
+                continue
+            headers = {"PRIVATE-TOKEN": gitlab_token}
+            api_base = "https://%s/api/v4" % gitlab_url
+            user_id = _gitlab_find_user_id(api_base, headers, ta_profile.gitlab_username)
+            if user_id is None:
+                continue
+            if _gitlab_remove_group_member(api_base, headers, group_id, user_id):
+                members_removed += 1
+                logging.getLogger('athina_web').info(
+                    "Revoked GitLab group access for unassigned TA %s on course '%s'",
+                    ta_profile.user.username, course.name)
+
+    return courses_synced, members_ensured, members_removed
 
 
 def _build_readme(assignment):
@@ -1685,10 +2181,121 @@ def _seed_repo_readme(gitlab_url, token, project_id, assignment):
         return False
 
 
+def _provision_group_gitlab(course, assignment, group):
+    """Create ONE repository shared by every member of a group.
+
+    Returns True, or an error string. On success every member's AssignmentRepo
+    carries the same URL — which is exactly how the grading engine recognises a
+    group (it groups students whose repository_url matches, gated by
+    same_limit). The members are all added to the repo as developers.
+
+    Repository name: <assignment>-g<N>.
+    """
+    gitlab_url, gitlab_token = _get_gitlab_config(course)
+    if not gitlab_url or not gitlab_token:
+        return "GitLab is not configured for this course (missing URL or token)."
+
+    members = [m.student for m in group.memberships.select_related('student')]
+    if not members:
+        return "Group '%s' has no members." % group.name
+
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    api_base = "https://%s/api/v4" % gitlab_url
+
+    # Resolve every member's GitLab account first. A member who cannot be found
+    # is reported but does not block the others: the repo is still useful and the
+    # instructor can fix the account later.
+    resolved = []      # (student, gitlab_user_id)
+    unresolved = []
+    for student in members:
+        candidate = (student.gitlab_username or student.username or '').strip()
+        if not candidate:
+            unresolved.append("%s (no GitLab username)" % student.email)
+            continue
+        resp = http_requests.get("%s/users" % api_base, headers=headers,
+                                 params={"username": candidate}, timeout=10)
+        if not resp.ok or not resp.json():
+            unresolved.append("%s (%s)" % (student.email, candidate))
+            continue
+        if student.gitlab_username != candidate:
+            student.gitlab_username = candidate
+            student.save(update_fields=['gitlab_username'])
+        resolved.append((student, resp.json()[0]['id']))
+
+    if not resolved:
+        return ("None of the GitLab accounts for group '%s' could be found (%s)." %
+                (group.name, ", ".join(unresolved)))
+
+    group_id, group_name, group_created = _ensure_course_group(course, gitlab_url, gitlab_token)
+    if group_id is None:
+        return ("Failed to create GitLab group for course '%s'. Check the faculty "
+                "GitLab token has permission to create groups." % course.name)
+    if group_created:
+        _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
+
+    repo_name = _group_repo_name(assignment, group)
+
+    check_resp = http_requests.get(
+        "%s/projects/%s%%2F%s" % (api_base, group_name, repo_name),
+        headers=headers, timeout=10)
+    if check_resp.status_code == 200:
+        project = check_resp.json()
+    else:
+        resp = http_requests.post("%s/projects" % api_base, headers=headers, data={
+            "name": repo_name,
+            "namespace_id": group_id,
+            "visibility": "private",
+        }, timeout=10)
+        if not resp.ok:
+            return ("Failed to create GitLab repo '%s' (HTTP %s). Check the faculty "
+                    "GitLab token has permission to create projects in group '%s'." %
+                    (repo_name, resp.status_code, group_name))
+        project = resp.json()
+        _seed_repo_readme(gitlab_url, gitlab_token, project.get('id'), assignment)
+
+    url = project.get('http_url_to_repo', '')
+
+    # Add every resolvable member as a developer.
+    member_check = http_requests.get("%s/projects/%s/members" % (api_base, project['id']),
+                                     headers=headers, timeout=10)
+    existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
+    for student, gitlab_user_id in resolved:
+        if gitlab_user_id in existing_ids:
+            continue
+        member_resp = http_requests.post("%s/projects/%s/members" % (api_base, project['id']),
+                                        headers=headers, data={
+                                            "user_id": gitlab_user_id,
+                                            "access_level": GITLAB_ACCESS_DEVELOPER,
+                                        }, timeout=10)
+        if not member_resp.ok:
+            unresolved.append("%s (could not be added to the repo)" % student.email)
+
+    # Record the shared URL on every member so the engine sees one group.
+    # The same URL on multiple students is intended here, not a duplicate.
+    for student in members:
+        repo, _created = AssignmentRepo.objects.get_or_create(
+            student=student, assignment=assignment)
+        repo.repository_url = url
+        repo.save(update_fields=['repository_url'])
+        _sync_student_to_grading_db(student, assignment=assignment)
+
+    for student in members:
+        _notify_student_repo(course, student, assignment=assignment, repo_url=url)
+
+    if unresolved:
+        return ("Created repo '%s' but these members need attention: %s"
+                % (repo_name, ", ".join(unresolved)))
+    return True
+
+
 def _provision_student_gitlab(course, student, assignment_name=None, assignment=None):
     """
     Create GitLab group + repo for a student (skips if they already exist).
-    Repo naming: assignmentname-username (e.g. sql1-alice).
+
+    If the student belongs to a group on this assignment, delegates to
+    _provision_group_gitlab so the whole group shares ONE repository — a group
+    assignment. Otherwise the repo is per student: assignmentname-username
+    (e.g. sql1-alice).
 
     Returns True on success, or an error string describing the failure so the
     caller can surface it to the faculty. The student's GitLab username is
@@ -1704,6 +2311,14 @@ def _provision_student_gitlab(course, student, assignment_name=None, assignment=
     if assignment is None:
         return "No assignment supplied, so a repository cannot be created."
     assignment_name = assignment_name or assignment.name
+
+    # Group assignment: one repo for the whole group.
+    membership = (GroupMembership.objects
+                  .filter(group__assignment=assignment, student=student)
+                  .select_related('group')
+                  .first())
+    if membership is not None:
+        return _provision_group_gitlab(course, assignment, membership.group)
 
     gitlab_url, gitlab_token = _get_gitlab_config(course)
     if not gitlab_url or not gitlab_token:

@@ -1,5 +1,5 @@
 from django import forms
-from .models import Assignment, Course, Student, AssignmentRepo
+from .models import Assignment, Course, Student, StudentGroup, GroupMembership, AssignmentRepo
 
 
 class AssignmentForm(forms.ModelForm):
@@ -10,7 +10,7 @@ class AssignmentForm(forms.ModelForm):
         # They are grading-engine settings (defaults: 'canvas' / 0) that are
         # written to the per-assignment .env by _refresh_env_for_user. The
         # instructor only needs to supply the repository (git_source).
-        fields = ('name', 'course', 'active', 'git_source')
+        fields = ('name', 'course', 'active', 'is_group_assignment', 'git_source')
         widgets = {
             'git_source': forms.TextInput(attrs={
                 'placeholder': 'https://gitlab.com/group/template-repo.git',
@@ -25,6 +25,10 @@ class AssignmentForm(forms.ModelForm):
             from .views import _get_visible_courses
             self.fields['course'].queryset = _get_visible_courses(user)
         self.fields['git_source'].required = True
+        self.fields['is_group_assignment'].label = 'Group assignment'
+        self.fields['is_group_assignment'].help_text = (
+            'Students work in groups that share one repository. Leave unchecked for '
+            'individual work, where every student gets their own repository.')
 
 
 class CourseForm(forms.ModelForm):
@@ -146,3 +150,76 @@ class StudentBulkForm(forms.Form):
                   'GitLab account differs, add it after a comma '
                   '(e.g. "alice@uni.edu,alicegit").',
     )
+
+
+class StudentGroupForm(forms.ModelForm):
+    """Create or rename a group. Members are managed separately."""
+
+    def __init__(self, *args, **kwargs):
+        self.assignment = kwargs.pop('assignment', None)
+        super().__init__(*args, **kwargs)
+
+    def clean_name(self):
+        """Reject a name already used on this assignment.
+
+        (assignment, name) is unique, so a duplicate raised an IntegrityError and
+        the page returned a 500 instead of a message.
+        """
+        name = (self.cleaned_data.get('name') or '').strip()
+        assignment = self.assignment or getattr(self.instance, 'assignment', None)
+        if assignment and name:
+            clash = (StudentGroup.objects
+                     .filter(assignment=assignment, name__iexact=name)
+                     .exclude(pk=self.instance.pk)
+                     .exists())
+            if clash:
+                raise forms.ValidationError(
+                    "%s is already a group on this assignment." % name)
+        return name
+
+    class Meta:
+        model = StudentGroup
+        fields = ('name',)
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'placeholder': 'e.g. Team Rocket',
+                'class': 'form-control',
+            }),
+        }
+        help_texts = {
+            'name': 'A label for your own reference. The repository is named after the '
+                    'assignment and the group number, not this name.',
+        }
+
+
+class GroupMembersForm(forms.Form):
+    """Pick which students belong to a group.
+
+    Rendered as checkboxes. Students already in another group on this assignment
+    are shown separately (and excluded here) because a student can only hold one
+    repository per assignment.
+    """
+    students = forms.ModelMultipleChoiceField(
+        queryset=Student.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label='Members',
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.group = kwargs.pop('group', None)
+        super().__init__(*args, **kwargs)
+        if self.group is None:
+            return
+        # Eligible: everyone on the course roster, minus students already grouped
+        # elsewhere on this assignment.
+        taken = (GroupMembership.objects
+                 .filter(group__assignment=self.group.assignment)
+                 .exclude(group=self.group)
+                 .values_list('student_id', flat=True))
+        self.fields['students'].queryset = (
+            Student.objects.filter(course=self.group.assignment.course)
+            .exclude(pk__in=list(taken))
+            .order_by('email'))
+        self.fields['students'].initial = list(
+            self.group.memberships.values_list('student_id', flat=True))

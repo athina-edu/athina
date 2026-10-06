@@ -1,0 +1,352 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Groups - {{ assignment.name }}{% endblock %}
+
+{% block head_addition %}
+<style>
+/* Drag-and-drop grouping board.
+   Each group is a droppable column; students are draggable chips. Kept scoped
+   to this page so nothing else inherits the layout. */
+.group-board {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    align-items: flex-start;
+    padding-bottom: .5rem;
+}
+.group-column {
+    flex: 0 0 17rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: .25rem;
+    display: flex;
+    flex-direction: column;
+    max-height: 70vh;
+}
+.group-column.is-drop-target {
+    border-color: #007bff;
+    box-shadow: 0 0 0 .15rem rgba(0, 123, 255, .25);
+    background: #eef5ff;
+}
+.group-column-header {
+    padding: .5rem .75rem;
+    border-bottom: 1px solid #dee2e6;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.group-column-body {
+    padding: .5rem;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 4rem;
+}
+.student-chip {
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+    padding: .35rem .5rem;
+    margin-bottom: .35rem;
+    font-size: .85rem;
+    cursor: grab;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .35rem;
+}
+.student-chip:active { cursor: grabbing; }
+.student-chip.is-dragging { opacity: .4; }
+.student-chip .chip-email {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.student-chip .remove-member {
+    color: #dc3545;
+    text-decoration: none;
+    font-weight: 700;
+    line-height: 1;
+}
+.group-column.repo-unprovisioned .group-column-header { border-bottom-color: #ffeeba; }
+.group-repo {
+    font-size: .75rem;
+    padding: 0 .75rem .5rem;
+    word-break: break-all;
+}
+.group-board-empty {
+    color: #6c757d;
+    font-size: .8rem;
+    padding: .25rem;
+}
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        {% if course %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></li>
+        <li class="breadcrumb-item active">Groups</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>
+    Groups: {{ assignment.name }}
+    {% if not is_group_assignment %}<span class="badge badge-secondary">Individual assignment</span>{% endif %}
+</h3>
+{% if course %}<h6 class="text-muted">{{ course.name }}</h6>{% endif %}
+<hr>
+
+<div class="mb-3">
+    {% if can_manage_students %}
+    <a class="btn btn-success" href="{% url 'assignments:assignment_group_create' assignment_id=assignment.pk %}">Add Group</a>
+    <a class="btn btn-primary" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Repositories</a>
+    {% endif %}
+    <a class="btn btn-info" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Grades</a>
+    <a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
+</div>
+
+{% if not is_group_assignment %}
+<div class="alert alert-warning">
+    <strong>This assignment is set up as individual work.</strong>
+    Students each get their own repository. Group a student below and the assignment
+    switches to a group assignment automatically, or tick
+    <em>Group assignment</em> when editing the assignment.
+</div>
+{% else %}
+<div class="alert alert-info py-2">
+    Drag students between groups. Each group shares <strong>one repository</strong>
+    for {{ assignment.name }}, named <code>{{ assignment.name|slugify }}-g&lt;N&gt;</code>.
+    Provisioning creates one repo per group and points every member at it.
+</div>
+{% endif %}
+
+{% if can_manage_students %}
+<div class="mb-3 d-flex align-items-center flex-wrap">
+    <form method="post" action="{% url 'assignments:assignment_group_autogroup' assignment_id=assignment.pk %}"
+          class="form-inline mr-3">
+        {% csrf_token %}
+        <label class="mr-2" for="autogroup-size">Auto-group remaining, size</label>
+        <input type="number" min="2" value="2" name="size" id="autogroup-size"
+               class="form-control form-control-sm mr-2" style="width: 5rem;">
+        <button type="submit" class="btn btn-sm btn-warning">Auto-group</button>
+    </form>
+    <span class="text-muted small" id="board-status"></span>
+</div>
+{% endif %}
+
+<div class="group-board" id="group-board">
+    <!-- Unassigned column: drop here to remove a student from a group. -->
+    <div class="group-column" data-group-id="">
+        <div class="group-column-header">
+            <span>Unassigned</span>
+            <span class="badge badge-secondary">{{ ungrouped|length }}</span>
+        </div>
+        <div class="group-column-body" data-dropzone="">
+            {% for student in ungrouped %}
+            <div class="student-chip" draggable="true" data-student-id="{{ student.pk }}">
+                <span class="chip-email" title="{{ student.email }}">{{ student.email }}</span>
+            </div>
+            {% empty %}
+            <div class="group-board-empty">Everyone is grouped.</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% for row in groups %}
+    <div class="group-column{% if not row.repo_url %} repo-unprovisioned{% endif %}"
+         data-group-id="{{ row.group.pk }}">
+        <div class="group-column-header">
+            <span title="{{ row.group.name }}">{{ row.group.name }}</span>
+            <span class="badge badge-secondary">{{ row.members|length }}</span>
+        </div>
+        <div class="group-repo text-muted">
+            {% if row.repo_url %}
+            <a href="{{ row.repo_url }}" target="_blank" rel="noopener">{{ row.repo_name }}</a>
+            {% else %}
+            <span title="Not provisioned yet">{{ row.repo_name }}</span>
+            {% endif %}
+        </div>
+        <div class="group-column-body" data-dropzone="{{ row.group.pk }}">
+            {% for member in row.members %}
+            <div class="student-chip" draggable="true" data-student-id="{{ member.pk }}">
+                <span class="chip-email" title="{{ member.email }}">{{ member.email }}</span>
+                {% if can_manage_students %}
+                <a href="#" class="remove-member" data-student-id="{{ member.pk }}"
+                   title="Move back to Unassigned">&times;</a>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div class="group-board-empty">Drop students here.</div>
+            {% endfor %}
+        </div>
+        {% if can_manage_students %}
+        <div class="p-2 d-flex justify-content-between border-top">
+            <a class="btn btn-sm btn-outline-info"
+               href="{% url 'assignments:assignment_group_edit' assignment_id=assignment.pk group_id=row.group.pk %}">Rename</a>
+            <a class="btn btn-sm btn-outline-danger confirm-delete-group"
+               href="{% url 'assignments:assignment_group_delete' assignment_id=assignment.pk group_id=row.group.pk %}"
+               data-name="{{ row.group.name }}">Delete</a>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{% if groups and can_manage_students %}
+<form method="post" action="{% url 'assignments:assignment_provision_students' assignment_id=assignment.pk %}" class="mt-3">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-warning">Provision Group Repositories</button>
+    <small class="text-muted ml-2">
+        Creates one repository per group and points every member at it.
+        Run this after changing memberships.
+    </small>
+</form>
+{% endif %}
+</div>
+
+<script>
+(function () {
+    "use strict";
+
+    var board = document.getElementById("group-board");
+    if (!board) { return; }
+
+    var moveUrl = "{% url 'assignments:assignment_group_move' assignment_id=assignment.pk %}";
+    var canManage = {{ can_manage_students|yesno:"true,false" }};
+    var status = document.getElementById("board-status");
+    var dragged = null;
+
+    function csrfToken() {
+        var input = document.querySelector("input[name=csrfmiddlewaretoken]");
+        return input ? input.value : "";
+    }
+
+    function setStatus(text) {
+        if (status) { status.textContent = text || ""; }
+    }
+
+    function updateCounts() {
+        board.querySelectorAll(".group-column").forEach(function (column) {
+            var badge = column.querySelector(".group-column-header .badge");
+            if (badge) {
+                badge.textContent = column.querySelectorAll(".student-chip").length;
+            }
+        });
+    }
+
+    function refreshEmptyLabels() {
+        board.querySelectorAll(".group-column").forEach(function (column) {
+            var body = column.querySelector(".group-column-body");
+            var existing = body.querySelector(".group-board-empty");
+            var hasChips = body.querySelector(".student-chip") !== null;
+            if (!hasChips && !existing) {
+                var note = document.createElement("div");
+                note.className = "group-board-empty";
+                note.textContent = column.dataset.groupId ? "Drop students here." : "Everyone is grouped.";
+                body.appendChild(note);
+            } else if (hasChips && existing) {
+                existing.remove();
+            }
+        });
+    }
+
+    // Optimistic move: relocate the chip immediately, then tell the server. On
+    // failure we reload so the board never disagrees with the database.
+    function moveChip(chip, targetColumn) {
+        var body = targetColumn.querySelector(".group-column-body");
+        var note = body.querySelector(".group-board-empty");
+        if (note) { note.remove(); }
+        body.appendChild(chip);
+
+        refreshEmptyLabels();
+        updateCounts();
+        setStatus("Saving…");
+
+        var data = new FormData();
+        data.append("student", chip.dataset.studentId);
+        data.append("group", targetColumn.dataset.groupId || "");
+        data.append("csrfmiddlewaretoken", csrfToken());
+
+        fetch(moveUrl, {method: "POST", body: data, credentials: "same-origin"})
+            .then(function (response) {
+                if (!response.ok) { throw new Error("HTTP " + response.status); }
+                return response.json();
+            })
+            .then(function () {
+                setStatus("Saved");
+            })
+            .catch(function () {
+                setStatus("Save failed — reloading");
+                window.location.reload();
+            });
+    }
+
+    if (!canManage) { return; }
+
+    board.addEventListener("dragstart", function (event) {
+        var chip = event.target.closest(".student-chip");
+        if (!chip) { return; }
+        dragged = chip;
+        chip.classList.add("is-dragging");
+        event.dataTransfer.effectAllowed = "move";
+        // Firefox requires data to be set for a drag to start.
+        event.dataTransfer.setData("text/plain", chip.dataset.studentId);
+    });
+
+    board.addEventListener("dragend", function () {
+        if (dragged) { dragged.classList.remove("is-dragging"); }
+        board.querySelectorAll(".group-column").forEach(function (column) {
+            column.classList.remove("is-drop-target");
+        });
+        dragged = null;
+    });
+
+    board.addEventListener("dragover", function (event) {
+        var column = event.target.closest(".group-column");
+        if (!column || !dragged) { return; }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        column.classList.add("is-drop-target");
+    });
+
+    board.addEventListener("dragleave", function (event) {
+        var column = event.target.closest(".group-column");
+        if (column) { column.classList.remove("is-drop-target"); }
+    });
+
+    board.addEventListener("drop", function (event) {
+        var column = event.target.closest(".group-column");
+        if (!column || !dragged) { return; }
+        event.preventDefault();
+        column.classList.remove("is-drop-target");
+        moveChip(dragged, column);
+    });
+
+    // The × button is the keyboard/touch-friendly equivalent of dragging to
+    // Unassigned, since drag-and-drop is unreliable on touch devices.
+    board.addEventListener("click", function (event) {
+        var remove = event.target.closest(".remove-member");
+        if (!remove) { return; }
+        event.preventDefault();
+        moveChip(remove.closest(".student-chip"),
+                 board.querySelector('.group-column[data-group-id=""]'));
+    });
+
+    $('.confirm-delete-group').click(function (e) {
+        var name = $(this).data('name');
+        if (!confirm('Delete group "' + name + '"?\n\nMembers keep their roster entry, ' +
+                     'but their shared repository URL is cleared so they are not graded against it.')) {
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+{% endblock %}

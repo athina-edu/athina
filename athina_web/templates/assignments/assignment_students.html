@@ -24,9 +24,19 @@
     <a class="btn btn-warning" href="{% url 'assignments:assignment_provision_students' assignment_id=assignment.pk %}">Provision Missing Repos</a>
     <a class="btn btn-outline-warning" href="{% url 'assignments:assignment_notify_students' assignment_id=assignment.pk %}">Re-send Notifications</a>
     {% endif %}
+    <a class="btn btn-primary" href="{% url 'assignments:assignment_groups' assignment_id=assignment.pk %}">Groups{% if group_count %} ({{ group_count }}){% endif %}</a>
     <a class="btn btn-info" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Grades</a>
     <a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
 </div>
+
+{% if group_count %}
+<div class="alert alert-info py-2">
+    This assignment has <strong>{{ group_count }}</strong> group(s).
+    {% if ungrouped %}<strong>{{ ungrouped }}</strong> student(s) are ungrouped and get individual repositories.{% endif %}
+    Grouped students share one repository &mdash; see
+    <a href="{% url 'assignments:assignment_groups' assignment_id=assignment.pk %}">Groups</a>.
+</div>
+{% endif %}
 
 <div class="alert alert-info py-2">
     Each student gets their own repository for <strong>{{ assignment.name }}</strong>

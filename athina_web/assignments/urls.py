@@ -25,6 +25,14 @@ urlpatterns = [
     # Per-assignment repositories: these are the assignment-scoped equivalents of
     # the course-level student routes below.
     path('<int:assignment_id>/students/', views.assignment_students, name='assignment_students'),
+    # Group assignments: students in a group share one repository.
+    path('<int:assignment_id>/groups/', views.assignment_groups, name='assignment_groups'),
+    path('<int:assignment_id>/groups/new/', views.assignment_group_create, name='assignment_group_create'),
+    path('<int:assignment_id>/groups/autogroup/', views.assignment_group_autogroup, name='assignment_group_autogroup'),
+    path('<int:assignment_id>/groups/random-name/', views.assignment_group_random_name, name='assignment_group_random_name'),
+    path('<int:assignment_id>/groups/move/', views.assignment_group_move, name='assignment_group_move'),
+    path('<int:assignment_id>/groups/<int:group_id>/edit/', views.assignment_group_edit, name='assignment_group_edit'),
+    path('<int:assignment_id>/groups/<int:group_id>/delete/', views.assignment_group_delete, name='assignment_group_delete'),
     path('<int:assignment_id>/students/provision/', views.assignment_provision_students,
          name='assignment_provision_students'),
     path('<int:assignment_id>/students/notify/', views.assignment_notify_students,
