@@ -34,7 +34,17 @@ def _return_requested_type(data, return_type):
     if return_type == "json":
         try:
             return_value = data.json()
-        except (json.decoder.JSONDecodeError, AttributeError):
+        except ValueError:
+            # ValueError covers requests.exceptions.JSONDecodeError, which does
+            # NOT inherit from json.JSONDecodeError (it descends from simplejson's
+            # and from ValueError). Catching only json.JSONDecodeError let a
+            # non-JSON reply — an HTML error page, a 401 from a bad token, a
+            # connection failure — escape and crash the whole run instead of
+            # being handled by the caller.
+            return_value = {}
+        except AttributeError:
+            # data is not a Response at all (request_url returns "" when the
+            # request could not be made).
             return_value = {}
     elif return_type == "text":
         try:

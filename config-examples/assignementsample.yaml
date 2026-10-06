@@ -90,7 +90,7 @@ grade_update_frequency: 24
 # This is extremely important for security purposes since a student may register their own domain and extract
 # your git credentials otherwise.
 # Any url not matching the pattern below will be rejected by Athina
-git_url: www.github.com
+git_url: github.com
 
 # Git credentials are NOT stored in this file.
 # When using Athina Web, credentials are managed per-faculty in their profile

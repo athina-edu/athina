@@ -360,15 +360,24 @@ def core_iteration(configuration, user_data):
     if ARGS.repo_url_testing is not None:
         # Creating tmp user and simulating the test for the provided repository
         LOGGER.logger.debug("TEST")
+        # Use the SAME ids for the cleanup, the insert and the read below.
+        # This block used to hardcode course_id=1/assignment_id=1 on insert while
+        # reading back with configuration.course_id/assignment_id, so unless the
+        # config happened to say 1 and 1 the freshly created row was never found
+        # and the run died with UsersDoesNotExist. The shipped example config says
+        # 0 and 0, so `--config config-examples/ --repo_url_testing=...` could
+        # never work.
+        course_id = configuration.course_id
+        assignment_id = configuration.assignment_id
         try:
-            obj = return_a_student(configuration.course_id, configuration.assignment_id, 1)
+            obj = return_a_student(course_id, assignment_id, 1)
             obj.delete_instance()
         except Users.DoesNotExist:
             # No existing user to clean up; a fresh one is created below.
             pass
         Users.create(user_id=1,
-                     course_id=1,
-                     assignment_id=1,
+                     course_id=course_id,
+                     assignment_id=assignment_id,
                      repository_url=ARGS.repo_url_testing,
                      url_date=datetime.datetime(1, 1, 1, 0, 0).replace(tzinfo=None),
                      new_url=True,

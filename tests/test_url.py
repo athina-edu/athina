@@ -69,6 +69,27 @@ class TestUrl(TestCase):
                 raise json.decoder.JSONDecodeError("x", "y", 1)
         self.assertEqual(_return_requested_type(FakeResp(), "json"), {})
 
+    def test_return_requested_type_handles_requests_json_error(self):
+        """Regression: requests raises its OWN JSONDecodeError.
+
+        It descends from simplejson's and from ValueError, NOT from
+        json.JSONDecodeError, so catching only the stdlib type let a non-JSON
+        reply (an HTML error page, a 401, a connection failure) escape and crash
+        the whole grading run instead of being handled by the caller.
+        """
+        class FakeResp:
+            def json(self):
+                # Exactly what requests raises for a non-JSON body.
+                raise requests.exceptions.JSONDecodeError("x", "y", 1)
+        self.assertEqual(_return_requested_type(FakeResp(), "json"), {})
+
+    def test_return_requested_type_survives_a_real_non_json_response(self):
+        """End-to-end: a real Response with an HTML body must not raise."""
+        resp = requests.Response()
+        resp.status_code = 401
+        resp._content = b"<html><body>Unauthorized</body></html>"
+        self.assertEqual(_return_requested_type(resp, "json"), {})
+
     def test_return_requested_type_json_attribute_error(self):
         self.assertEqual(_return_requested_type("", "json"), {})
 
