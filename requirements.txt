@@ -29,4 +29,4 @@ six==1.17.0
 smmap==5.0.3
 soupsieve==2.9.2
 typing_extensions==4.16.0
-urllib3==2.7.0
+urllib3==2.8.0
