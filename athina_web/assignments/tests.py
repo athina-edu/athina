@@ -60,7 +60,27 @@ def fake_gitlab(user_id=55, project_id=999, repo_url=None,
     return fake_get, fake_post
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class TestFunctions(TestCase):
+    def test_assignments_api_rejects_anonymous_writes(self):
+        """Regression: an unauthenticated POST created an Assignment record.
+
+        The view was a ListCreateAPIView with no permission classes, so anyone
+        who could reach the endpoint could write. It is read-only now; the CLI
+        only ever GETs it.
+        """
+        client = Client()
+        response = client.post('/assignments/api/', data='{"simulate": true}',
+                               content_type='application/json')
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(Assignment.objects.count(), 0, "no record may be created")
+
+    def test_assignments_api_still_lists_for_the_daemon(self):
+        Assignment.objects.create(name='SQL 1', active=True, owner=1, absolute_path='1/SQL 1')
+        response = Client().get('/assignments/api/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+
     # Use a non-"Push Hook" event here so the webhook view does not attempt to connect to a real MySQL DB
     # during tests. The view will return a simple 'ok' response for non-Push Hook events.
     header = {'Content-Length': '1770', 'Content-Type': 'application/json', 'X-Gitlab-Event': 'Ping', 'Connection': 'close', 'Host': '127.0.0.1:8000'}

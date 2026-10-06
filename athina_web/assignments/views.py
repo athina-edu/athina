@@ -836,10 +836,24 @@ def push_event(request):
     return HttpResponse('ok')
 
 
-class APIView(generics.ListCreateAPIView):
-    """This class defines the create behavior of our rest api."""
+class APIView(generics.ListAPIView):
+    """Read-only list of active assignments, consumed by the grading daemon.
+
+    This was a ListCreateAPIView with no permission classes and no
+    authentication, so an anonymous POST created an Assignment record. It is now
+    read-only: `athina-cli` only ever GETs this endpoint (it is how the daemon
+    discovers what to grade), so nothing legitimate loses access.
+
+    NOTE: the endpoint is still unauthenticated, and each response runs a git
+    fetch + hard reset per assignment (see AssignmentListSerializer.get_directory)
+    and exposes absolute server paths. Requiring a shared token here means
+    teaching the daemon to send one too — worth doing, but it needs a coordinated
+    change in athina/cli.py and the deployment config, so it is deliberately left
+    as-is for now rather than half-done.
+    """
     queryset = Assignment.objects.filter(active=True)
     serializer_class = AssignmentListSerializer
+    http_method_names = ['get', 'head', 'options']
 
 
 # =========================================================================
