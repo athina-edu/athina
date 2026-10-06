@@ -159,3 +159,71 @@ class TestCheckDependencies(TestCase):
     def test_reports_the_first_missing_binary(self):
         with self.assertRaises(FileNotFoundError):
             Configuration.check_dependencies(["sh", "definitely-not-a-real-binary-xyz"])
+
+
+class TestGroupSettingsEnvFallback(TestCase):
+    """Group settings may come from athina-web via the environment.
+
+    athina-web cannot reliably edit athina.yaml (it resets the assignment
+    directory from git), so it writes GROUP_ASSIGNMENT / SAME_URL_LIMIT to the
+    per-assignment .env instead. The YAML stays authoritative when it sets them.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self._saved = dict(os.environ)
+        for key in ('GROUP_ASSIGNMENT', 'SAME_URL_LIMIT'):
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._saved)
+
+    def _load_with(self, yaml_body):
+        path = os.path.join(self.tmpdir, "assignment.yaml")
+        with open(path, 'w') as handle:
+            handle.write(yaml_body)
+
+        configuration, _ = make_config()
+        with mock.patch.object(Configuration, 'check_dependencies', return_value=True):
+            configuration.load_configuration(path)
+        return configuration
+
+    def test_defaults_without_yaml_or_env(self):
+        configuration = self._load_with("course_id: 1\n")
+        self.assertFalse(configuration.group_assignment)
+        self.assertEqual(configuration.same_url_limit, 1)
+
+    def test_env_supplies_the_values(self):
+        os.environ['GROUP_ASSIGNMENT'] = 'true'
+        os.environ['SAME_URL_LIMIT'] = '3'
+        configuration = self._load_with("course_id: 1\n")
+
+        self.assertTrue(configuration.group_assignment)
+        self.assertEqual(configuration.same_url_limit, 3)
+
+    def test_yaml_wins_over_the_env(self):
+        """An explicit value in the assignment config must not be overridden."""
+        os.environ['GROUP_ASSIGNMENT'] = 'true'
+        os.environ['SAME_URL_LIMIT'] = '9'
+        configuration = self._load_with("group_assignment: false\nsame_url_limit: 2\n")
+
+        self.assertFalse(configuration.group_assignment)
+        self.assertEqual(configuration.same_url_limit, 2)
+
+    def test_env_booleans_are_parsed_case_insensitively(self):
+        for raw in ('True', 'TRUE', ' true '):
+            os.environ['GROUP_ASSIGNMENT'] = raw
+            configuration = self._load_with("course_id: 1\n")
+            self.assertTrue(configuration.group_assignment, "failed for %r" % raw)
+
+    def test_false_string_is_not_truthy(self):
+        os.environ['GROUP_ASSIGNMENT'] = 'false'
+        configuration = self._load_with("course_id: 1\n")
+        self.assertFalse(configuration.group_assignment)
+
+    def test_malformed_values_keep_the_default(self):
+        """A bad override must not break grading."""
+        os.environ['SAME_URL_LIMIT'] = 'not-a-number'
+        configuration = self._load_with("course_id: 1\n")
+        self.assertEqual(configuration.same_url_limit, 1)

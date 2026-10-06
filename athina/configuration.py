@@ -132,6 +132,32 @@ class Configuration:
         else:
             pass  # The default value as set in this configuration.py file remains
 
+    def load_value_with_env(self, config, key, configvar, cast=None):
+        """Load a value from the YAML, falling back to an environment variable.
+
+        The YAML stays authoritative — an explicit key in the assignment config
+        always wins. The environment fallback exists so athina-web can drive a
+        setting without editing the template repo: the web app resets the
+        assignment directory from git, so anything it wrote into athina.yaml
+        locally would be discarded. GROUP_ASSIGNMENT and SAME_URL_LIMIT are
+        written to the per-assignment .env instead (see Configuration._load_assignment_env).
+
+        `cast` coerces the environment string (e.g. lambda v: v.lower() == 'true'
+        for booleans, since YAML handles types itself but the env is all strings).
+        """
+        value = config.get(key, None)
+        if value is not None:
+            setattr(self, key, value)
+            return
+
+        env_value = os.environ.get(key.upper(), None)
+        if env_value is not None:
+            try:
+                setattr(self, key, cast(env_value) if cast else env_value)
+            except (TypeError, ValueError):
+                # A malformed override should not break grading; keep the default.
+                pass
+
     def _load_assignment_env(self):
         """
         Load the assignment-specific .env file (written by athina-web) into the
@@ -208,8 +234,12 @@ class Configuration:
 
         self.load_value(config, 'git_username', self.git_username)
         self.load_value(config, 'git_password', self.git_password)
-        self.load_value(config, 'group_assignment', self.group_assignment)
-        self.load_value(config, 'same_url_limit', self.same_url_limit)
+        # Group settings: the YAML wins, but athina-web drives them through the
+        # per-assignment .env because it resets the assignment directory from
+        # git (see load_value_with_env).
+        self.load_value_with_env(config, 'group_assignment', self.group_assignment,
+                                 cast=lambda v: v.strip().lower() == 'true')
+        self.load_value_with_env(config, 'same_url_limit', self.same_url_limit, cast=int)
         self.load_value(config, 'check_plagiarism_hour', self.check_plagiarism_hour)
         self.load_value(config, 'submit_results_as_file', self.submit_results_as_file)
         self.load_value(config, 'max_file_size', self.max_file_size)
