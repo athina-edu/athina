@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.http import Http404
 from django.http import HttpResponse
 from django.http import JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from .models import Assignment, Course, Student, AssignmentRepo, StudentGroup, GroupMembership
@@ -36,6 +37,7 @@ import requests as http_requests
 import threading
 from athina_web.athina_db import db_info
 from athina_web.accounts.models import UserProfile
+from athina_web.accounts.resend_email import send_email_safe
 
 
 def _user_can_access_course(user, course):
@@ -982,12 +984,17 @@ def student_list(request, course_id):
 
 @login_required
 def provision_students(request, course_id, assignment_id=None):
-    """Provision per-assignment GitLab repos and sync to the grading DB.
+    """Start provisioning repositories in the background.
 
-    Repositories belong to an assignment, not a course, so this is driven by the
-    assignment: every student gets ``<assignment>-<gitlab_username>`` for THAT
-    assignment. Re-running it is safe — an existing repo is adopted rather than
-    recreated, and a student is only emailed once per assignment."""
+    This used to do all the work inline. Each student costs several GitLab API
+    calls and each of those has a 1s sleep (athina/url.request_url), so 30
+    students is well over a minute of HTTP. Gunicorn's default 30s worker timeout
+    then killed the worker mid-request: the browser hung and finally showed a 500
+    (`InterfaceError` from the aborted commit), and the work half-finished.
+
+    It now kicks off a thread and redirects to a progress page, mirroring the
+    student bulk import. Re-running is still safe — existing repos are adopted
+    rather than recreated."""
     course = get_object_or_404(Course, pk=course_id)
     if not _user_can_manage_students(request.user, course):
         raise Http404
@@ -1006,65 +1013,134 @@ def provision_students(request, course_id, assignment_id=None):
                                   "assignment before provisioning repositories.")
         return redirect('assignments:student_list', course_id=course.pk)
 
-    created = 0
-    adopted = 0
-    synced = 0
-    notified = 0
-    errors = []
+    # Refuse to start a second run for the same target: two threads racing would
+    # both try to create the same GitLab projects.
+    key = _provision_key(course.pk, assignment_id)
+    state = _provision_progress.get(key)
+    if state and state.get('status') == 'running':
+        messages.info(request, "Provisioning is already running for this "
+                               "assignment. Showing its progress.")
+        return _provision_redirect(course, assignment_id)
 
-    # Ensure the faculty owner and assigned TAs are members of the course group.
-    # This covers groups created before this feature existed, and is cheap
-    # (idempotent) when they are already members.
-    members_ensured = 0
-    gitlab_url, gitlab_token = _get_gitlab_config(course)
-    if gitlab_url and gitlab_token:
-        group_id, _group_name, _created = _ensure_course_group(course, gitlab_url, gitlab_token)
-        if group_id is not None:
-            members_ensured = _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
+    _provision_progress[key] = {
+        'status': 'running', 'total': 0, 'current': 0,
+        'current_item': 'Starting…', 'created': 0, 'adopted': 0,
+        'synced': 0, 'notified': 0, 'errors': [],
+        'updated_at': timezone.now(),
+    }
+    thread = threading.Thread(
+        target=_run_provision,
+        args=(course.pk, assignment_id, request.user.id),
+        daemon=True,
+    )
+    thread.start()
+    return _provision_redirect(course, assignment_id)
 
-    students = list(Student.objects.filter(course=course))
-    for assignment in assignments:
-        # Group assignments only: grouped students are provisioned once per GROUP,
-        # not per student, because the whole group shares one repository. On an
-        # individual assignment any leftover groups are ignored — the checkbox in
-        # the assignment form is the source of truth.
-        grouped_student_ids = set()
-        groups = list(assignment.groups.all()) if assignment.is_group_assignment else []
-        # Remember what we wrote to the .env so we can tell the operator.
-        _write_group_settings(assignment, has_groups=bool(groups))
 
-        for group in groups:
-            grouped_student_ids.update(
-                group.memberships.values_list('student_id', flat=True))
+def _provision_key(course_id, assignment_id):
+    """Separate progress per course-level and per-assignment runs."""
+    return "course-%s" % course_id if assignment_id is None else "assignment-%s" % assignment_id
 
-        for group in groups:
-            # Skip a group that already has a repo recorded.
-            member_ids = list(group.memberships.values_list('student_id', flat=True))
-            already = (AssignmentRepo.objects
-                       .filter(assignment=assignment, student_id__in=member_ids)
-                       .exclude(repository_url='')
-                       .exists())
-            if already:
-                adopted += 1
+
+def _provision_redirect(course, assignment_id):
+    """Redirect to the progress page for this run's scope."""
+    if assignment_id is not None:
+        return redirect('assignments:provision_progress',
+                        assignment_id=assignment_id)
+    return redirect('assignments:provision_progress_course', course_id=course.pk)
+
+
+def _run_provision(course_id, assignment_id, user_id):
+    """Background thread: provision repositories and sync to the grading DB.
+
+    Writes progress into `_provision_progress` so the polling page can report
+    what is happening. Every step is best-effort: one student's failure is
+    recorded and the run continues, so a single bad GitLab account cannot abandon
+    the rest of the roster.
+    """
+    key = _provision_key(course_id, assignment_id)
+    logger = logging.getLogger('athina_web')
+    state = _provision_progress.setdefault(key, {})
+
+    def report(**fields):
+        # Stamp every write so the status endpoint can detect a stalled run.
+        fields['updated_at'] = timezone.now()
+        state.update(fields)
+
+    try:
+        course = Course.objects.get(pk=course_id)
+        assignments = ([Assignment.objects.get(pk=assignment_id)] if assignment_id is not None
+                       else list(course.assignments.all()))
+        students = list(Student.objects.filter(course=course))
+
+        # Total units of work, so the progress bar is meaningful. A group
+        # assignment costs one unit per group (or per student if ungrouped); an
+        # individual assignment costs one per student per assignment.
+        units = []
+        for assignment in assignments:
+            if assignment.is_group_assignment and assignment.groups.exists():
+                units.append(('group', assignment, None))
+            else:
+                for student in students:
+                    units.append(('student', assignment, student))
+        report(total=len(units), current=0)
+
+        created = adopted = synced = notified = 0
+        errors = []
+
+        # Ensure the faculty owner and assigned TAs are members of the course
+        # group. Covers groups created before this feature existed, and is cheap
+        # (idempotent) when they are already members.
+        report(current_item='Checking course GitLab group…')
+        gitlab_url, gitlab_token = _get_gitlab_config(course)
+        if gitlab_url and gitlab_token:
+            group_id, _group_name, _created = _ensure_course_group(course, gitlab_url, gitlab_token)
+            if group_id is not None:
+                _sync_course_group_members(course, gitlab_url, gitlab_token, group_id)
+
+        # Group-level work first, then per-student, so the .env settings written
+        # below reflect the groups that exist.
+        for assignment in assignments:
+            groups = list(assignment.groups.all()) if assignment.is_group_assignment else []
+            _write_group_settings(assignment, has_groups=bool(groups))
+
+        done = 0
+        for kind, assignment, student in units:
+            if kind == 'group':
+                for group in assignment.groups.all():
+                    done += 1
+                    report(current=done, current_item="%s — group %s" % (assignment.name, group.name))
+                    member_ids = list(group.memberships.values_list('student_id', flat=True))
+                    already = (AssignmentRepo.objects
+                               .filter(assignment=assignment, student_id__in=member_ids)
+                               .exclude(repository_url='')
+                               .exists())
+                    if already:
+                        adopted += 1
+                    # Always re-run, even when the repo is recorded. It is
+                    # idempotent and it repairs membership: a group provisioned
+                    # before Maintainer was granted leaves every member unable to
+                    # push to the shared protected master branch.
+                    result = _provision_group_gitlab(course, assignment, group)
+                    if result is True:
+                        if not already:
+                            created += 1
+                        notified += 1  # group provisioning notifies every member
+                    elif result:
+                        errors.append("%s (%s): %s" % (group.name, assignment.name, result))
+                # Sync every member's row for this group assignment.
+                for member_id in assignment.groups.values_list('memberships__student_id', flat=True):
+                    member = next((s for s in students if s.pk == member_id), None)
+                    if member is not None:
+                        _sync_student_to_grading_db(member, assignment=assignment)
+                        synced += 1
                 continue
 
-            result = _provision_group_gitlab(course, assignment, group)
-            if result is True:
-                created += 1
-                notified += 1  # group provisioning notifies every member
-            elif result:
-                errors.append("%s (%s): %s" % (group.name, assignment.name, result))
-
-        for student in students:
+            done += 1
+            report(current=done, current_item="%s — %s" % (assignment.name, student.email))
             repo, _was_created = AssignmentRepo.objects.get_or_create(
                 student=student, assignment=assignment)
             was_notified = repo.notified_at
-
-            # Grouped students were handled above; just sync their row.
-            if student.pk in grouped_student_ids:
-                _sync_student_to_grading_db(student, assignment=assignment)
-                synced += 1
-                continue
 
             if not repo.repository_url:
                 result = _provision_student_gitlab(course, student, assignment=assignment)
@@ -1074,39 +1150,381 @@ def provision_students(request, course_id, assignment_id=None):
                     if repo.notified_at and not was_notified:
                         notified += 1
                 elif result:
-                    # result is an error string — surface it to the faculty
                     errors.append("%s (%s): %s" % (student.email, assignment.name, result))
             else:
-                # Repo already exists — still notify the student if we never did.
+                # The repo is already recorded. Re-run the provisioning step anyway
+                # rather than only re-notifying: it is idempotent, and it is what
+                # repairs a repository whose membership is wrong. Students created
+                # before Maintainer was granted are stuck as Developer, which lets
+                # them clone their repo but not push to its protected master —
+                # exactly the thing the instructor clicked this button to fix.
                 adopted += 1
+                result = _provision_student_gitlab(course, student, assignment=assignment)
+                if result not in (True, None):
+                    errors.append("%s (%s): %s" % (student.email, assignment.name, result))
+                # Still notify the student if we never did.
                 result = _notify_student_repo(course, student, assignment=assignment)
                 if result is True:
                     notified += 1
                 elif result:
                     errors.append("%s (%s): %s" % (student.email, assignment.name, result))
 
-            # Sync this assignment's row so the daemon sees the repo URL.
             _sync_student_to_grading_db(student, assignment=assignment)
             synced += 1
+            report(created=created, adopted=adopted, synced=synced,
+                   notified=notified, errors=list(errors))
 
-    label = assignments[0].name if len(assignments) == 1 else "%d assignments" % len(assignments)
-    if errors:
-        messages.error(request, "Some repositories could not be provisioned:<br>" + "<br>".join(errors))
-    if created:
-        messages.success(request, "Created %d new repo(s) for %s and synced %d student/assignment row(s)."
-                         % (created, label, synced))
-    elif not errors:
-        messages.info(request, "All students already have repos for %s. Synced %d row(s) to the grading database."
-                      % (label, synced))
-    if adopted and not created:
-        messages.info(request, "Adopted %d existing repo(s) for %s." % (adopted, label))
-    if notified:
-        messages.success(request, "Sent %d notification email(s) to students." % notified)
-    if members_ensured:
-        messages.info(request, "Ensured %d course member(s) (faculty/TAs) have group access." % members_ensured)
+        label = (assignments[0].name if len(assignments) == 1
+                 else "%d assignments" % len(assignments))
+        summary = "Created %d, adopted %d, synced %d row(s), notified %d" % (
+            created, adopted, synced, notified)
+        report(current=len(units), status='done', current_item='Finished',
+               created=created, adopted=adopted, synced=synced,
+               notified=notified, errors=list(errors), summary=summary, label=label,
+               started_by=user_id)
+        logger.info("Provisioning complete for %s/%s: %s",
+                    course_id, assignment_id, summary)
+    except Exception as exc:
+        # A crash in the thread must still surface to the operator, or the page
+        # polls "running" forever.
+        logger.exception("Provisioning failed for course=%s assignment=%s", course_id, assignment_id)
+        report(status='error', current_item='Failed', error=str(exc))
 
-    return redirect('assignments:assignment_students', assignment_id=assignment.pk) \
-        if assignment_id is not None else redirect('assignments:student_list', course_id=course.pk)
+
+@login_required
+def provision_progress(request, assignment_id):
+    """Live progress for provisioning one assignment's repositories."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    _assignment_access_or_404(request.user, assignment)
+    return render(request, 'assignments/provision_progress.html', {
+        "assignment": assignment,
+        "course": assignment.course,
+        "status_url": reverse('assignments:provision_progress_api',
+                              kwargs={'assignment_id': assignment.pk}),
+        "done_url": reverse('assignments:assignment_students',
+                            kwargs={'assignment_id': assignment.pk}),
+        "title": "Provisioning repositories for %s" % assignment.name,
+        "can_manage_students": _user_can_manage_students(request.user, assignment.course),
+    })
+
+
+@login_required
+def provision_progress_course(request, course_id):
+    """Live progress for provisioning every assignment in a course."""
+    course = get_object_or_404(Course, pk=course_id)
+    if not _user_can_access_course(request.user, course):
+        raise Http404
+    return render(request, 'assignments/provision_progress.html', {
+        "assignment": None,
+        "course": course,
+        "status_url": reverse('assignments:provision_progress_course_api',
+                              kwargs={'course_id': course.pk}),
+        "done_url": reverse('assignments:student_list', kwargs={'course_id': course.pk}),
+        "title": "Provisioning repositories for %s" % course.name,
+        "can_manage_students": _user_can_manage_students(request.user, course),
+    })
+
+
+def _provision_status_payload(key, redirect_url):
+    """JSON body the progress page polls."""
+    state = _provision_progress.get(key)
+    if not state:
+        return {"status": "idle", "total": 0, "current": 0, "done": True,
+                "redirect": redirect_url}
+    total = state.get('total', 0)
+    current = state.get('current', 0)
+    percent = int((current / total) * 100) if total else 0
+    status = state.get('status', 'running')
+
+    # A run that stops making progress would otherwise leave the page polling
+    # forever. If nothing has been written for a long while, report it as stalled
+    # so the operator sees something actionable instead of a frozen bar.
+    if status == 'running':
+        last = state.get('updated_at')
+        if last is not None and (timezone.now() - last).total_seconds() > _PROVISION_STALL_SECONDS:
+            status = 'stalled'
+
+    return {
+        "status": status,
+        "total": total,
+        "current": current,
+        "percent": percent,
+        "current_item": state.get('current_item', ''),
+        "created": state.get('created', 0),
+        "adopted": state.get('adopted', 0),
+        "synced": state.get('synced', 0),
+        "notified": state.get('notified', 0),
+        "errors": state.get('errors', []),
+        "error": state.get('error', ''),
+        "summary": state.get('summary', ''),
+        # 'stalled' counts as done so the UI stops polling and the operator can
+        # decide whether to retry (provisioning is idempotent).
+        "done": status in ('done', 'error', 'stalled'),
+        "redirect": redirect_url,
+    }
+
+
+@login_required
+def provision_progress_api(request, assignment_id):
+    """JSON status for one assignment's provisioning run."""
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    _assignment_access_or_404(request.user, assignment)
+    return JsonResponse(_provision_status_payload(
+        _provision_key(assignment.course_id, assignment.pk),
+        reverse('assignments:assignment_students', kwargs={'assignment_id': assignment.pk})))
+
+
+@login_required
+def provision_progress_course_api(request, course_id):
+    """JSON status for a whole-course provisioning run."""
+    course = get_object_or_404(Course, pk=course_id)
+    if not _user_can_access_course(request.user, course):
+        raise Http404
+    return JsonResponse(_provision_status_payload(
+        _provision_key(course.pk, None),
+        reverse('assignments:student_list', kwargs={'course_id': course.pk})))
+
+
+@login_required
+def assignment_gitlab_check(request, assignment_id):
+    """Report, per student, whether their GitLab account can be found — and why.
+
+    Provisioning aborts for any student whose account cannot be resolved, and the
+    only feedback is one line of error text after the run. When that happens for
+    many students at once it is hard to tell an instructor with no accounts from
+    a token that cannot see them, or from usernames that differ from the email
+    prefix.
+
+    This does the same lookups without creating anything, so the reason is
+    visible up front.
+    """
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None:
+        raise Http404
+    course = assignment.course
+    if not _user_can_manage_students(request.user, course):
+        raise Http404
+
+    gitlab_url, gitlab_token = _get_gitlab_config(course)
+    if not gitlab_url or not gitlab_token:
+        messages.error(request, "GitLab is not configured for this course "
+                                "(missing URL or token), so accounts cannot be checked.")
+        return redirect('assignments:assignment_students', assignment_id=assignment.pk)
+
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    api_base = "https://%s/api/v4" % gitlab_url
+
+    rows = []
+    counts = {'found': 0, 'not_found': 0, 'error': 0}
+    for student in Student.objects.filter(course=course).order_by('email'):
+        handle = (student.gitlab_username or student.username or '').strip()
+        user, outcome, detail = _gitlab_lookup_user(
+            api_base, headers, handle=handle, email=student.email)
+        counts[outcome] = counts.get(outcome, 0) + 1
+        rows.append({
+            'student': student,
+            'handle': handle,
+            'outcome': outcome,
+            'detail': detail,
+            'matched': (user or {}).get('username', ''),
+            'matched_name': (user or {}).get('name', ''),
+        })
+
+    return render(request, 'assignments/gitlab_check.html', {
+        "assignment": assignment,
+        "course": course,
+        "gitlab_url": gitlab_url,
+        "rows": rows,
+        "counts": counts,
+    })
+
+
+@login_required
+def assignment_gitlab_check_fix(request, assignment_id):
+    """Adopt the GitLab account that the check matched for each student.
+
+    Only writes a handle that was resolved unambiguously, so a fuzzy search can
+    never silently bind a student to somebody else's account.
+    """
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None:
+        raise Http404
+    course = assignment.course
+    if not _user_can_manage_students(request.user, course):
+        raise Http404
+    if request.method != "POST":
+        return redirect('assignments:assignment_gitlab_check', assignment_id=assignment.pk)
+
+    gitlab_url, gitlab_token = _get_gitlab_config(course)
+    if not gitlab_url or not gitlab_token:
+        messages.error(request, "GitLab is not configured for this course.")
+        return redirect('assignments:assignment_students', assignment_id=assignment.pk)
+
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    api_base = "https://%s/api/v4" % gitlab_url
+
+    updated = 0
+    for student in Student.objects.filter(course=course):
+        handle = (student.gitlab_username or student.username or '').strip()
+        user, outcome, _detail = _gitlab_lookup_user(
+            api_base, headers, handle=handle, email=student.email)
+        if outcome != GITLAB_LOOKUP_FOUND:
+            continue
+        resolved = user.get('username')
+        if resolved and student.gitlab_username != resolved:
+            student.gitlab_username = resolved
+            student.save(update_fields=['gitlab_username'])
+            logging.getLogger('athina_web').info(
+                "Adopted GitLab account '%s' for student %s", resolved, student.email)
+            updated += 1
+
+    if updated:
+        messages.success(request, "Updated the GitLab username for %d student(s)." % updated)
+    else:
+        messages.info(request, "No student usernames needed updating.")
+    return redirect('assignments:assignment_gitlab_check', assignment_id=assignment.pk)
+
+
+@login_required
+def assignment_gitlab_signup_email(request, assignment_id):
+    """Compose and send "please create a GitLab account" to unresolvable students.
+
+    Only students whose account could not be resolved are targeted — those are
+    the ones whose repository cannot be created. Re-checked on send rather than
+    trusting the previous result, so a student who has since registered is no
+    longer emailed.
+    """
+    from . import gitlab_signup_email
+
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None:
+        raise Http404
+    course = assignment.course
+    if not _user_can_manage_students(request.user, course):
+        raise Http404
+
+    profile = _get_owner_profile(assignment)
+    gitlab_url, gitlab_token = _get_gitlab_config(course)
+    if not gitlab_url or not gitlab_token:
+        messages.error(request, "GitLab is not configured for this course, so "
+                                "accounts cannot be checked or students emailed.")
+        return redirect('assignments:assignment_students', assignment_id=assignment.pk)
+
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    api_base = "https://%s/api/v4" % gitlab_url
+    site_url = request.build_absolute_uri('/').rstrip('/')
+    faculty_name = request.user.get_full_name() or request.user.username
+    courses = [course.name]
+
+    # Who cannot be resolved right now.
+    unresolved = []
+    for student in Student.objects.filter(course=course).order_by('email'):
+        handle = (student.gitlab_username or student.username or '').strip()
+        _user, outcome, detail = _gitlab_lookup_user(
+            api_base, headers, handle=handle, email=student.email)
+        if outcome != GITLAB_LOOKUP_FOUND:
+            unresolved.append({
+                'student': student,
+                'handle': handle,
+                'outcome': outcome,
+                'detail': detail,
+            })
+
+    if request.method == "POST":
+        if not profile or not profile.notification_api_key:
+            messages.error(request, "No Resend API key is configured. Add one on "
+                                    "your profile before sending.")
+            return redirect('assignments:assignment_gitlab_signup_email',
+                            assignment_id=assignment.pk)
+
+        subject_template = request.POST.get('subject', '')
+        body_template = request.POST.get('body', '')
+        if request.POST.get('save_as_default') == 'on' and profile:
+            profile.signup_email_subject = subject_template
+            profile.signup_email_body = body_template
+            profile.save(update_fields=['signup_email_subject', 'signup_email_body'])
+            messages.success(request, "Saved as your default message.")
+
+        # Which of the unresolved students to email. Defaults to all of them.
+        selected = set(request.POST.getlist('students')) or {
+            str(row['student'].pk) for row in unresolved if row['outcome'] != GITLAB_LOOKUP_ERROR}
+
+        sent = 0
+        failed = []
+        for row in unresolved:
+            student = row['student']
+            if str(student.pk) not in selected:
+                continue
+            if not student.email:
+                failed.append("%s (no email address)" % student.username)
+                continue
+
+            context = gitlab_signup_email.build_context(
+                student=student, gitlab_url=gitlab_url, faculty_name=faculty_name,
+                site_url=site_url, courses=courses)
+            subject, body = gitlab_signup_email.compose(
+                subject_template, body_template, context)
+            message_id = send_email_safe(
+                api_key=profile.notification_api_key,
+                to=student.email,
+                subject=subject,
+                text=body,
+                from_email=profile.notification_from_email or None,
+                reply_to=profile.notification_reply_to or None,
+            )
+            if message_id is None:
+                failed.append("%s (delivery failed)" % student.email)
+            else:
+                sent += 1
+                logging.getLogger('athina_web').info(
+                    "Sent GitLab signup request to %s by '%s' (resend_id=%s)",
+                    student.email, request.user.username, message_id)
+
+        if sent:
+            messages.success(request, "Sent the signup request to %d student(s)." % sent)
+        if failed:
+            messages.error(request, "Could not email: " + ", ".join(failed))
+        return redirect('assignments:assignment_gitlab_check', assignment_id=assignment.pk)
+
+    subject_template = (profile.signup_email_subject if profile else '') or \
+        gitlab_signup_email.DEFAULT_SUBJECT
+    body_template = (profile.signup_email_body if profile else '') or \
+        gitlab_signup_email.DEFAULT_BODY
+
+    preview_context = gitlab_signup_email.sample_context()
+    # Real values, so the link and signature can be checked before sending.
+    preview_context['gitlab_url'] = gitlab_url
+    preview_context['faculty_name'] = faculty_name
+    preview_context['site_url'] = site_url
+    preview_subject, preview_body = gitlab_signup_email.compose(
+        subject_template, body_template, preview_context)
+
+    return render(request, 'assignments/gitlab_signup_email.html', {
+        "assignment": assignment,
+        "course": course,
+        "gitlab_url": gitlab_url,
+        "unresolved": unresolved,
+        "subject_template": subject_template,
+        "body_template": body_template,
+        "preview_subject": preview_subject,
+        "preview_body": preview_body,
+        "placeholders": gitlab_signup_email.PLACEHOLDERS,
+        "has_email_config": bool(profile and profile.notification_api_key),
+        "email_defaults": {
+            "default_subject": gitlab_signup_email.DEFAULT_SUBJECT,
+            "default_body": gitlab_signup_email.DEFAULT_BODY,
+            "saved_subject": (profile.signup_email_subject if profile else '') or '',
+            "saved_body": (profile.signup_email_body if profile else '') or '',
+        },
+    })
+
+
+def _get_owner_profile(assignment):
+    """The profile that owns this assignment's credentials (course owner)."""
+    try:
+        return User.objects.get(pk=assignment.owner).profile
+    except (User.DoesNotExist, UserProfile.DoesNotExist):
+        return None
 
 
 @login_required
@@ -1174,6 +1592,15 @@ def student_add(request, course_id):
 
 # Module-level dict for tracking import progress across threads
 _import_progress = {}
+
+# Same idea for repository provisioning, keyed by _provision_key(). Provisioning
+# makes several GitLab calls per student, so it must not run inside a request
+# (see provision_students).
+_provision_progress = {}
+
+# A provisioning run that writes no progress for this long is reported as
+# 'stalled' rather than 'running', so the page cannot poll forever.
+_PROVISION_STALL_SECONDS = 180
 
 
 def _run_bulk_import(course_id, entries, assignment_name, has_assignments):
@@ -1905,17 +2332,111 @@ GITLAB_ACCESS_OWNER = 50
 
 
 def _gitlab_find_user_id(api_base, headers, username):
-    """Resolve a GitLab username to a user id. Returns None if not found."""
-    if not username:
-        return None
-    try:
-        resp = http_requests.get("%s/users" % api_base, headers=headers,
-                                 params={"username": username}, timeout=10)
-        if resp.ok and resp.json():
-            return resp.json()[0]['id']
-    except Exception:
-        pass
-    return None
+    """Resolve a GitLab username to a user id. Returns None if not found.
+
+    Kept for callers that only need an id. Prefer _gitlab_lookup_user when the
+    reason for failure matters, because this collapses "no such account" and
+    "the request failed" into the same None.
+    """
+    user, _outcome, _detail = _gitlab_lookup_user(api_base, headers, handle=username)
+    return user['id'] if user else None
+
+
+# Outcomes from _gitlab_lookup_user.
+GITLAB_LOOKUP_FOUND = 'found'
+GITLAB_LOOKUP_NOT_FOUND = 'not_found'
+GITLAB_LOOKUP_ERROR = 'error'
+
+
+def _gitlab_lookup_user(api_base, headers, handle='', email='', timeout=10):
+    """Find a student's GitLab account, trying several lookup forms.
+
+    Returns ``(user_dict_or_None, outcome, detail)`` where outcome is one of the
+    GITLAB_LOOKUP_* constants.
+
+    Two forms are attempted, in order:
+
+    1. an exact match on the stored handle (``?username=``);
+    2. a search on the email address (``?search=``), which GitLab matches against
+       a user's email and display name.
+
+    Step 2 matters: accounts provisioned through LDAP/SAML (as this deployment
+    uses) often carry a username that is not the email prefix, and an exact
+    username lookup simply cannot find them — the instructor then sees "student
+    not found" for someone who has a perfectly good account.
+
+    Distinguishing NOT_FOUND from ERROR is the other point of this function.
+    Reporting a timeout, a bad token, or an unreachable host as "account not
+    found" sends the instructor hunting for the wrong problem entirely.
+    """
+    attempts = []
+    if handle:
+        attempts.append(("exact username '%s'" % handle, {"username": handle}))
+    if email:
+        attempts.append(("email search '%s'" % email, {"search": email}))
+
+    if not attempts:
+        return None, GITLAB_LOOKUP_NOT_FOUND, "no username or email on the student record"
+
+    last_detail = ""
+    transport_failed = False
+    for label, params in attempts:
+        exact = 'username' in params
+        try:
+            resp = http_requests.get("%s/users" % api_base, headers=headers,
+                                     params=params, timeout=timeout)
+        except Exception as exc:
+            # A transport failure is an ERROR, never a NOT_FOUND — the whole point
+            # is not to blame the student for the network.
+            transport_failed = True
+            last_detail = "%s: request failed (%s)" % (label, type(exc).__name__)
+            continue
+
+        if resp.status_code == 401 or resp.status_code == 403:
+            return None, GITLAB_LOOKUP_ERROR, (
+                "%s: not permitted (HTTP %s). The faculty GitLab token may be "
+                "expired or lack permission to read users." % (label, resp.status_code))
+        if resp.status_code == 404:
+            # The endpoint itself is missing — a wrong host or a GitLab version
+            # without the API, not a missing student.
+            return None, GITLAB_LOOKUP_ERROR, (
+                "%s: the GitLab users API returned 404. Check the GitLab URL "
+                "configured for this course." % label)
+        if not resp.ok:
+            last_detail = "%s: HTTP %s" % (label, resp.status_code)
+            continue
+
+        try:
+            results = resp.json()
+        except ValueError:
+            last_detail = "%s: response was not JSON" % label
+            continue
+
+        if not results:
+            last_detail = "%s: no match" % label
+            continue
+
+        if exact:
+            # ?username= is an exact match, so the first result is the account.
+            return results[0], GITLAB_LOOKUP_FOUND, "matched by %s" % label
+
+        # A search is fuzzy. Guessing here would add the WRONG person to a
+        # private repository and show them another student's work, so only accept
+        # an unambiguous result: one that matches the stored handle exactly, or a
+        # single hit.
+        exact_name = [u for u in results if handle and u.get('username') == handle]
+        if exact_name:
+            return exact_name[0], GITLAB_LOOKUP_FOUND, "matched by %s" % label
+        if len(results) == 1:
+            return results[0], GITLAB_LOOKUP_FOUND, "matched by %s" % label
+        last_detail = ("%s: ambiguous (%d possible accounts, none named '%s')"
+                       % (label, len(results), handle))
+
+    # Every attempt failed at the transport layer: that is an ERROR, not "the
+    # student has no account".
+    if transport_failed:
+        return None, GITLAB_LOOKUP_ERROR, last_detail
+    return None, GITLAB_LOOKUP_NOT_FOUND, last_detail
 
 
 def _gitlab_list_group_members(api_base, headers, group_id, max_pages=50):
@@ -1970,6 +2491,93 @@ def _gitlab_add_group_member(api_base, headers, group_id, username, access_level
         return resp.ok
     except Exception:
         return False
+
+
+def _gitlab_list_project_members(api_base, headers, project_id, max_pages=50):
+    """Every member of a GitLab project, following pagination.
+
+    Uses /members/all rather than /members: the former includes members who
+    inherited access from the parent group, which is how faculty and TAs reach a
+    student's repository. Without it they look absent and the code re-adds them.
+    """
+    members = []
+    page = 1
+    while page <= max_pages:
+        try:
+            resp = http_requests.get(
+                "%s/projects/%s/members/all" % (api_base, project_id),
+                headers=headers, params={"per_page": 100, "page": page}, timeout=10)
+        except Exception:
+            return None
+        if not resp.ok:
+            return None
+        batch = resp.json() or []
+        members.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return members
+
+
+def _gitlab_ensure_project_member(api_base, headers, project_id, user_id, access_level):
+    """Make sure a user is a member of a project at *at least* `access_level`.
+
+    Returns ``(ok, message)``.
+
+    Two behaviours that matter here:
+
+    * It raises the level of an existing member. A student provisioned earlier
+      was added as Developer, but GitLab's default protected branch lets only
+      Maintainers push to ``master`` — so they could clone their repository and
+      not submit anything. Re-running provisioning has to repair that, not skip
+      the member as "already present".
+
+    * It is used for *all* members, not just ones this code added, because the
+      existing level is not otherwise knowable without a call per user.
+    """
+    existing = _gitlab_list_project_members(api_base, headers, project_id)
+    if existing is None:
+        return False, "could not read the repository's member list"
+
+    current = None
+    for member in existing:
+        if member.get('id') == user_id:
+            current = member
+            break
+
+    if current is None:
+        try:
+            resp = http_requests.post(
+                "%s/projects/%s/members" % (api_base, project_id),
+                headers=headers,
+                data={"user_id": user_id, "access_level": access_level}, timeout=10)
+        except Exception as exc:
+            return False, "adding member failed (%s)" % type(exc).__name__
+        if not resp.ok:
+            return False, "adding member failed (HTTP %s)" % resp.status_code
+        return True, "added"
+
+    current_level = current.get('access_level') or 0
+    if current_level == access_level:
+        return True, "already a member"
+
+    # Never lower anyone. The point is to make sure a student can push, not to
+    # demote a member who already holds a higher role (an Owner, say).
+    if current_level > access_level:
+        return True, "already has a higher access level (%s)" % current_level
+
+    # GitLab returns 409 when asked to set a level equal to the current one, but
+    # guard anyway so a no-op is never reported as a failure.
+    try:
+        resp = http_requests.put(
+            "%s/projects/%s/members/%s" % (api_base, project_id, user_id),
+            headers=headers, data={"access_level": access_level}, timeout=10)
+    except Exception as exc:
+        return False, "updating access failed (%s)" % type(exc).__name__
+    if not resp.ok:
+        return False, ("updating access from %s to %s failed (HTTP %s)"
+                       % (current_level, access_level, resp.status_code))
+    return True, "access raised from %s to %s" % (current_level, access_level)
 
 
 def _gitlab_remove_group_member(api_base, headers, group_id, user_id):
@@ -2269,20 +2877,17 @@ def _provision_group_gitlab(course, assignment, group):
 
     url = project.get('http_url_to_repo', '')
 
-    # Add every resolvable member as a developer.
-    member_check = http_requests.get("%s/projects/%s/members" % (api_base, project['id']),
-                                     headers=headers, timeout=10)
-    existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
+    # Add every resolvable member, or raise them to Maintainer if they are already
+    # one. Maintainer rather than Developer because a new project protects `master`
+    # with "Allowed to push: Maintainers" — a Developer cannot push, so a student
+    # could clone their repository but never submit work to it. In a group the
+    # repository is shared, so this is also what lets any member push a group
+    # submission.
     for student, gitlab_user_id in resolved:
-        if gitlab_user_id in existing_ids:
-            continue
-        member_resp = http_requests.post("%s/projects/%s/members" % (api_base, project['id']),
-                                        headers=headers, data={
-                                            "user_id": gitlab_user_id,
-                                            "access_level": GITLAB_ACCESS_DEVELOPER,
-                                        }, timeout=10)
-        if not member_resp.ok:
-            unresolved.append("%s (could not be added to the repo)" % student.email)
+        ok, message = _gitlab_ensure_project_member(
+            api_base, headers, project['id'], gitlab_user_id, GITLAB_ACCESS_MAINTAINER)
+        if not ok:
+            unresolved.append("%s (%s)" % (student.email, message))
 
     # Record the shared URL on every member so the engine sees one group.
     # The same URL on multiple students is intended here, not a duplicate.
@@ -2353,22 +2958,33 @@ def _provision_student_gitlab(course, student, assignment_name=None, assignment=
     #    whose GitLab handle differs can still be provisioned. The resolved name
     #    is stored, so the repo name and issue titles stay consistent.
     candidate = (student.gitlab_username or student.username or '').strip()
-    if not candidate:
+    if not candidate and not student.email:
         return ("Student '%s' has no email address or GitLab username, so their "
                 "GitLab account cannot be determined." % student.email)
 
-    user_resp = http_requests.get("%s/users" % api_base, headers=headers,
-                                  params={"username": candidate}, timeout=10)
-    if not user_resp.ok or not user_resp.json():
-        return ("Could not find a GitLab account '%s' for student '%s' on %s. "
-                "If their GitLab username differs from their email prefix, set it "
-                "on the student record. Otherwise the account must be created on "
-                "GitLab first." % (candidate, student.email, gitlab_url))
+    # Resolve the account, distinguishing "no such account" from "the request
+    # failed". Reporting the latter as the former sends the instructor looking for
+    # the wrong problem.
+    user, outcome, detail = _gitlab_lookup_user(
+        api_base, headers, handle=candidate, email=student.email)
 
-    gitlab_user_id = user_resp.json()[0]['id']
-    # Store the name that actually resolved, so later steps and re-runs agree.
-    if student.gitlab_username != candidate:
-        student.gitlab_username = candidate
+    if outcome == GITLAB_LOOKUP_ERROR:
+        return ("Could not check GitLab for student '%s': %s" % (student.email, detail))
+
+    if user is None:
+        return ("No GitLab account found for student '%s' (tried %s) on %s. "
+                "If their GitLab username differs from their email prefix, set it "
+                "on the student record — the Repositories page has an 'Edit Repo' "
+                "link that also edits the username. Otherwise the account may not "
+                "exist on GitLab yet, or it may be invisible to this token."
+                % (student.email, detail or ("'%s'" % candidate), gitlab_url))
+
+    gitlab_user_id = user['id']
+    # Store the name that actually resolved, so later steps and re-runs agree —
+    # and so the instructor can see which account was matched.
+    resolved_username = user.get('username') or candidate
+    if student.gitlab_username != resolved_username:
+        student.gitlab_username = resolved_username
         student.save(update_fields=['gitlab_username'])
 
     # 1. Find or create the course group
@@ -2396,48 +3012,49 @@ def _provision_student_gitlab(course, student, assignment_name=None, assignment=
         headers=headers, timeout=10)
 
     if check_resp.status_code == 200:
-        # Repo already exists — just record the URL
+        # Repo already exists — record the URL, but still fall through to the
+        # membership step. Returning here used to skip it entirely, so a repo
+        # adopted from an earlier run was never shared with its student: they had
+        # a repository listed in the UI that they could not open.
         project = check_resp.json()
         repo.repository_url = project.get('http_url_to_repo', '')
         repo.save(update_fields=['repository_url'])
-        return True
+    else:
+        # Create the repo
+        resp = http_requests.post("%s/projects" % api_base, headers=headers, data={
+            "name": repo_name,
+            "namespace_id": group_id,
+            "visibility": "private",
+        }, timeout=10)
 
-    # Create the repo
-    resp = http_requests.post("%s/projects" % api_base, headers=headers, data={
-        "name": repo_name,
-        "namespace_id": group_id,
-        "visibility": "private",
-    }, timeout=10)
+        if not resp.ok:
+            return ("Failed to create GitLab repo '%s' (HTTP %s). Check the faculty "
+                    "GitLab token has permission to create projects in group '%s'." %
+                    (repo_name, resp.status_code, group_name))
 
-    if not resp.ok:
-        return ("Failed to create GitLab repo '%s' (HTTP %s). Check the faculty "
-                "GitLab token has permission to create projects in group '%s'." %
-                (repo_name, resp.status_code, group_name))
+        project = resp.json()
+        repo.repository_url = project.get('http_url_to_repo', '')
+        repo.save(update_fields=['repository_url'])
 
-    project = resp.json()
-    repo.repository_url = project.get('http_url_to_repo', '')
-    repo.save(update_fields=['repository_url'])
+        # Seed an initial commit (README.md) so the repo has a 'master' branch that
+        # the grading engine can read. Best-effort — provisioning still succeeds if
+        # it fails, and we never touch repos that already existed.
+        _seed_repo_readme(gitlab_url, gitlab_token, project.get('id'), assignment)
 
-    # Seed an initial commit (README.md) so the repo has a 'master' branch that
-    # the grading engine can read. Best-effort — provisioning still succeeds if
-    # it fails, and we never touch repos that already existed.
-    _seed_repo_readme(gitlab_url, gitlab_token, project.get('id'), assignment)
-
-    # 3. Add student as developer (skip if already a member)
-    member_check = http_requests.get(
-        "%s/projects/%s/members" % (api_base, project['id']),
-        headers=headers, timeout=10)
-    existing_ids = [m['id'] for m in member_check.json()] if member_check.ok else []
-    if gitlab_user_id not in existing_ids:
-        member_resp = http_requests.post("%s/projects/%s/members" % (api_base, project['id']),
-                                         headers=headers, data={
-                                             "user_id": gitlab_user_id,
-                                             "access_level": GITLAB_ACCESS_DEVELOPER,
-                                         }, timeout=10)
-        if not member_resp.ok:
-            return ("Created repo '%s' but failed to add student '%s' as a member "
-                    "(HTTP %s). The student cannot access their private repo until "
-                    "this is fixed." % (repo_name, student.gitlab_username, member_resp.status_code))
+    # Add the student, or raise them to Maintainer if they are already a member.
+    #
+    # Why Maintainer and not Developer: a new project protects `master` with
+    # "Allowed to push: Maintainers", so a Developer cannot push to it. The
+    # student could clone their repository and had no way to submit work to it.
+    # Maintainer lets them push their own assignment. GitLab offers no
+    # per-branch protection API here (that is Premium), so the access level is the
+    # only lever — and it is per-project, scoped to one student's own repository.
+    ok, message = _gitlab_ensure_project_member(
+        api_base, headers, project['id'], gitlab_user_id, GITLAB_ACCESS_MAINTAINER)
+    if not ok:
+        return ("Created repo '%s' but could not give student '%s' access: %s. "
+                "They cannot submit work until this is fixed."
+                % (repo_name, student.gitlab_username, message))
 
     # 4. Optionally notify the student via Resend
     _notify_student_repo(course, student, assignment=assignment, repo_url=repo.repository_url)

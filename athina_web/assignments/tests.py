@@ -6,7 +6,9 @@ from django.test import Client
 from django.contrib.auth.models import User
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from unittest import mock
+from datetime import timedelta
 
 from athina_web.accounts.models import UserProfile
 from athina_web.assignments.models import (Assignment, Course, Student, AssignmentRepo,
@@ -829,6 +831,806 @@ class TestGroupSettingsEnv(PerAssignmentRepoBase):
         assignment_views._write_group_settings(self.a1, has_groups=True)
         yaml_path = os.path.join(settings.BASE_DIR, self.a1.absolute_path, 'athina.yaml')
         self.assertFalse(os.path.exists(yaml_path))
+
+
+class TestGitLabUserLookup(TestCase):
+    """Distinguishing "no such account" from "the request failed".
+
+    The old code did `except Exception: pass` and returned None, so a timeout, an
+    expired token, or an unreachable host was reported to the instructor as
+    "Could not find a GitLab account" — which sends them hunting for the wrong
+    problem.
+    """
+
+    API = 'https://gitlab.example.edu/api/v4'
+
+    def _lookup(self, get):
+        with mock.patch.object(assignment_views.http_requests, 'get', get):
+            return assignment_views._gitlab_lookup_user(
+                self.API, {'PRIVATE-TOKEN': 't'}, handle='jdoe', email='jdoe@uni.edu')
+
+    def test_exact_username_match(self):
+        user, outcome, detail = self._lookup(
+            lambda *a, **k: FakeResponse(json_data=[{'id': 1, 'username': 'jdoe'}]))
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_FOUND)
+        self.assertEqual(user['username'], 'jdoe')
+
+    def test_no_account_is_not_found(self):
+        _user, outcome, _detail = self._lookup(
+            lambda *a, **k: FakeResponse(json_data=[]))
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_NOT_FOUND)
+
+    def test_expired_token_is_an_error_not_a_missing_student(self):
+        for code in (401, 403):
+            _user, outcome, detail = self._lookup(
+                lambda *a, **k: FakeResponse(ok=False, status_code=code, json_data=[]))
+            self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_ERROR)
+            self.assertIn('permitted', detail)
+
+    def test_network_failure_is_an_error_not_a_missing_student(self):
+        def boom(*args, **kwargs):
+            raise ConnectionError("unreachable")
+
+        _user, outcome, detail = self._lookup(boom)
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_ERROR)
+        self.assertIn('ConnectionError', detail)
+
+    def test_non_json_response_is_not_treated_as_a_missing_student(self):
+        class NotJson:
+            status_code = 200
+            ok = True
+
+            def json(self):
+                raise ValueError("no json")
+
+        _user, outcome, _detail = self._lookup(lambda *a, **k: NotJson())
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_NOT_FOUND)
+
+    def test_email_search_finds_a_differently_named_account(self):
+        """LDAP/SAML accounts often do not use the email prefix as the username."""
+        def get(url, headers=None, params=None, **kwargs):
+            if 'username' in (params or {}):
+                return FakeResponse(json_data=[])          # exact lookup misses
+            return FakeResponse(json_data=[{'id': 9, 'username': 'jsmith'}])
+
+        user, outcome, detail = self._lookup(get)
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_FOUND)
+        self.assertEqual(user['username'], 'jsmith')
+        self.assertIn('email search', detail)
+
+    def test_ambiguous_search_is_refused_rather_than_guessed(self):
+        """Adopting the wrong account would expose a student's private repo."""
+        def get(url, headers=None, params=None, **kwargs):
+            if 'username' in (params or {}):
+                return FakeResponse(json_data=[])
+            return FakeResponse(json_data=[{'id': 1, 'username': 'a'},
+                                           {'id': 2, 'username': 'b'}])
+
+        user, outcome, detail = self._lookup(get)
+        self.assertIsNone(user)
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_NOT_FOUND)
+        self.assertIn('ambiguous', detail)
+
+    def test_a_search_result_named_exactly_is_accepted(self):
+        def get(url, headers=None, params=None, **kwargs):
+            if 'username' in (params or {}):
+                return FakeResponse(json_data=[])
+            return FakeResponse(json_data=[{'id': 1, 'username': 'other'},
+                                           {'id': 2, 'username': 'jdoe'}])
+
+        user, outcome, _detail = self._lookup(get)
+        self.assertEqual(outcome, assignment_views.GITLAB_LOOKUP_FOUND)
+        self.assertEqual(user['id'], 2)
+
+    def test_find_user_id_still_returns_none_on_failure(self):
+        """The id-only helper must keep its old contract for existing callers."""
+        with mock.patch.object(assignment_views.http_requests, 'get',
+                               lambda *a, **k: FakeResponse(json_data=[])):
+            self.assertIsNone(assignment_views._gitlab_find_user_id(
+                self.API, {}, 'nobody'))
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class TestGitLabCheckView(PerAssignmentRepoBase):
+    """The diagnostic page reports why each account could not be resolved."""
+
+    def test_reports_per_student_outcomes(self):
+        """One student resolves, the other does not, and the counts say so."""
+        student = Student.objects.create(course=self.course, email='bob@uni.edu')
+        known = self.student.username          # derived from the email prefix
+        student.save()
+
+        def get(url, headers=None, params=None, **kwargs):
+            if url.endswith('/users'):
+                handle = (params or {}).get('username')
+                if handle == known:
+                    return FakeResponse(json_data=[{'id': 1, 'username': known}])
+                return FakeResponse(json_data=[])
+            return FakeResponse(json_data=[])
+
+        with mock.patch.object(assignment_views.http_requests, 'get', get), \
+             mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: ('gitlab.example.edu', 'tok')):
+            response = self.client.get(
+                reverse('assignments:assignment_gitlab_check',
+                        kwargs={'assignment_id': self.a1.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['counts']['found'], 1)
+        self.assertEqual(response.context['counts']['not_found'], 1)
+
+    def test_requires_manage_permission(self):
+        ta = User.objects.create_user(username='ta5', password='x')
+        ta.profile.role = UserProfile.ROLE_TA
+        ta.profile.managed_by.add(self.faculty)
+        ta.profile.save()
+        self.client.force_login(ta)
+
+        response = self.client.get(
+            reverse('assignments:assignment_gitlab_check',
+                    kwargs={'assignment_id': self.a1.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_reports_an_error_when_gitlab_is_unconfigured(self):
+        with mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: (None, None)):
+            response = self.client.get(
+                reverse('assignments:assignment_gitlab_check',
+                        kwargs={'assignment_id': self.a1.pk}), follow=True)
+        self.assertContains(response, 'not configured')
+
+    def test_adopt_writes_only_resolved_usernames(self):
+        self.student.gitlab_username = 'student1'
+        self.student.save(update_fields=['gitlab_username'])
+
+        def get(url, headers=None, params=None, **kwargs):
+            if url.endswith('/users'):
+                if (params or {}).get('username'):
+                    return FakeResponse(json_data=[])                      # exact misses
+                return FakeResponse(json_data=[{'id': 9, 'username': 'alice_git'}])
+            return FakeResponse(json_data=[])
+
+        with mock.patch.object(assignment_views.http_requests, 'get', get), \
+             mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: ('gitlab.example.edu', 'tok')):
+            response = self.client.post(
+                reverse('assignments:assignment_gitlab_check_fix',
+                        kwargs={'assignment_id': self.a1.pk}), follow=True)
+
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.gitlab_username, 'alice_git')
+        self.assertContains(response, 'Updated the GitLab username')
+
+    def test_adopt_requires_post(self):
+        response = self.client.get(
+            reverse('assignments:assignment_gitlab_check_fix',
+                    kwargs={'assignment_id': self.a1.pk}))
+        self.assertEqual(response.status_code, 302)   # redirected, no change
+
+
+class TestProjectMemberUpsert(TestCase):
+    """Students must end up able to push, not merely able to clone.
+
+    GitLab protects `master` with "Allowed to push: Maintainers" on a new
+    project, so a Developer can clone their repository and cannot submit work to
+    it. Provisioning therefore adds Maintainer, and must also *raise* the level of
+    a student added by an earlier run.
+    """
+
+    API = 'https://gitlab.example.edu/api/v4'
+
+    def _call(self, existing_members, put_ok=True, post_ok=True):
+        calls = {'post': [], 'put': []}
+
+        def fake_get(url, headers=None, params=None, **kwargs):
+            return FakeResponse(json_data=existing_members)
+
+        def fake_post(url, headers=None, data=None, **kwargs):
+            calls['post'].append((url, dict(data or {})))
+            return FakeResponse(ok=post_ok, status_code=201 if post_ok else 400,
+                                 json_data={})
+
+        def fake_put(url, headers=None, data=None, **kwargs):
+            calls['put'].append((url, dict(data or {})))
+            return FakeResponse(ok=put_ok, status_code=200 if put_ok else 403,
+                                 json_data={})
+
+        with mock.patch.object(assignment_views.http_requests, 'get', fake_get), \
+             mock.patch.object(assignment_views.http_requests, 'post', fake_post), \
+             mock.patch.object(assignment_views.http_requests, 'put', fake_put):
+            result = assignment_views._gitlab_ensure_project_member(
+                self.API, {}, 42, 7, assignment_views.GITLAB_ACCESS_MAINTAINER)
+        return result, calls
+
+    def test_adds_a_missing_member_as_maintainer(self):
+        (ok, message), calls = self._call(existing_members=[])
+
+        self.assertTrue(ok)
+        self.assertEqual(message, 'added')
+        self.assertEqual(len(calls['post']), 1)
+        self.assertEqual(calls['post'][0][1]['access_level'],
+                         assignment_views.GITLAB_ACCESS_MAINTAINER)
+        self.assertEqual(calls['put'], [])      # nothing to raise
+
+    def test_raises_an_existing_developer_to_maintainer(self):
+        """Regression: a Developer cannot push to a protected master branch."""
+        (ok, message), calls = self._call(
+            existing_members=[{'id': 7, 'access_level': assignment_views.GITLAB_ACCESS_DEVELOPER}])
+
+        self.assertTrue(ok)
+        self.assertIn('30 to 40', message)
+        self.assertEqual(len(calls['put']), 1)
+        self.assertEqual(calls['put'][0][1]['access_level'],
+                         assignment_views.GITLAB_ACCESS_MAINTAINER)
+        self.assertEqual(calls['post'], [], "must not re-add an existing member")
+
+    def test_a_member_already_at_the_level_is_left_alone(self):
+        (ok, message), calls = self._call(
+            existing_members=[{'id': 7, 'access_level': assignment_views.GITLAB_ACCESS_MAINTAINER}])
+
+        self.assertTrue(ok)
+        self.assertEqual(message, 'already a member')
+        self.assertEqual(calls['post'], [])
+        self.assertEqual(calls['put'], [])
+
+    def test_a_higher_existing_level_is_not_lowered(self):
+        """An owner must not be demoted to maintainer."""
+        (ok, _message), calls = self._call(
+            existing_members=[{'id': 7, 'access_level': assignment_views.GITLAB_ACCESS_OWNER}])
+
+        self.assertTrue(ok)
+        self.assertEqual(calls['put'], [])
+
+    def test_failed_level_change_is_reported(self):
+        (ok, message), _calls = self._call(
+            existing_members=[{'id': 7, 'access_level': assignment_views.GITLAB_ACCESS_DEVELOPER}],
+            put_ok=False)
+
+        self.assertFalse(ok)
+        self.assertIn('403', message)
+
+    def test_unreadable_member_list_is_a_failure_not_a_silent_skip(self):
+        def fake_get(url, headers=None, params=None, **kwargs):
+            return FakeResponse(ok=False, status_code=403, json_data=[])
+
+        with mock.patch.object(assignment_views.http_requests, 'get', fake_get):
+            ok, message = assignment_views._gitlab_ensure_project_member(
+                self.API, {}, 42, 7, assignment_views.GITLAB_ACCESS_MAINTAINER)
+
+        self.assertFalse(ok)
+        self.assertIn('member list', message)
+
+    def test_uses_members_all_so_inherited_members_are_seen(self):
+        """Faculty/TAs inherit access from the group; /members would miss them."""
+        seen = {}
+
+        def fake_get(url, headers=None, params=None, **kwargs):
+            seen['url'] = url
+            return FakeResponse(json_data=[{'id': 7, 'access_level': 40}])
+
+        with mock.patch.object(assignment_views.http_requests, 'get', fake_get):
+            assignment_views._gitlab_ensure_project_member(
+                self.API, {}, 42, 7, assignment_views.GITLAB_ACCESS_MAINTAINER)
+
+        self.assertIn('/members/all', seen['url'])
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class TestStudentsAreAddedAsMaintainer(PerAssignmentRepoBase):
+    """The two provisioning paths must grant Maintainer, and adopt existing repos."""
+
+    def _patch(self, project_exists_members=None, gitlab_user_id=55):
+        posted = {'project_members': [], 'created': []}
+        existing_project = {'id': 999, 'http_url_to_repo': 'https://x/sql-1-alice.git'}
+        project_state = {'exists': True}
+
+        def fake_get(url, headers=None, params=None, **kwargs):
+            if url.endswith('/users'):
+                return FakeResponse(json_data=[{'id': gitlab_user_id, 'username': 'alice'}])
+            if '/members/all' in url:
+                return FakeResponse(json_data=project_exists_members or [])
+            if url.endswith('/members'):
+                return FakeResponse(json_data=project_exists_members or [])
+            # Project lookup: the code expects a dict, not a list, and treats a
+            # non-200 as "does not exist yet".
+            if project_state['exists']:
+                return FakeResponse(json_data=existing_project)
+            return FakeResponse(ok=False, status_code=404, json_data={})
+
+        def fake_post(url, headers=None, data=None, **kwargs):
+            if url.endswith('/projects'):
+                posted['created'].append(dict(data or {}))
+                return FakeResponse(json_data=existing_project)
+            if '/members' in url:
+                posted['project_members'].append(dict(data or {}))
+                return FakeResponse(json_data={})
+            return FakeResponse(json_data={})
+
+        def fake_put(url, headers=None, data=None, **kwargs):
+            posted['project_members'].append(dict(data or {}))
+            return FakeResponse(json_data={})
+
+        return mock.patch.multiple(
+            assignment_views.http_requests, get=fake_get, post=fake_post, put=fake_put,
+        ), posted
+
+    def _common(self):
+        """The GitLab-adjacent calls every provisioning test needs stubbed."""
+        return mock.patch.multiple(
+            assignment_views,
+            _get_gitlab_config=lambda c: ('gitlab.example.edu', 'tok'),
+            _ensure_course_group=lambda *a, **k: (7, 'grp', False),
+            _seed_repo_readme=lambda *a, **k: True,
+            _notify_student_repo=lambda *a, **k: False,
+            _sync_student_to_grading_db=lambda *a, **k: None,
+        )
+
+    def test_individual_repo_grants_maintainer(self):
+        patcher, posted = self._patch()
+        with patcher, self._common():
+            result = assignment_views._provision_student_gitlab(
+                self.course, self.student, assignment=self.a1)
+
+        self.assertIs(result, True)
+        self.assertEqual(posted['project_members'][0]['access_level'],
+                         assignment_views.GITLAB_ACCESS_MAINTAINER)
+
+    def test_adopted_existing_repo_still_gets_the_student_added(self):
+        """Regression: the 'repo already exists' path returned early and never
+        added the student, leaving them a repository they could not open."""
+        patcher, posted = self._patch()
+        with patcher, self._common():
+            result = assignment_views._provision_student_gitlab(
+                self.course, self.student, assignment=self.a1)
+
+        self.assertIs(result, True)
+        self.assertEqual(posted['created'], [], "the project already existed")
+        self.assertEqual(len(posted['project_members']), 1,
+                         "the student must still be granted access")
+
+    def test_group_repo_grants_maintainer_to_every_member(self):
+        self.bob = Student.objects.create(course=self.course, email='bob@uni.edu')
+        group = StudentGroup.objects.create(assignment=self.a1, name='G', repo_index=1)
+        GroupMembership.objects.create(group=group, student=self.student, assignment=self.a1)
+        GroupMembership.objects.create(group=group, student=self.bob, assignment=self.a1)
+
+        def fake_get(url, headers=None, params=None, **kwargs):
+            if url.endswith('/users'):
+                handle = (params or {}).get('username')
+                uid = 55 if handle == self.student.username else 66
+                return FakeResponse(json_data=[{'id': uid, 'username': handle}])
+            if '/members/all' in url or url.endswith('/members'):
+                return FakeResponse(json_data=[])          # nobody added yet
+            if url.endswith('/groups'):
+                return FakeResponse(json_data=[{'id': 7, 'path': 'grp'}])
+            return FakeResponse(ok=False, status_code=404, json_data={})   # project absent
+
+        levels = []
+
+        def fake_post(url, headers=None, data=None, **kwargs):
+            if '/members' in url:
+                levels.append((data or {}).get('access_level'))
+                return FakeResponse(json_data={})
+            return FakeResponse(json_data={'id': 999, 'http_url_to_repo': 'https://x/g.git'})
+
+        with mock.patch.object(assignment_views.http_requests, 'get', fake_get), \
+             mock.patch.object(assignment_views.http_requests, 'post', fake_post), \
+             self._common():
+            assignment_views._provision_group_gitlab(self.course, self.a1, group)
+
+        self.assertEqual(levels, [assignment_views.GITLAB_ACCESS_MAINTAINER] * 2)
+
+
+    def test_rerun_repairs_an_existing_repo(self):
+        """Regression: an existing repo URL made the run skip provisioning.
+
+        The else-branch only re-sent the notification, so a re-run could never
+        fix a repository whose membership was wrong — students provisioned before
+        Maintainer was granted stayed unable to push, and clicking provisioning
+        again did nothing.
+        """
+        AssignmentRepo.objects.create(student=self.student, assignment=self.a1,
+                                      repository_url='https://x/sql-1-alice.git')
+        calls = []
+        with mock.patch.object(assignment_views, '_provision_student_gitlab',
+                               lambda c, s, **k: calls.append(s.pk) or True), \
+             mock.patch.object(assignment_views, '_notify_student_repo',
+                               lambda *a, **k: False), \
+             mock.patch.object(assignment_views, '_sync_student_to_grading_db',
+                               lambda *a, **k: None), \
+             mock.patch.object(assignment_views, '_write_group_settings',
+                               lambda *a, **k: None), \
+             mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: (None, None)):
+            assignment_views._run_provision(self.course.pk, self.a1.pk, self.faculty.pk)
+
+        self.assertIn(self.student.pk, calls,
+                      "re-provisioning must revisit a repo that already exists")
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class TestGitLabSignupEmail(PerAssignmentRepoBase):
+    """Asking students to create a GitLab account.
+
+    Provisioning cannot create a repository for a student with no resolvable
+    account (a private repo they are not a member of would lock them out), so the
+    remedy is to email them the registration request.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.faculty.profile.notification_api_key = 're_test'
+        self.faculty.profile.notification_from_email = 'Prof <prof@uni.edu>'
+        self.faculty.profile.save()
+        # self.student is `alice@uni.edu`; add one that resolves.
+        self.known = Student.objects.create(course=self.course, email='bob@uni.edu')
+        self.url = reverse('assignments:assignment_gitlab_signup_email',
+                           kwargs={'assignment_id': self.a1.pk})
+
+    def _patch_lookup(self, resolvable=('bob',)):
+        """Only the named handles resolve; everyone else is 'not found'."""
+        def get(url, headers=None, params=None, **kwargs):
+            if url.endswith('/users'):
+                handle = (params or {}).get('username')
+                if handle in resolvable:
+                    return FakeResponse(json_data=[{'id': 5, 'username': handle}])
+                return FakeResponse(json_data=[])
+            return FakeResponse(json_data=[])
+
+        return mock.patch.object(assignment_views.http_requests, 'get', get), \
+            mock.patch.object(assignment_views, '_get_gitlab_config',
+                              lambda c: ('gitlab.example.edu', 'tok'))
+
+    def test_page_lists_only_unresolved_students(self):
+        patcher, cfg = self._patch_lookup()
+        with patcher, cfg:
+            response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        listed = [row['student'].email for row in response.context['unresolved']]
+        self.assertIn('alice@uni.edu', listed)      # cannot be resolved
+        self.assertNotIn('bob@uni.edu', listed)     # resolves fine
+
+    def test_page_renders_preview_and_placeholders(self):
+        patcher, cfg = self._patch_lookup()
+        with patcher, cfg:
+            response = self.client.get(self.url)
+
+        html = response.content.decode()
+        self.assertIn('{gitlab_url}', html)                       # placeholder guide
+        self.assertIn('gitlab.example.edu', response.context['preview_body'])
+        self.assertIn('Alex Rivera', response.context['preview_body'])
+
+    def test_send_personalises_each_message(self):
+        patcher, cfg = self._patch_lookup()
+        sent = []
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe',
+                               lambda **kw: (sent.append(kw), 'id')[1]):
+            self.client.post(self.url, {
+                'subject': 'Register at {gitlab_url}',
+                'body': 'Hi {name}, use {email} on {gitlab_url}. — {faculty_name}'})
+
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['to'], 'alice@uni.edu')
+        self.assertEqual(sent[0]['subject'], 'Register at gitlab.example.edu')
+        self.assertIn('alice', sent[0]['text'])
+        self.assertIn('alice@uni.edu', sent[0]['text'])
+        self.assertIn('prof', sent[0]['text'].lower())
+
+    def test_saving_the_template_persists_it(self):
+        patcher, cfg = self._patch_lookup()
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe', lambda **kw: 'id'):
+            self.client.post(self.url, {
+                'subject': 'My subject', 'body': 'My body', 'save_as_default': 'on'})
+
+        self.faculty.profile.refresh_from_db()
+        self.assertEqual(self.faculty.profile.signup_email_subject, 'My subject')
+        self.assertEqual(self.faculty.profile.signup_email_body, 'My body')
+
+    def test_saved_template_is_prefilled_next_time(self):
+        self.faculty.profile.signup_email_subject = 'Saved {email}'
+        self.faculty.profile.signup_email_body = 'Saved body for {name}'
+        self.faculty.profile.save()
+
+        patcher, cfg = self._patch_lookup()
+        with patcher, cfg:
+            response = self.client.get(self.url)
+
+        self.assertEqual(response.context['subject_template'], 'Saved {email}')
+        self.assertIn('Saved body for', response.context['preview_body'])
+
+    def test_a_student_who_registers_is_not_emailed(self):
+        """Re-checked at send time, not trusted from an earlier page load."""
+        patcher, cfg = self._patch_lookup(resolvable=('alice', 'bob'))
+        sent = []
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe',
+                               lambda **kw: (sent.append(kw), 'id')[1]):
+            self.client.post(self.url, {'subject': 's', 'body': 'b'})
+
+        self.assertEqual(sent, [], "nobody unresolved, so nobody should be emailed")
+
+    def test_only_selected_students_are_emailed(self):
+        other = Student.objects.create(course=self.course, email='carol@uni.edu')
+        patcher, cfg = self._patch_lookup()
+        sent = []
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe',
+                               lambda **kw: (sent.append(kw), 'id')[1]):
+            self.client.post(self.url, {
+                'subject': 's', 'body': 'b', 'students': [str(other.pk)]})
+
+        self.assertEqual([m['to'] for m in sent], ['carol@uni.edu'])
+
+    def test_unchecking_everyone_sends_nothing(self):
+        patcher, cfg = self._patch_lookup()
+        sent = []
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe',
+                               lambda **kw: (sent.append(kw), 'id')[1]):
+            # An explicit empty selection must not fall back to "all".
+            self.client.post(self.url, {'subject': 's', 'body': 'b',
+                                        'students': ['']})
+        # The empty value is not a valid pk, so nothing is selected.
+        self.assertEqual(sent, [])
+
+    def test_refuses_to_send_without_an_api_key(self):
+        self.faculty.profile.notification_api_key = ''
+        self.faculty.profile.save()
+        patcher, cfg = self._patch_lookup()
+        sent = []
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe',
+                               lambda **kw: (sent.append(kw), 'id')[1]):
+            response = self.client.post(self.url, {'subject': 's', 'body': 'b'},
+                                        follow=True)
+
+        self.assertEqual(sent, [])
+        self.assertContains(response, 'No Resend API key')
+
+    def test_reports_delivery_failures(self):
+        patcher, cfg = self._patch_lookup()
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe', lambda **kw: None):
+            response = self.client.post(self.url, {'subject': 's', 'body': 'b'},
+                                        follow=True)
+        self.assertContains(response, 'Could not email')
+
+    def test_hostile_template_does_not_break_sending(self):
+        """A stray brace must not abort the send after the button was clicked."""
+        patcher, cfg = self._patch_lookup()
+        sent = []
+        with patcher, cfg, \
+             mock.patch.object(assignment_views, 'send_email_safe',
+                               lambda **kw: (sent.append(kw), 'id')[1]):
+            response = self.client.post(self.url, {
+                'subject': 'Hi {name}',
+                'body': 'Use {curly braces} here, and {unknown}, and {email}'})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(sent), 1)
+        self.assertIn('alice@uni.edu', sent[0]['text'])
+
+    def test_ta_cannot_email_students(self):
+        ta = User.objects.create_user(username='ta7', password='x')
+        ta.profile.role = UserProfile.ROLE_TA
+        ta.profile.managed_by.add(self.faculty)
+        ta.profile.save()
+        self.client.force_login(ta)
+
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+
+class TestEmailRenderHelpers(TestCase):
+    """The shared renderer both email modules depend on."""
+
+    def test_unknown_placeholder_is_left_alone(self):
+        from athina_web.email_render import safe_substitute
+        self.assertEqual(safe_substitute('Hi {nmae} and {name}', {'name': 'Al'}),
+                         'Hi {nmae} and Al')
+
+    def test_stray_brace_does_not_raise(self):
+        from athina_web.email_render import safe_substitute
+        self.assertIn('Al', safe_substitute('{ not a token } {name}', {'name': 'Al'}))
+
+    def test_subject_is_collapsed_to_one_line(self):
+        from athina_web.email_render import render_subject
+        self.assertEqual(render_subject('a\n{name}\r\nb', {'name': 'Al'}), 'a Al b')
+
+    def test_positional_token_does_not_raise(self):
+        from athina_web.email_render import safe_substitute
+        self.assertIn('Al', safe_substitute('{0} {name}', {'name': 'Al'}))
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class TestProvisionRunsInBackground(PerAssignmentRepoBase):
+    """Provisioning must not run inside the request.
+
+    It makes several GitLab calls per student and each has a 1s sleep, so 30
+    students exceeds gunicorn's 30s worker timeout. The worker was killed
+    mid-commit, which hung the browser and then returned a 500.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Enough students that doing the work inline would be obviously slow.
+        for i in range(12):
+            Student.objects.create(course=self.course, email='s%d@uni.edu' % i)
+        # _provision_progress is module-level, so tests would otherwise leak
+        # state into each other.
+        self._saved_progress = assignment_views._provision_progress.copy()
+        assignment_views._provision_progress.clear()
+        self.addCleanup(self._restore_progress)
+
+    def _restore_progress(self):
+        assignment_views._provision_progress.clear()
+        assignment_views._provision_progress.update(self._saved_progress)
+
+    def _patch_gitlab(self, sleep=0.02):
+        import time
+        calls = {'n': 0}
+
+        def slow_get(url, *args, **kwargs):
+            calls['n'] += 1
+            time.sleep(sleep)
+            return FakeResponse(json_data=[])
+
+        return mock.patch.multiple(
+            assignment_views.http_requests, get=slow_get,
+            post=lambda *a, **k: FakeResponse(json_data={})), calls
+
+    def test_post_returns_immediately_and_redirects_to_progress(self):
+        import time
+        patcher, _calls = self._patch_gitlab()
+        with patcher, \
+             mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: ('gitlab.example.edu', 'tok')), \
+             mock.patch.object(assignment_views, '_ensure_course_group',
+                               lambda *a, **k: (7, 'grp', False)), \
+             mock.patch.object(assignment_views, '_sync_course_group_members',
+                               lambda *a, **k: 0), \
+             mock.patch.object(assignment_views, '_sync_student_to_grading_db',
+                               lambda *a, **k: None), \
+             mock.patch.object(assignment_views, '_write_group_settings',
+                               lambda *a, **k: None):
+            start = time.time()
+            response = self.client.post(
+                reverse('assignments:assignment_provision_students',
+                        kwargs={'assignment_id': self.a1.pk}))
+            elapsed = time.time() - start
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('assignments:provision_progress',
+                              kwargs={'assignment_id': self.a1.pk}),
+                      response['Location'])
+        # The whole point: it must not wait for the GitLab work.
+        self.assertLess(elapsed, 2.0, "provisioning still blocks the request")
+
+    def test_progress_reaches_done_and_reports_counts(self):
+        """Drive the job body synchronously and inspect the reported state.
+
+        The thread itself is covered by test_post_returns_immediately_and_redirects_to_progress.
+        Calling it inline here avoids the background thread fighting this test
+        for SQLite's single writer, which is a test-harness constraint, not
+        behaviour under test.
+        """
+        with mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: ('gitlab.example.edu', 'tok')), \
+             mock.patch.object(assignment_views, '_ensure_course_group',
+                               lambda *a, **k: (7, 'grp', False)), \
+             mock.patch.object(assignment_views, '_sync_course_group_members',
+                               lambda *a, **k: 0), \
+             mock.patch.object(assignment_views, '_sync_student_to_grading_db',
+                               lambda *a, **k: None), \
+             mock.patch.object(assignment_views, '_notify_student_repo',
+                               lambda *a, **k: False), \
+             mock.patch.object(assignment_views, '_provision_student_gitlab',
+                               lambda c, s, **k: True), \
+             mock.patch.object(assignment_views, '_write_group_settings',
+                               lambda *a, **k: None):
+            assignment_views._run_provision(self.course.pk, self.a1.pk, self.faculty.pk)
+            api = reverse('assignments:provision_progress_api',
+                          kwargs={'assignment_id': self.a1.pk})
+            final = self.client.get(api).json()
+
+        self.assertEqual(final['status'], 'done', "job never finished: %r" % final)
+        self.assertEqual(final['total'], 13)          # 12 added + the fixture student
+        self.assertEqual(final['current'], final['total'])
+        self.assertEqual(final['percent'], 100)
+        self.assertEqual(final['created'], 13)
+
+    def test_a_stalled_run_stops_the_page_polling(self):
+        """A run that stops writing progress must not leave the page spinning."""
+        from datetime import timedelta
+        key = assignment_views._provision_key(self.course.pk, self.a1.pk)
+        assignment_views._provision_progress[key] = {
+            'status': 'running', 'total': 10, 'current': 3,
+            'updated_at': timezone.now() - timedelta(
+                seconds=assignment_views._PROVISION_STALL_SECONDS + 30),
+        }
+        data = self.client.get(reverse('assignments:provision_progress_api',
+                                       kwargs={'assignment_id': self.a1.pk})).json()
+
+        self.assertEqual(data['status'], 'stalled')
+        self.assertTrue(data['done'], "a stalled run must stop the polling loop")
+
+    def test_a_freshly_updated_run_is_not_reported_as_stalled(self):
+        key = assignment_views._provision_key(self.course.pk, self.a1.pk)
+        assignment_views._provision_progress[key] = {
+            'status': 'running', 'total': 10, 'current': 3,
+            'updated_at': timezone.now(),
+        }
+        data = self.client.get(reverse('assignments:provision_progress_api',
+                                       kwargs={'assignment_id': self.a1.pk})).json()
+
+        self.assertEqual(data['status'], 'running')
+        self.assertFalse(data['done'])
+
+    def test_progress_page_renders(self):
+        response = self.client.get(reverse('assignments:provision_progress',
+                                           kwargs={'assignment_id': self.a1.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'progress-bar')
+
+    def test_idle_when_no_run_has_happened(self):
+        data = self.client.get(reverse('assignments:provision_progress_api',
+                                       kwargs={'assignment_id': self.a1.pk})).json()
+        self.assertEqual(data['status'], 'idle')
+        self.assertTrue(data['done'], "an idle page must not poll forever")
+
+    def test_second_click_does_not_start_a_second_run(self):
+        """While a run is marked running, a second click must not start another."""
+        key = assignment_views._provision_key(self.course.pk, self.a1.pk)
+        assignment_views._provision_progress[key] = {
+            'status': 'running', 'total': 5, 'current': 1,
+            'updated_at': timezone.now(),
+        }
+        with mock.patch.object(assignment_views.threading, 'Thread') as thread:
+            response = self.client.post(
+                reverse('assignments:assignment_provision_students',
+                        kwargs={'assignment_id': self.a1.pk}))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/provision/progress/', response['Location'])
+        thread.assert_not_called()      # no second worker
+        self.assertEqual(assignment_views._provision_progress[key]['current'], 1)
+
+    def test_a_crash_in_the_thread_surfaces_as_error_not_a_hang(self):
+        """A crash must end the run, or the page polls 'running' forever."""
+        with mock.patch.object(assignment_views, 'Course') as course_model:
+            course_model.objects.get.side_effect = RuntimeError("boom")
+            assignment_views._run_provision(self.course.pk, self.a1.pk, self.faculty.pk)
+
+        key = assignment_views._provision_key(self.course.pk, self.a1.pk)
+        state = assignment_views._provision_progress[key]
+        self.assertEqual(state['status'], 'error')
+        self.assertIn('boom', state['error'])
+
+        data = self.client.get(reverse('assignments:provision_progress_api',
+                                       kwargs={'assignment_id': self.a1.pk})).json()
+        self.assertTrue(data['done'], "page would poll forever: %r" % data)
+        self.assertEqual(data['status'], 'error')
+
+    def test_ta_cannot_start_provisioning(self):
+        ta = User.objects.create_user(username='ta9', password='x')
+        ta.profile.role = UserProfile.ROLE_TA
+        ta.profile.managed_by.add(self.faculty)
+        ta.profile.save()
+        self.client.force_login(ta)
+
+        response = self.client.post(
+            reverse('assignments:assignment_provision_students',
+                    kwargs={'assignment_id': self.a1.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_progress_status_is_not_public(self):
+        """The payload names students, so it must not be readable anonymously."""
+        self.client.logout()
+        response = self.client.get(reverse('assignments:provision_progress_api',
+                                           kwargs={'assignment_id': self.a1.pk}))
+        self.assertIn(response.status_code, (302, 403))
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)

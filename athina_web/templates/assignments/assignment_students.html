@@ -25,6 +25,7 @@
     <a class="btn btn-outline-warning" href="{% url 'assignments:assignment_notify_students' assignment_id=assignment.pk %}">Re-send Notifications</a>
     {% endif %}
     <a class="btn btn-primary" href="{% url 'assignments:assignment_groups' assignment_id=assignment.pk %}">Groups{% if group_count %} ({{ group_count }}){% endif %}</a>
+    <a class="btn btn-outline-info" href="{% url 'assignments:assignment_gitlab_check' assignment_id=assignment.pk %}">Check GitLab Accounts</a>
     <a class="btn btn-info" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Grades</a>
     <a class="btn btn-secondary" href="{% url 'assignments:course_detail' course_id=course.pk %}">Back to Course</a>
 </div>

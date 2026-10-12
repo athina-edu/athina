@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        {% if course %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        {% endif %}
+        {% if assignment %}
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">Provisioning</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>{{ title }}</h3>
+<hr>
+
+<div class="card">
+    <div class="card-body">
+        <div class="progress mb-3" style="height: 30px;">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                 role="progressbar" style="width: 0%">0%</div>
+        </div>
+        <p id="progress-text" class="text-muted mb-1">Starting…</p>
+        <p id="progress-detail" class="text-muted small mb-2"></p>
+        <p id="progress-counts" class="text-muted small mb-0"></p>
+    </div>
+</div>
+
+<div id="progress-errors" class="mt-3" style="display: none;">
+    <div class="alert alert-warning">
+        <strong>Some repositories could not be provisioned:</strong>
+        <ul id="progress-error-list" class="mb-0 mt-2"></ul>
+    </div>
+</div>
+
+<div class="alert alert-info mt-3 py-2 small">
+    This runs in the background, so you can leave this page — provisioning
+    continues. Creating many repositories takes a few seconds each.
+</div>
+
+<div class="mt-2">
+    <a class="btn btn-secondary" id="leave-button"
+       href="{{ done_url }}">Leave this page</a>
+    <a class="btn btn-primary" id="done-button" style="display: none;"
+       href="{{ done_url }}">View repositories</a>
+</div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+
+    var statusUrl = "{{ status_url }}";
+    var bar = document.getElementById("progress-bar");
+    var text = document.getElementById("progress-text");
+    var detail = document.getElementById("progress-detail");
+    var counts = document.getElementById("progress-counts");
+    var errorBox = document.getElementById("progress-errors");
+    var errorList = document.getElementById("progress-error-list");
+    var doneButton = document.getElementById("done-button");
+    var leaveButton = document.getElementById("leave-button");
+
+    var POLL_MS = 1000;
+
+    function showErrors(errors) {
+        if (!errors || !errors.length) { return; }
+        errorList.innerHTML = "";
+        errors.forEach(function (message) {
+            var li = document.createElement("li");
+            // textContent, not innerHTML: these strings contain student emails
+            // and GitLab messages, which must not be treated as markup.
+            li.textContent = message;
+            errorList.appendChild(li);
+        });
+        errorBox.style.display = "block";
+    }
+
+    function finish(status) {
+        clearInterval(timer);
+        bar.classList.remove("progress-bar-animated");
+        if (status === "error") {
+            bar.classList.add("bg-danger");
+            text.innerHTML = "<strong>Provisioning failed.</strong>";
+        } else {
+            bar.classList.add("bg-success");
+            bar.style.width = "100%";
+            bar.textContent = "100%";
+        }
+        doneButton.style.display = "inline-block";
+        leaveButton.style.display = "none";
+    }
+
+    var timer = setInterval(function () {
+        fetch(statusUrl, {credentials: "same-origin", cache: "no-store"})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.total) {
+                    var pct = data.percent || 0;
+                    bar.style.width = pct + "%";
+                    bar.textContent = pct + "%";
+                    text.textContent = data.current + " / " + data.total +
+                        (data.adopted ? " processed" : " processed");
+                } else {
+                    text.textContent = "Preparing…";
+                }
+                if (data.current_item) {
+                    detail.textContent = "Now: " + data.current_item;
+                }
+                counts.textContent =
+                    "Created " + data.created +
+                    " · adopted " + data.adopted +
+                    " · grading rows synced " + data.synced +
+                    (data.notified ? " · notified " + data.notified : "");
+
+                showErrors(data.errors);
+
+                if (data.error) {
+                    detail.textContent = "Error: " + data.error;
+                }
+
+                if (data.status === "done") {
+                    text.innerHTML = "<strong>Finished.</strong> " + (data.summary || "");
+                    finish("done");
+                } else if (data.status === "error") {
+                    finish("error");
+                } else if (data.status === "idle") {
+                    // The run already finished and its state was cleared, or it
+                    // never started. Do not spin forever.
+                    text.textContent = "No provisioning run is in progress.";
+                    finish("done");
+                }
+            })
+            .catch(function () { /* transient; keep polling */ });
+    }, POLL_MS);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}GitLab accounts - {{ assignment.name }}{% endblock %}
+{% block breadcrumbs %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0" style="background: transparent; padding: 0;">
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignments' %}">Courses</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:course_detail' course_id=course.pk %}">{{ course.name }}</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">{{ assignment.name }}</a></li>
+        <li class="breadcrumb-item active">GitLab accounts</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="mt-2">
+<h3>GitLab accounts: {{ assignment.name }}</h3>
+<h6 class="text-muted">{{ gitlab_url }}</h6>
+<hr>
+
+<div class="mb-3">
+    <a class="btn btn-info" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Repositories</a>
+    <a class="btn btn-secondary" href="{% url 'assignments:assignment_view' assignment_id=assignment.pk %}">View Grades</a>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="h4 mb-0 text-success">{{ counts.found }}</div>
+                <small class="text-muted">found</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="h4 mb-0 text-danger">{{ counts.not_found }}</div>
+                <small class="text-muted">not found</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="h4 mb-0 text-warning">{{ counts.error }}</div>
+                <small class="text-muted">could not check</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if counts.error %}
+<div class="alert alert-warning">
+    <strong>{{ counts.error }} lookup(s) failed for a reason other than a missing
+    account</strong> — see the Detail column. This is usually a token or
+    connectivity problem, not a missing student.
+</div>
+{% endif %}
+
+{% if counts.not_found %}
+<div class="alert alert-info">
+    <strong>{{ counts.not_found }} student(s) could not be resolved.</strong>
+    This does <em>not</em> necessarily mean they have no GitLab account: an
+    account with a private profile, or one whose username differs from the email
+    prefix, is not visible to a non-admin token. Check one of them in the GitLab
+    admin area — if the account exists under another name, set it on the student
+    record (or use the button below, which only adopts an unambiguous match).
+</div>
+
+<form method="post" action="{% url 'assignments:assignment_gitlab_check_fix' assignment_id=assignment.pk %}"
+      class="mb-3">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-warning">Adopt matched usernames</button>
+    <small class="text-muted ml-2">
+        Only writes a username when exactly one account matched, or the match is
+        an exact name — never a guess.
+    </small>
+</form>
+{% endif %}
+
+{% if counts.not_found or counts.error %}
+<div class="mb-3">
+    <a class="btn btn-primary"
+       href="{% url 'assignments:assignment_gitlab_signup_email' assignment_id=assignment.pk %}">
+        Email students to create an account
+    </a>
+    <small class="text-muted ml-2">
+        Sends an editable message asking them to register on {{ gitlab_url }},
+        so their repository can be created.
+    </small>
+</div>
+{% endif %}
+
+<div class="table-responsive">
+<table class="table table-striped">
+<tr>
+    <th>Student</th>
+    <th>Tried</th>
+    <th>Result</th>
+    <th>Detail</th>
+    <th></th>
+</tr>
+{% for row in rows %}
+<tr class="{% if row.outcome == 'found' %}table-success{% elif row.outcome == 'error' %}table-warning{% else %}table-danger{% endif %}">
+    <td>{{ row.student.email }}</td>
+    <td><code>{{ row.handle }}</code></td>
+    <td>
+        {% if row.outcome == 'found' %}
+        <span class="badge badge-success">found</span>
+        {% elif row.outcome == 'error' %}
+        <span class="badge badge-warning">could not check</span>
+        {% else %}
+        <span class="badge badge-danger">not found</span>
+        {% endif %}
+    </td>
+    <td class="small text-muted">{{ row.detail }}</td>
+    <td>
+        {% if row.matched %}
+        <a href="https://{{ gitlab_url }}/{{ row.matched }}" target="_blank" rel="noopener">
+            {{ row.matched }}{% if row.matched_name %} ({{ row.matched_name }}){% endif %}
+        </a>
+        {% else %}
+        <a class="btn btn-sm btn-outline-info"
+           href="{% url 'assignments:assignment_repo_edit' assignment_id=assignment.pk student_id=row.student.pk %}">Set username</a>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+</table>
+</div>
+</div>
+{% endblock %}

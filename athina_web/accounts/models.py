@@ -66,6 +66,16 @@ class UserProfile(models.Model):
         default="", blank=True,
         help_text="Body of the TA account email. Leave blank to use the default.")
 
+    # --- GitLab signup request ---
+    # Same idea, different audience: students who have no GitLab account yet, so
+    # provisioning cannot create their repository.
+    signup_email_subject = models.CharField(
+        max_length=255, default="", blank=True,
+        help_text="Subject for the 'create a GitLab account' email. Blank uses the default.")
+    signup_email_body = models.TextField(
+        default="", blank=True,
+        help_text="Body of the 'create a GitLab account' email. Blank uses the default.")
+
     # Marks that a user's password was set by an admin and has not yet been
     # changed by the user. Until it is cleared, the user is redirected to the
     # password-change page on login.

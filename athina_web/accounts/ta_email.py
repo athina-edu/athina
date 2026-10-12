@@ -19,6 +19,8 @@ Two hazards shape this module:
 
 import re
 
+from athina_web.email_render import render_subject, safe_substitute
+
 # Placeholders a faculty member may use. Also shown as guidance in the UI.
 PLACEHOLDERS = (
     ('{name}', 'The TA\'s name (username, or email prefix if unset)'),
@@ -58,19 +60,12 @@ Thanks,
 
 
 def _safe_substitute(template, values):
-    """Substitute {placeholders} without ever raising.
+    """Kept as a thin alias: substitution lives in athina_web.email_render.
 
-    Tries ``str.format`` first. If the template contains an unknown placeholder
-    or a stray brace, falls back to replacing only the placeholders we know
-    about, so the rest of the message still goes out intact.
+    The logic is shared with the GitLab signup message, which has the same
+    "user-authored template reaching str.format" hazard.
     """
-    try:
-        return template.format(**values)
-    except (KeyError, IndexError, ValueError):
-        result = template
-        for key, value in values.items():
-            result = re.sub(r'\{' + re.escape(key) + r'\}', lambda _m, v=value: str(v), result)
-        return result
+    return safe_substitute(template, values)
 
 
 def build_credentials_context(*, user, profile, site_url, faculty_name, courses=()):
@@ -95,10 +90,8 @@ def build_credentials_context(*, user, profile, site_url, faculty_name, courses=
 
 def compose_ta_email(*, subject_template, body_template, context):
     """Render the subject and body for one TA. Never raises."""
-    subject = _safe_substitute(subject_template or DEFAULT_SUBJECT, context)
-    body = _safe_substitute(body_template or DEFAULT_BODY, context)
-    # Subjects must be a single line; a newline makes the header invalid.
-    subject = " ".join(subject.split())
+    subject = render_subject(subject_template, context, default=DEFAULT_SUBJECT)
+    body = safe_substitute(body_template or DEFAULT_BODY, context)
     return subject, body
 
 
