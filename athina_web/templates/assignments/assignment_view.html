@@ -102,21 +102,48 @@
 </div>
 
 <script>
-// Auto-refresh the page every 15 seconds to show updated grading results
-setInterval(function() { location.reload(); }, 15000);
+(function () {
+    "use strict";
 
-function showGuidance(userId, url) {
-    document.getElementById('guidanceModalLabel').textContent = 'AI Guidance for Student #' + userId;
-    document.getElementById('guidanceContent').textContent = 'Loading...';
-    $('#guidanceModal').modal('show');
-    $.getJSON(url)
-        .done(function(data) {
-            document.getElementById('guidanceContent').textContent = data.guidance || 'No AI guidance available for this student.';
-        })
-        .fail(function() {
-            document.getElementById('guidanceContent').textContent = 'Failed to load AI guidance.';
-        });
-}
+    var REFRESH_MS = 15000;
+    var modalOpen = false;
+
+    // This script tag is emitted ABOVE the modal markup, so the element does not
+    // exist yet. Bind once the document is parsed — binding immediately would
+    // attach the handlers to nothing and the guard below would never arm.
+    $(function () {
+        // Bootstrap 4 fires these after the show/hide animation, so the flag
+        // reflects what the instructor actually sees. ('hide.bs.modal' would
+        // clear it while the modal is still on screen.)
+        $('#guidanceModal')
+            .on('shown.bs.modal', function () { modalOpen = true; })
+            .on('hidden.bs.modal', function () { modalOpen = false; });
+    });
+
+    // Auto-refresh so updated grading results appear, but never while the
+    // guidance modal is open: reading it takes longer than the interval, and a
+    // reload would close it and discard what they were reading. Refreshing
+    // resumes as soon as the modal is dismissed.
+    setInterval(function () {
+        if (modalOpen) { return; }
+        location.reload();
+    }, REFRESH_MS);
+
+    // Called from inline onclick handlers, so it must stay global.
+    window.showGuidance = function (userId, url) {
+        document.getElementById('guidanceModalLabel').textContent = 'AI Guidance for Student #' + userId;
+        document.getElementById('guidanceContent').textContent = 'Loading...';
+        $('#guidanceModal').modal('show');
+        $.getJSON(url)
+            .done(function (data) {
+                document.getElementById('guidanceContent').textContent =
+                    data.guidance || 'No AI guidance available for this student.';
+            })
+            .fail(function () {
+                document.getElementById('guidanceContent').textContent = 'Failed to load AI guidance.';
+            });
+    };
+})();
 </script>
 
 <!-- AI Guidance Modal -->
