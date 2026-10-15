@@ -166,9 +166,16 @@ def docker_run(test_script, configuration, logger):
     logger.logger.debug("Docker errors:\n %s" % err.decode("utf-8", "backslashreplace"))
     _terminate_container(container_name)
 
-    # The chown below needs to run just in case there were files that created with docker's user
-    _docker_chown(configuration, logger, configuration.athina_test_tmp_dir)
-    _docker_chown(configuration, logger, configuration.athina_student_code_dir)
+    # Test containers run as root by default, so files they create in the bind-mounted
+    # temp dirs end up root-owned and the host cannot clean them up. chowning them back
+    # costs a FULL extra container launch per directory (2 per test script, so 4 per
+    # student) and was measured at ~23s each in production. Skip it entirely when we
+    # are already running as root, where `chown -R 0` is a no-op (the one-click stack
+    # runs athina as root). Only a non-root host (local/dev runs) needs the chown, and
+    # there both directories are done in a SINGLE container instead of one each.
+    if os.getuid() != 0:
+        _docker_chown(configuration, logger, configuration.athina_test_tmp_dir,
+                      configuration.athina_student_code_dir)
 
     return out, err
 
@@ -193,11 +200,21 @@ def _terminate_all_containers():
 
 
 # This function will change permissions for any files created by docker that are not owned by the user running athina
-def _docker_chown(configuration, logger, directory):
-    container_name = __generate_hash("%s-%s" % (time.time(), os.getpid()))
-    run_statement = ["docker", "run", "--rm", "-v",
-                     "%s:%s" % (directory, directory),
-                     "ubuntu", "chown", "-R", "%s" % os.getuid(), directory]
+def _docker_chown(configuration, logger, *directories):
+    """Reclaim ownership of docker-created files, in a SINGLE container.
+
+    Accepts one or more directories. Mounts and chowns them all in one `docker run`
+    instead of launching a container per directory (the previous behaviour launched
+    two containers per call site).
+    """
+    directories = [d for d in directories if d]
+    if not directories:
+        return b"", b""
+    mount_args = []
+    for directory in directories:
+        mount_args.extend(["-v", "%s:%s" % (directory, directory)])
+    run_statement = ["docker", "run", "--rm"] + mount_args + \
+                    ["ubuntu", "chown", "-R", "%s" % os.getuid()] + directories
     logger.logger.debug(" ".join(run_statement))
     process = subprocess.Popen(run_statement, cwd="%s/" % configuration.config_dir,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
