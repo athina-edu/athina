@@ -127,6 +127,43 @@ class Repository:
 
         return changed_state
 
+    def _webhook_fallback_due(self):
+        """True when the periodic safety-net poll for this assignment is due.
+
+        When webhooks are enabled the repo is normally pulled only on a push event.
+        This returns True once every configuration.webhook_fallback_interval seconds
+        (per assignment) so repositories are still checked periodically even if a
+        webhook delivery never arrives.
+        """
+        interval = getattr(self.configuration, 'webhook_fallback_interval', 0)
+        try:
+            interval = int(interval)
+        except (TypeError, ValueError):
+            return False
+        if interval <= 0:
+            return False
+        last = load_key_from_assignment_data(self.configuration.course_id,
+                                             self.configuration.assignment_id,
+                                             'webhook_fallback_last')
+        if last is None:
+            return True
+        try:
+            last_ts = datetime.fromisoformat(last)
+        except (TypeError, ValueError):
+            return True
+        return (datetime.now(tzlocal()).replace(tzinfo=None) - last_ts).total_seconds() >= interval
+
+    def _mark_webhook_fallback_check(self):
+        """Record that the safety-net poll just ran, for _webhook_fallback_due."""
+        try:
+            update_key_in_assignment_data(
+                self.configuration.course_id, self.configuration.assignment_id,
+                'webhook_fallback_last',
+                datetime.now(tzlocal()).replace(tzinfo=None).isoformat())
+        except Exception:
+            # Best-effort bookkeeping; a missing table should not break grading.
+            pass
+
     def pull_git_repo(self, user_id):
         time.sleep(0.5)  # Delay so that requests won't be rejected by github or gitlab
         try:
@@ -256,6 +293,19 @@ class Repository:
                     self._repository_ref.user_values.webhook_event is False and \
                     self._repository_ref.user_values.force_test is False and \
                     self._repository_ref.configuration.use_webhook is True:
+                # The webhook lets us skip the git pull until a push arrives. As a
+                # safety net, still poll every webhook_fallback_interval seconds so a
+                # missed/blocked webhook delivery (e.g. an Access policy or a GitLab
+                # outage) cannot leave a student ungraded indefinitely.
+                if self._repository_ref._webhook_fallback_due():
+                    self._repository_ref._mark_webhook_fallback_check()
+                    self._repository_ref.logger.logger.info(
+                        "Webhook fallback poll for user %s (no push event within %ds)" %
+                        (self._repository_ref.user_values.user_id,
+                         self._repository_ref.configuration.webhook_fallback_interval))
+                    if self._successor is not None:
+                        return self._successor.handle_request()
+                    return None
                 # This will prevent git pull unless and event has arrived or we do not use webhooks.
                 self._repository_ref.logger.logger.debug("Hook is enabled and set for user %s" %
                                                          self._repository_ref.user_values.user_id)

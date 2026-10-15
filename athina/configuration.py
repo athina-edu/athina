@@ -47,6 +47,9 @@ class Configuration:
     docker_use_net_admin = False
     docker_no_internet = False
     use_webhook = False
+    # When webhooks are enabled, still poll each repo at least this often (seconds)
+    # so a missed/blocked webhook delivery cannot leave a student ungraded. 0 = off.
+    webhook_fallback_interval = 3600
     gitlab_check_repo_is_private = False
 
     # LLM feedback settings (OpenAI-compatible endpoint)
@@ -262,6 +265,7 @@ class Configuration:
         self.load_value(config, 'docker_use_net_admin', self.docker_use_net_admin)
         self.load_value(config, 'docker_no_internet', self.docker_no_internet)
         self.load_value(config, 'use_webhook', self.use_webhook)
+        self.load_value(config, 'webhook_fallback_interval', self.webhook_fallback_interval)
         self.load_value(config, 'gitlab_check_repo_is_private', self.gitlab_check_repo_is_private)
 
         # LLM feedback — load from YAML config, then override from .env if present
