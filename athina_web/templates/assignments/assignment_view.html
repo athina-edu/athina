@@ -89,6 +89,9 @@
                         {% if user.11 %}
                         <button class="btn btn-success" onclick="showGuidance('{{ user.0 }}', '{% url 'assignments:assignment_guidance' assignment_id=assignment.pk user_id=user.0 %}')">🤖 AI Guidance</button>
                         {% endif %}
+                        {% if user.16 %}
+                        <a class="btn btn-secondary" href="{{ user.16 }}" target="_blank" rel="noopener noreferrer">📦 Repo</a>
+                        {% endif %}
                         {% if gitlab_output and user.13 %}
                         <a class="btn btn-info" href="{{ user.13 }}" target="_blank">🦊 GitLab</a>
                         {% endif %}

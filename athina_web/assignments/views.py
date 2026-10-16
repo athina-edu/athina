@@ -375,6 +375,25 @@ def _get_owner_gitlab_host(assignment):
     return 'gitlab.com'
 
 
+def _repo_url_to_web_url(repo_url):
+    """Convert a student's git repo URL to the URL a browser can open.
+
+    E.g. 'https://gitlab.cs.wwu.edu/group/repo.git' → 'https://gitlab.cs.wwu.edu/group/repo'.
+    Credentials (which a submitted URL could contain) are stripped, and the
+    trailing '.git' is removed so the link lands on the repository's home page.
+    """
+    if not repo_url:
+        return ""
+    import re as _re
+    cleaned = _re.sub(r'://[^@]+@', '://', repo_url).strip()
+    cleaned = _re.sub(r'\.git/?$', '', cleaned)
+    # Only ever produce an http(s) link; anything else (git@, file://, javascript:)
+    # is not something we want to put behind a click in the UI.
+    if not _re.match(r'^https?://', cleaned, _re.IGNORECASE):
+        return ""
+    return cleaned
+
+
 def _repo_url_to_issues_url(repo_url, gitlab_host):
     """Convert a student's git repo URL to a GitLab issues page URL.
     E.g. 'https://gitlab.cs.wwu.edu/group/repo.git' → 'https://gitlab.cs.wwu.edu/group/repo/-/issues'
@@ -613,6 +632,7 @@ def assignment_view(request, assignment_id):
                 info = "Assignment not graded yet or past due date"
             repo_url = user[3] or ''
             issues_url = _repo_url_to_issues_url(repo_url, _get_owner_gitlab_host(assignment)) if assignment.output_method == 'gitlab_issues' else ''
+            repo_web_url = _repo_url_to_web_url(repo_url)
             # user[4] is commit_date: the commit the last grading run tested. Show it
             # as "last graded" so an instructor can tell which submission a grade came
             # from (it is refreshed before each test, so it tracks the graded commit).
@@ -620,7 +640,7 @@ def assignment_view(request, assignment_id):
                           base64.b64encode(user[7] if user[7] is not None else b"").decode("ascii"),
                           None, None,
                           user[8], user[9], user[11] or '',
-                          repo_url, issues_url, user[4], user[5]))
+                          repo_url, issues_url, user[4], user[5], repo_web_url))
     finally:
         conn.close()
 
