@@ -1,5 +1,6 @@
 <!-- templates/home.html -->
 {% extends 'base.html' %}
+{% load timezone_tags %}
 
 {% block title %}View Assignment{% endblock %}
 
@@ -68,9 +69,9 @@
                 <td>{{ user.5 }}</td>
                 <td>
                     {% if user.14 %}
-                    <span title="Date of the commit that was graded">{{ user.14|date:"Y-m-d H:i" }}</span>
+                    <span title="Date of the commit that was graded">{{ user.14|as_utc|date:"Y-m-d H:i" }}</span>
                     {% if user.15 %}
-                    <div class="text-muted small" title="When the last grading run finished">run {{ user.15|date:"Y-m-d H:i" }}</div>
+                    <div class="text-muted small" title="When the last grading run finished">run {{ user.15|as_utc|date:"Y-m-d H:i" }}</div>
                     {% endif %}
                     {% else %}
                     <span class="text-muted">—</span>

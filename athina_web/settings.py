@@ -60,6 +60,9 @@ MIDDLEWARE = [
     # After AuthenticationMiddleware: it reads request.user to decide whether an
     # admin-issued password must be changed before the site is usable.
     'athina_web.accounts.middleware.ForcePasswordChangeMiddleware',
+    # Also after AuthenticationMiddleware: activates the display timezone so every
+    # template date is rendered in the user's zone (profile setting / browser).
+    'athina_web.accounts.middleware.TimezoneMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

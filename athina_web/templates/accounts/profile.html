@@ -252,10 +252,79 @@
         </div>
     </div>
 
+    <!-- ── Display Section ──────────────────────────────────────── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fa fa-clock-o"></i> Display
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="timezone"><strong>Timezone</strong></label>
+                <select class="form-control" id="timezone" name="timezone">
+                    <option value="auto" {% if user_profile.timezone == 'auto' or not user_profile.timezone %}selected{% endif %}>
+                        Automatic (use my browser's timezone)
+                    </option>
+                </select>
+                <small class="form-text text-muted">
+                    Controls how dates such as the last graded commit are shown.
+                    <span id="tz-detected"></span>
+                    Choose <em>Automatic</em> to follow whatever timezone this browser is in.
+                </small>
+            </div>
+        </div>
+    </div>
+
     <button type="submit" class="btn btn-primary">Save</button>
     <a class="btn btn-secondary" href="javascript:history.back()">Back</a>
 </form>
 </div>
+
+<script>
+(function () {
+    // Populate the timezone list from the browser's own zone database, so there is
+    // no server-side list to keep in sync, and add the browser zone as a convenient
+    // option. Values are IANA names, which is what the middleware expects.
+    var select = document.getElementById('timezone');
+    if (!select) { return; }
+
+    var current = "{{ user_profile.timezone|default:'auto'|escapejs }}";
+    var zones = [];
+    try {
+        if (typeof Intl !== 'undefined' && Intl.supportedValuesOf) {
+            zones = Intl.supportedValuesOf('timeZone');
+        }
+    } catch (e) { zones = []; }
+    var detected = '';
+    try { detected = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { detected = ''; }
+    if (detected && zones.indexOf(detected) === -1) { zones.unshift(detected); }
+
+    var hint = document.getElementById('tz-detected');
+    if (hint && detected) { hint.textContent = 'Detected: ' + detected + '.'; }
+
+    zones.forEach(function (z) {
+        var opt = document.createElement('option');
+        opt.value = z;
+        opt.textContent = z;
+        if (z === current) { opt.selected = true; }
+        select.appendChild(opt);
+    });
+
+    // Persist the browser zone in a cookie so 'auto' works, and tell the server
+    // immediately if an already-rendered page used a different zone.
+    if (detected) {
+        document.cookie = 'tz=' + encodeURIComponent(detected) + ';path=/;max-age=31536000;samesite=Lax';
+        if (current === 'auto' && '{{ tz_used|default:"" }}' && '{{ tz_used }}' !== detected) {
+            // The page was rendered in another zone; reload once so dates are correct.
+            if (sessionStorage.getItem('tz-reloaded-' + detected) !== '1') {
+                sessionStorage.setItem('tz-reloaded-' + detected, '1');
+                window.location.reload();
+            }
+        }
+    }
+})();
+</script>
 
 <script>
 function fetchModels() {

@@ -89,6 +89,18 @@ class UserProfile(models.Model):
     temp_password = models.CharField(max_length=128, default="", blank=True)
     temp_password_created_at = models.DateTimeField(null=True, blank=True)
 
+    # --- Display preferences ---
+    # The grading engine stores timestamps as UTC (it runs with the clock set to
+    # UTC, and writes naive values), so the UI has to convert them for display.
+    # 'auto' means "use the browser's timezone"; any IANA name (e.g.
+    # "America/Los_Angeles") pins an explicit one. See accounts.middleware.
+    TIMEZONE_AUTO = 'auto'
+    timezone = models.CharField(
+        max_length=64, default=TIMEZONE_AUTO, blank=True,
+        help_text="Timezone used to display dates. 'auto' follows the browser "
+                  "setting; otherwise an IANA name such as America/Los_Angeles.")
+
+
     def temp_password_is_fresh(self, max_age_hours=24):
         """Is the stored temporary password recent enough to still send?
 

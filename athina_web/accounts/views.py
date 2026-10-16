@@ -61,6 +61,15 @@ def profile(request):
         user_profile.notification_api_key = request.POST.get('notification_api_key', '').strip()
         user_profile.notification_from_email = request.POST.get('notification_from_email', '').strip()
         user_profile.notification_reply_to = request.POST.get('notification_reply_to', '').strip()
+        # Display: 'auto' follows the browser, otherwise an IANA zone name. Reject
+        # anything that is not a real zone so a bad value cannot break date rendering.
+        from athina_web.accounts.middleware import valid_timezone
+        tz_value = request.POST.get('timezone', 'auto').strip() or 'auto'
+        if tz_value != 'auto' and not valid_timezone(tz_value):
+            django_messages.error(request, "Unrecognized timezone '%s'; keeping the previous setting."
+                                 % tz_value)
+        else:
+            user_profile.timezone = tz_value
         user_profile.save()
 
         # Refresh .env files for all assignments owned by this user
@@ -91,9 +100,14 @@ def profile(request):
 
         return redirect('accounts:profile')
     active_providers = user_profile.get_active_providers()
+    from django.utils import timezone as django_timezone
     return render(request, 'accounts/profile.html', {
         "user_profile": user_profile,
         "active_providers": active_providers,
+        # The zone actually used to render this page: the template shows it and the
+        # browser script reloads once if it differs from its own zone while the
+        # preference is 'auto'.
+        "tz_used": str(django_timezone.get_current_timezone()),
     })
 
 
