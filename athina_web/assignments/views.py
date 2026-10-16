@@ -21,6 +21,7 @@ import os
 import random
 import shutil
 import logging
+import time
 from rest_framework import generics
 from .serializers import AssignmentListSerializer
 import git
@@ -835,6 +836,21 @@ def push_event(request):
                              (student_git_url, webhook_token,))
         conn.commit()
         conn.close()
+        # Ask the grading daemon to run a pass immediately instead of waiting out its
+        # poll interval. The daemon runs in a separate container and cannot be reached
+        # directly, so signal it through the shared athina_files volume (MEDIA_ROOT,
+        # resolved against BASE_DIR exactly as filemanager.utils does). This container
+        # is only reachable through Cloudflare (Zero Trust Access), so the request is
+        # already authenticated by the network before the token check above.
+        try:
+            trigger_dir = os.path.normpath(os.path.join(settings.BASE_DIR, settings.MEDIA_ROOT))
+            os.makedirs(trigger_dir, exist_ok=True)
+            with open(os.path.join(trigger_dir, '.webhook_trigger'), 'w') as fh:
+                fh.write(str(time.time()))
+        except OSError:
+            # Never let trigger bookkeeping break webhook delivery: the daemon still
+            # picks the change up on its normal pass.
+            pass
     return HttpResponse('ok')
 
 

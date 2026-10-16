@@ -77,6 +77,42 @@ ARGS = None
 lock = None
 LOGGER = None
 
+# A GitLab push webhook reaches the *web* container, which cannot run the grading
+# daemon. It drops a "trigger" file into the shared athina_files volume instead; the
+# daemon wakes early (below) and runs a pass immediately. Kept in a hidden dir so it
+# is never mistaken for an assignment. Override with ATHINA_TRIGGER_FILE for local dev.
+TRIGGER_FILE = os.environ.get("ATHINA_TRIGGER_FILE", "/code/athina_files/.webhook_trigger")
+TRIGGER_WAIT_SECONDS = 60
+
+
+def _wait_for_trigger(timeout):
+    """Sleep up to `timeout` seconds, returning True if a webhook trigger arrived.
+
+    Polls for the trigger file (cheap: one stat every 2s) and clears it before
+    returning, so a delivery that lands while a pass is already running is not lost —
+    it is picked up by the next wait.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if os.path.isfile(TRIGGER_FILE):
+            try:
+                os.remove(TRIGGER_FILE)
+            except OSError:
+                pass
+            return True
+        time.sleep(2)
+    return False
+
+
+def trigger_immediate_pass():
+    """Signal the daemon to run a pass as soon as it finishes the current one."""
+    os.makedirs(os.path.dirname(TRIGGER_FILE), exist_ok=True)
+    try:
+        with open(TRIGGER_FILE, "w") as fh:
+            fh.write(str(time.time()))
+    except OSError:
+        pass
+
 
 def lock_process():
     # Allow only one instance. Use a lock file in a per-user directory (not a
@@ -124,10 +160,14 @@ def run():
 
     # Start main process
     if ARGS.service is True:
-        # Run as a daemon
+        # Run as a daemon. main() returns quickly when a GitLab push webhook asks for
+        # an immediate pass (it wakes early instead of sleeping the full interval).
         while True:
             main()
-            time.sleep(60)
+            # A webhook that arrives mid-sleep touches the trigger file; watch for it
+            # and wake up so that student is graded without waiting out the interval.
+            if _wait_for_trigger(TRIGGER_WAIT_SECONDS):
+                LOGGER.logger.info('Webhook trigger received — starting an immediate pass.')
     else:
         main()
 
