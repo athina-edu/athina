@@ -48,6 +48,7 @@
                 <th>Secondary ID</th>
                 <th>Info</th>
                 <th>Grade</th>
+                <th>Last Graded</th>
                 <th>Plagiarism Max/Avg</th>
                 <th>Reports</th>
                 <th>Actions</th>
@@ -65,6 +66,16 @@
                     {% endif %}
                 </td>
                 <td>{{ user.5 }}</td>
+                <td>
+                    {% if user.14 %}
+                    <span title="Date of the commit that was graded">{{ user.14|date:"Y-m-d H:i" }}</span>
+                    {% if user.15 %}
+                    <div class="text-muted small" title="When the last grading run finished">run {{ user.15|date:"Y-m-d H:i" }}</div>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
                 <td>{{ user.9 }} / {{ user.10 }}</td>
                 <td>
                     <div class="btn-group btn-group-sm" role="group">

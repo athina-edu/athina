@@ -613,11 +613,14 @@ def assignment_view(request, assignment_id):
                 info = "Assignment not graded yet or past due date"
             repo_url = user[3] or ''
             issues_url = _repo_url_to_issues_url(repo_url, _get_owner_gitlab_host(assignment)) if assignment.output_method == 'gitlab_issues' else ''
+            # user[4] is commit_date: the commit the last grading run tested. Show it
+            # as "last graded" so an instructor can tell which submission a grade came
+            # from (it is refreshed before each test, so it tracks the graded commit).
             users.append((user[0], user[1], user[2], color, info, user[6],
                           base64.b64encode(user[7] if user[7] is not None else b"").decode("ascii"),
                           None, None,
                           user[8], user[9], user[11] or '',
-                          repo_url, issues_url))
+                          repo_url, issues_url, user[4], user[5]))
     finally:
         conn.close()
 
