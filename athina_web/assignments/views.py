@@ -61,6 +61,27 @@ def _user_can_access_course(user, course):
     return False
 
 
+def _can_override_scores(user, assignment):
+    """May this user adjust individual test scores for this assignment?
+
+    Faculty/admin own it; a TA may do it for courses they assist. This is narrower
+    than course management (TAs must not create/edit assignments) but broader than
+    viewing, because correcting a score is grading work.
+    """
+    if user.is_superuser or assignment.owner == user.id:
+        return True
+    if assignment.course is None:
+        return False
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        return False
+    if profile.role in (UserProfile.ROLE_ADMIN, UserProfile.ROLE_FACULTY,
+                        UserProfile.ROLE_TA):
+        return _user_can_access_course(user, assignment.course)
+    return False
+
+
 def _user_can_manage_courses(user):
     """Can this user create/edit/delete courses and assignments?
 
@@ -672,6 +693,7 @@ def assignment_view(request, assignment_id):
             "gitlab_host": _get_owner_gitlab_host(assignment),
             "can_force": False,
             "can_manage": _user_can_manage_courses(request.user),
+            "can_override": _can_override_scores(request.user, assignment),
             "due_date": _get_assignment_due_date(course_id_val, assignment_id_val),
         })
 
@@ -688,6 +710,7 @@ def assignment_view(request, assignment_id):
                                                                 # Same actions as the home page so this page is
                                                                 # self-sufficient rather than a dead end.
                                                                 "can_manage": _user_can_manage_courses(request.user),
+                                                                "can_override": _can_override_scores(request.user, assignment),
                                                                 "due_date": _get_assignment_due_date(course_id_val,
                                                                                                    assignment_id_val)})
 

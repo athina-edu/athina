@@ -12,6 +12,7 @@ from athina.file_functions import *
 from athina.tester.docker import *
 from athina.users import *
 from athina.users import Database, Users
+from athina.test_report import parse_records, derive_results
 
 try:
     from athina.llm import generate_llm_feedback, read_student_code, parse_test_descriptions
@@ -178,10 +179,18 @@ class Tester:
             # Run tests
             test_grades = []
             test_reports = []
+            test_results = []   # per-test rows for the override UI
 
             for x in range(0, len(self.configuration.test_scripts)):
-                # Run individual test, add results in test_reports and test_grades
-                self._run_test(x, test_reports, test_grades, user_object)
+                # Run individual test, add results in test_reports and test_grades.
+                # The per-test collector is passed by keyword and consumed
+                # defensively, so a _run_test that predates it (e.g. a test stub)
+                # keeps working.
+                try:
+                    self._run_test(x, test_reports, test_grades, user_object,
+                                   test_results=test_results)
+                except TypeError:
+                    self._run_test(x, test_reports, test_grades, user_object)
 
             # sum and scale grades from tests
             grade = round((sum(test_grades)) * self.configuration.total_points)
@@ -274,6 +283,18 @@ class Tester:
                     current_user_object.llm_guidance = llm_guidance
 
                 current_user_object.save()
+
+                # Store the per-test breakdown for the override UI. Done after the
+                # grade is finalised, and outside the shared test_reports list, so
+                # each student in a group keeps their own rows.
+                try:
+                    replace_test_results(self.configuration.course_id,
+                                         self.configuration.assignment_id,
+                                         current_user_id, test_results)
+                except Exception as e:
+                    self.logger.logger.error("Could not store per-test results for %s: %s"
+                                             % (current_user_id, e))
+
                 user_object_list.append(current_user_object)
         else:
             self.logger.logger.info(">> No changes or past due date")
@@ -292,7 +313,7 @@ class Tester:
 
         return user_object_list  # return the list of all updated objects
 
-    def _run_test(self, x, test_reports, test_grades, user_object):
+    def _run_test(self, x, test_reports, test_grades, user_object, test_results=None):
         test_reports.append(("Test %d with weight %.2f" %
                              (x + 1, self.configuration.test_weights[x])).encode("utf-8"))
         test_script = self.configuration.test_scripts[x]
@@ -358,6 +379,21 @@ class Tester:
         else:
             # scaling between 0 and 1
             test_grades.append(score / 100 * self.configuration.test_weights[x])
+
+        if test_results is not None:
+            # Per-test rows for the override UI. Tests that opt into the athina-test
+            # protocol report their own items (from stderr, so they never pollute the
+            # compared output); anything else falls back to one row for this script.
+            script_name = test_script
+            reported = parse_records(err.decode("utf-8", "backslashreplace") if err else "")
+            if reported:
+                for item in reported:
+                    item["script"] = script_name
+                test_results.extend(reported)
+            else:
+                test_results.extend(derive_results(x, script_name, score,
+                                                   weight=self.configuration.test_weights[x],
+                                                   detail=out.decode("utf-8", "backslashreplace")))
 
     def start_testing_db(self):
         self.logger.logger.info("Pre-fetching all user repositories")

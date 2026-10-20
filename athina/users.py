@@ -11,8 +11,12 @@ import pymysql
 import sys
 from dateutil.tz import tzlocal
 
-__all__ = ('Database', 'Users', 'AssignmentData', "update_key_in_assignment_data", "load_key_from_assignment_data",
-           "return_all_students", "return_a_student", "import_submissions",)
+__all__ = ('Database', 'Users', 'AssignmentData', 'TestResult',
+           "update_key_in_assignment_data", "load_key_from_assignment_data",
+           "return_all_students", "return_a_student", "import_submissions",
+           # Per-test results for the override UI (see athina.users.TestResult).
+           "return_test_results", "replace_test_results", "effective_test_score",
+           "weighted_test_total", "apply_test_overrides",)
 
 # Decide database backend: use SQLite in-memory when running under pytest or when
 # ATHINA_DB=sqlite is set. This avoids requiring a running MySQL server for tests.
@@ -80,7 +84,7 @@ class Database:
                 # DB may already be initialized; ignore and continue.
                 pass
             DB.connect(reuse_if_open=True)
-            DB.create_tables([Users, AssignmentData])
+            DB.create_tables([Users, AssignmentData, TestResult])
             return
 
         # Otherwise assume MySQL
@@ -93,7 +97,7 @@ class Database:
                 # Create the database first (which outside peewee's capabilities
                 self.reset_database()
                 DB.connect()
-        DB.create_tables([Users, AssignmentData])
+        DB.create_tables([Users, AssignmentData, TestResult])
 
     @staticmethod
     def close_db():
@@ -222,6 +226,46 @@ class AssignmentData(BaseModel):
         primary_key = peewee.CompositeKey('variable', 'course_id', 'assignment_id')
 
 
+class TestResult(BaseModel):
+    """One scored item from a grading run, for the per-test override UI.
+
+    A test script can report finer-grained results than the single number Athina
+    parses from the end of its output. Tests using the athina-test protocol
+    (test_begin/test_pass/test_fail/test_end) emit explicit records; otherwise the
+    engine derives one row per whole test script from its percentage. Faculty and
+    TAs can then adjust individual scores and annotate them.
+
+    Rows are replaced on every grading run (see tester._record_test_results), so
+    `score`/`weight` always reflect what the tests actually reported; the override
+    columns are what an instructor edits afterwards.
+    """
+    course_id = peewee.BigIntegerField()
+    assignment_id = peewee.BigIntegerField()
+    user_id = peewee.BigIntegerField()
+    # Stable identifier so an override survives a re-run: either the name the test
+    # declared (test_begin) or "<script index>:<script>" for derived rows.
+    key = peewee.CharField(max_length=255)
+    script = peewee.CharField(max_length=255, default="")
+    name = peewee.CharField(max_length=255, default="")
+    weight = peewee.FloatField(default=1.0)
+    score = peewee.FloatField(default=0.0)          # 0-100 as reported by the test
+    passed = peewee.BooleanField(null=True)         # None = no explicit verdict
+    detail = peewee.TextField(default="", null=True)
+
+    # Instructor override (blank/None means "use the reported score").
+    override_score = peewee.FloatField(null=True)
+    note = peewee.TextField(default="", null=True)
+    overridden_by = peewee.CharField(max_length=255, default="", null=True)
+    overridden_at = peewee.DateTimeField(null=True)
+
+    class Meta:
+        db_table = 'testresults'
+        primary_key = peewee.CompositeKey('user_id', 'course_id', 'assignment_id', 'key')
+        indexes = (
+            (('course_id', 'assignment_id', 'user_id'), False),
+        )
+
+
 def update_key_in_assignment_data(course_id, assignment_id, variable, variable_value):
     try:
         obj = AssignmentData.get(AssignmentData.variable == variable, AssignmentData.course_id == course_id,
@@ -233,7 +277,7 @@ def update_key_in_assignment_data(course_id, assignment_id, variable, variable_v
                               course_id=course_id)
     except peewee.OperationalError:
         # Table may not exist (sqlite in-memory). Create tables and retry once.
-        DB.create_tables([Users, AssignmentData])
+        DB.create_tables([Users, AssignmentData, TestResult])
         try:
             AssignmentData.create(variable=variable, variable_value=variable_value, assignment_id=assignment_id,
                                   course_id=course_id)
@@ -251,12 +295,103 @@ def load_key_from_assignment_data(course_id, assignment_id, variable):
         return None
     except peewee.OperationalError:
         # Table probably doesn't exist yet (sqlite in-memory). Create tables and return None
-        DB.create_tables([Users, AssignmentData])
+        DB.create_tables([Users, AssignmentData, TestResult])
         return None
 
 
 def return_all_students(course_id, assignment_id):
     return Users.select().where(Users.course_id == course_id, Users.assignment_id == assignment_id)
+
+
+def return_test_results(course_id, assignment_id, user_id):
+    """Return this student's per-test rows, in report order."""
+    return (TestResult.select()
+            .where(TestResult.course_id == course_id,
+                   TestResult.assignment_id == assignment_id,
+                   TestResult.user_id == user_id)
+            .order_by(TestResult.script, TestResult.key))
+
+
+def replace_test_results(course_id, assignment_id, user_id, results):
+    """Replace a student's reported rows with `results`, preserving overrides.
+
+    `results` is a list of dicts with key/script/name/weight/score/passed/detail.
+    Overrides are matched by `key` and carried across, so a re-run does not throw
+    away an instructor's correction -- only the reported figures are refreshed.
+    """
+    existing = {row.key: row for row in return_test_results(course_id, assignment_id, user_id)}
+    keep_keys = set()
+    for item in results:
+        key = str(item.get('key'))[:255]
+        keep_keys.add(key)
+        row = existing.get(key)
+        if row is None:
+            # A composite primary key makes peewee think the row already exists, so
+            # save() would issue an UPDATE against nothing. force_insert makes this a
+            # real INSERT; updates below go through the fetched instance.
+            row = TestResult(course_id=course_id, assignment_id=assignment_id,
+                             user_id=user_id, key=key)
+            row.script = (item.get('script') or '')[:255]
+            row.name = (item.get('name') or '')[:255]
+            row.weight = float(item.get('weight') or 0)
+            row.score = float(item.get('score') or 0)
+            row.passed = item.get('passed')
+            row.detail = (item.get('detail') or '')[:60000]
+            row.save(force_insert=True)
+            continue
+        row.script = (item.get('script') or '')[:255]
+        row.name = (item.get('name') or '')[:255]
+        row.weight = float(item.get('weight') or 0)
+        row.score = float(item.get('score') or 0)
+        row.passed = item.get('passed')
+        row.detail = (item.get('detail') or '')[:60000]
+        row.save()
+    # Drop rows whose test no longer exists (test renamed/removed).
+    for key, row in existing.items():
+        if key not in keep_keys:
+            row.delete_instance()
+
+
+def effective_test_score(row):
+    """The score that should count: the override when set, else the reported one."""
+    return row.override_score if row.override_score is not None else row.score
+
+
+def weighted_test_total(rows):
+    """Weighted average of the effective scores (0-100), or None when there are none."""
+    rows = list(rows)
+    total_weight = sum((r.weight or 0) for r in rows)
+    if not rows:
+        return None
+    if total_weight <= 0:
+        # No weights reported: treat every row equally.
+        return sum(effective_test_score(r) for r in rows) / len(rows)
+    return sum(effective_test_score(r) * (r.weight or 0) for r in rows) / total_weight
+
+
+def apply_test_overrides(course_id, assignment_id, user_id, items, author=""):
+    """Save instructor overrides. `items` maps key -> (score or None, note).
+
+    A score of None (or an empty string) clears the override, restoring the
+    reported score. Returns the number of rows changed.
+    """
+    changed = 0
+    rows = {row.key: row for row in return_test_results(course_id, assignment_id, user_id)}
+    for key, (score, note) in items.items():
+        row = rows.get(key)
+        if row is None:
+            continue
+        if score is None:
+            row.override_score = None
+        else:
+            # Keep it in the same 0-100 space the tests report.
+            row.override_score = max(0.0, min(100.0, float(score)))
+        row.note = note or ''
+        row.overridden_by = author or ''
+        row.overridden_at = datetime.now(tzlocal()).replace(tzinfo=None)
+        row.save()
+        changed += 1
+    return changed
 
 
 def return_a_student(course_id, assignment_id, user_id):

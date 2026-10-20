@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import override_views
 from rest_framework.urlpatterns import format_suffix_patterns
 
 urlpatterns = [
@@ -59,6 +60,10 @@ urlpatterns = [
     path('<int:assignment_id>/delete', views.assignment_delete, name='assignment_delete'),
     path('<int:assignment_id>/force/<int:user_id>', views.assignment_force, name='assignment_force'),
     path('<int:assignment_id>/report/<int:user_id>/<str:report_type>', views.assignment_report, name='assignment_report'),
+    path('<int:assignment_id>/overrides/<int:user_id>/', override_views.assignment_overrides,
+         name='assignment_overrides'),
+    path('<int:assignment_id>/overrides/<int:user_id>/post/', override_views.assignment_overrides_post,
+         name='assignment_overrides_post'),
     path('<int:assignment_id>/guidance/<int:user_id>', views.assignment_guidance, name='assignment_guidance'),
     path('api/', views.APIView.as_view(), name="api"),
     path('webhook/', views.push_event, name="webhook"),
