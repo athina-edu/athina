@@ -840,7 +840,27 @@ def assignment_force(request, assignment_id, user_id):
                         (course_id_val, assignment_id_val, user_id,))
         conn.commit()
         conn.close()
+        # Wake the grading daemon now instead of waiting for its next poll, so the
+        # forced run starts immediately (it otherwise waits up to ~60s).
+        _trigger_daemon()
         return redirect('assignments:assignment_view', assignment_id=assignment.pk)
+
+
+def _trigger_daemon():
+    """Ask the grading daemon to run a pass now.
+
+    The daemon lives in a different container and cannot be reached directly, so
+    signal it through the shared athina_files volume (MEDIA_ROOT, resolved against
+    BASE_DIR exactly as filemanager.utils does). Best-effort: if the write fails the
+    daemon still picks the change up on its normal poll.
+    """
+    try:
+        trigger_dir = os.path.normpath(os.path.join(settings.BASE_DIR, settings.MEDIA_ROOT))
+        os.makedirs(trigger_dir, exist_ok=True)
+        with open(os.path.join(trigger_dir, '.webhook_trigger'), 'w') as fh:
+            fh.write(str(time.time()))
+    except OSError:
+        pass
 
 
 @csrf_exempt
@@ -860,20 +880,10 @@ def push_event(request):
         conn.commit()
         conn.close()
         # Ask the grading daemon to run a pass immediately instead of waiting out its
-        # poll interval. The daemon runs in a separate container and cannot be reached
-        # directly, so signal it through the shared athina_files volume (MEDIA_ROOT,
-        # resolved against BASE_DIR exactly as filemanager.utils does). This container
-        # is only reachable through Cloudflare (Zero Trust Access), so the request is
-        # already authenticated by the network before the token check above.
-        try:
-            trigger_dir = os.path.normpath(os.path.join(settings.BASE_DIR, settings.MEDIA_ROOT))
-            os.makedirs(trigger_dir, exist_ok=True)
-            with open(os.path.join(trigger_dir, '.webhook_trigger'), 'w') as fh:
-                fh.write(str(time.time()))
-        except OSError:
-            # Never let trigger bookkeeping break webhook delivery: the daemon still
-            # picks the change up on its normal pass.
-            pass
+        # poll interval. This container is only reachable through Cloudflare (Zero
+        # Trust Access), so the request is already authenticated by the network before
+        # the token check above.
+        _trigger_daemon()
     return HttpResponse('ok')
 
 
