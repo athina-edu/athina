@@ -33,6 +33,7 @@ import pymysql
 import yaml
 import json
 from datetime import timedelta
+import datetime
 import dateutil.parser
 import requests as http_requests
 import threading
@@ -508,6 +509,16 @@ def assignment_create(request, **kwargs):
                 assignment.save()
                 # Update .env with the course owner's current credentials
                 _write_assignment_env(assignment)  # uses course owner's profile
+            # Persist the due date into the grading engine's database. The form field
+            # is not a model field (it lives in assignmentdata, in UTC), so it is
+            # converted from the instructor's local time here. Clearing it removes
+            # the row, which disables enforcement for this assignment.
+            course_id_val, assignment_id_val = _read_yaml_ids(assignment)
+            due_local = form.cleaned_data.get('due_date')
+            if not _set_assignment_due_date(course_id_val, assignment_id_val,
+                                            _local_to_utc(due_local)):
+                messages.error(request, "The assignment was saved, but the due date "
+                                        "could not be stored in the grading database.")
             os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o755)
             return redirect('filemanager:index', inner_path="%s" % assignment.name)
     else:
@@ -517,6 +528,12 @@ def assignment_create(request, **kwargs):
             if assignment.owner != request.user.id and not request.user.is_superuser:
                 raise Http404
             form = AssignmentForm(instance=assignment, user=request.user)
+            # Prefill from the grading DB, converted from stored UTC into the timezone
+            # active for this request so the datetime-local input shows local time.
+            course_id_val, assignment_id_val = _read_yaml_ids(assignment)
+            stored_due = _get_assignment_due_date(course_id_val, assignment_id_val)
+            if stored_due is not None:
+                form.fields['due_date'].initial = timezone.localtime(stored_due)
         else:
             form = AssignmentForm(user=request.user)
             # Prefill the course when arriving from a course page
@@ -655,6 +672,7 @@ def assignment_view(request, assignment_id):
             "gitlab_host": _get_owner_gitlab_host(assignment),
             "can_force": False,
             "can_manage": _user_can_manage_courses(request.user),
+            "due_date": _get_assignment_due_date(course_id_val, assignment_id_val),
         })
 
     return render(request, 'assignments/assignment_view.html', {"users": users, "users_len": len(users),
@@ -669,7 +687,9 @@ def assignment_view(request, assignment_id):
                                                                               or request.user.is_superuser),
                                                                 # Same actions as the home page so this page is
                                                                 # self-sufficient rather than a dead end.
-                                                                "can_manage": _user_can_manage_courses(request.user)})
+                                                                "can_manage": _user_can_manage_courses(request.user),
+                                                                "due_date": _get_assignment_due_date(course_id_val,
+                                                                                                   assignment_id_val)})
 
 
 @login_required
@@ -778,8 +798,82 @@ def assignment_guidance(request, assignment_id, user_id):
     return JsonResponse({"guidance": guidance})
 
 
+def _get_assignment_due_date(course_id, assignment_id):
+    """Return the due date stored by the grading engine, or None.
+
+    The engine keeps it in its own `assignmentdata` table as a naive UTC string
+    (see cli.core_iteration), so this returns a UTC-aware datetime for display.
+    """
+    try:
+        conn = connect_to_db()
+    except Exception:
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT variable_value FROM assignmentdata WHERE variable=%s "
+                    "AND course_id=%s AND assignment_id=%s",
+                    ('due_date', course_id, assignment_id))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row or not row[0]:
+        return None
+    try:
+        parsed = dateutil.parser.parse(row[0])
+    except (ValueError, TypeError):
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, datetime.timezone.utc)
+    return parsed
+
+
+def _set_assignment_due_date(course_id, assignment_id, value):
+    """Store (or clear, when value is None) the assignment's due date.
+
+    `value` must already be UTC-aware. The engine parses this string with no
+    timezone attached and runs in UTC, so it is stored as naive UTC.
+    """
+    try:
+        conn = connect_to_db()
+    except Exception:
+        return False
+    try:
+        cur = conn.cursor()
+        if value is None:
+            cur.execute("DELETE FROM assignmentdata WHERE variable=%s "
+                        "AND course_id=%s AND assignment_id=%s",
+                        ('due_date', course_id, assignment_id))
+        else:
+            stored = timezone.make_naive(value.astimezone(datetime.timezone.utc),
+                                         datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            cur.execute("INSERT INTO assignmentdata (course_id, assignment_id, variable, variable_value) "
+                        "VALUES (%s, %s, %s, %s) "
+                        "ON DUPLICATE KEY UPDATE variable_value = VALUES(variable_value)",
+                        (course_id, assignment_id, 'due_date', stored))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def _local_to_utc(moment):
+    """Convert a naive datetime entered in the user's timezone to UTC.
+
+    The form's datetime-local input carries no zone. The instructor typed a wall
+    clock time, so it is interpreted in the timezone active for this request (the
+    profile setting, or the browser zone when 'auto' -- see accounts.middleware).
+    """
+    if moment is None:
+        return None
+    if timezone.is_naive(moment):
+        moment = timezone.make_aware(moment, timezone.get_current_timezone())
+    return moment.astimezone(datetime.timezone.utc)
+
+
 def connect_to_db():
-    """Connect to the grading engine's MySQL database."""
     db_details = db_info()
     if not db_details.athina_mysql_host:
         raise ConnectionRefusedError(

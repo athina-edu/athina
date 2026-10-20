@@ -4,6 +4,23 @@ from .models import Assignment, Course, Student, StudentGroup, GroupMembership, 
 
 class AssignmentForm(forms.ModelForm):
 
+    # Not a model field: the grading engine keeps this in its own database
+    # (assignmentdata.due_date, UTC). It is rendered here so the instructor can set
+    # it per assignment; the view converts the entered local time to UTC and stores
+    # it. 'required=False' means leaving it blank clears enforcement.
+    due_date = forms.DateTimeField(
+        required=False,
+        label='Due date',
+        help_text='Deadline for accepting commits. Interpreted in your display '
+                  'timezone (see your profile). Leave blank for no deadline.',
+        widget=forms.DateTimeInput(attrs={
+            'type': 'datetime-local',
+            'class': 'form-control',
+        }, format='%Y-%m-%dT%H:%M'),
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%dT%H:%M:%S',
+                       '%Y-%m-%d %H:%M', '%Y-%m-%d %H:%M:%S'],
+    )
+
     class Meta:
         model = Assignment
         # output_method and gitlab_project_id are intentionally NOT exposed here.

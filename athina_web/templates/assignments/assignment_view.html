@@ -40,6 +40,18 @@
     <a class="btn btn-secondary" href="{% url 'assignments:student_list' course_id=assignment.course.pk %}">Course Students</a>
 </div>
 
+<div class="mb-3">
+    {% if due_date %}
+    <span class="badge badge-info p-2" title="Deadline for accepting commits (your timezone)">
+        Due {{ due_date|date:"Y-m-d H:i" }}
+    </span>
+    {% else %}
+    <span class="badge badge-secondary p-2" title="No deadline is enforced for this assignment">
+        No due date
+    </span>
+    {% endif %}
+</div>
+
 
     {% if users_len > 0 %}
     <div class="table-responsive">
