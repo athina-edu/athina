@@ -11,17 +11,22 @@ anything private or sensitive (credentials, tokens, secrets).
 **Athina** is a formative-assessment microservice for programming assignments.
 It:
 
-1. Reads a YAML assignment configuration (tests, weights, Canvas credentials, etc.).
-2. Pulls student submissions from an e-learning platform (Canvas) as git repo URLs.
+1. Reads a YAML assignment configuration (tests, weights, due date, credentials).
+2. Pulls student submissions from an e-learning platform (Canvas) as git repo URLs,
+   or reads them from its own database when the web dashboard manages them.
 3. Clones each repo, runs safety checks, sandboxes the code in Docker,
    and executes instructor-provided test scripts.
-4. Parses the last line of test output as a grade (0–100), then submits the grade
-   and feedback back to the student's submission page.
-5. Optionally runs plagiarism checks (CopyDetect, local similarity) and reports scores.
+4. Parses the last line of test output as a grade (0–100). Test scripts may also
+   report individual results — `#ATHINA# PASS | name: detail` markers or the
+   `athina-test.sh` helper — which are stored per test for the dashboard's override UI.
+5. Submits the grade and feedback back to the student: a GitLab issue in their repo,
+   or Canvas.
+6. Optionally runs plagiarism checks (CopyDetect, local similarity) and reports scores.
 
-There is also an optional web interface (`athina-web/`) for managing multiple
-assignments/instructors on one machine, plus a one-click Docker deployment
-(`athina-one-click-run/`, referenced by `dev-run.sh`).
+There is also a Django web dashboard (`athina_web/`, in this repo) for managing
+multiple courses/instructors on one machine — including due dates, per-student
+score overrides with notes, repo links, and AI guidance — plus a one-click Docker
+deployment (`athina-one-click-run/`).
 
 ---
 
@@ -30,11 +35,17 @@ assignments/instructors on one machine, plus a one-click Docker deployment
 ```
 athina/                  # Main Python package (the microservice)
   __init__.py            # empty
+  cli.py                 # CLI entry point: argparse, process lock, daemon loop
   configuration.py       # Configuration class: all assignment params + YAML loading
   canvas.py              # Canvas e-learning integration (submissions, grades, files)
-  users.py               # Peewee ORM models (Users, AssignmentData) + DB backend
+  users.py               # Peewee ORM models (Users, AssignmentData, TestResult) + DB backend
+  test_report.py         # Parses per-test results (#ATHINA# markers / athina-test helper)
+  test_helpers/
+    athina-test.sh       # shell helper for declaring individual test results
   file_functions.py      # copy_dir / rm_dir helpers
   logger.py              # Logger class (file + console + rotating handlers)
+  llm.py                 # LLM feedback generation (OpenAI-compatible)
+  gitlab_issues.py       # GitLab issue output adapter
   moss.py                # Plagiarism integration (CopyDetect; module name is historical)
   url.py                 # request_url() HTTP helper (requests wrapper)
   git/
@@ -43,36 +54,21 @@ athina/                  # Main Python package (the microservice)
   tester/
     tester.py            # Tester class: orchestrates per-student testing
     docker.py            # docker build/run sandboxing
-    firejail.py          # firejail sandboxing + profile generation (not reachable from the engine)
-    server.profile       # firejail profile template
 
-bin/
-  athina-cli             # CLI entry point (argparse, main loop, service mode)
-
-config-examples/         # Example assignment config + Dockerfile + test scripts
-  assignementsample.yaml
-  Dockerfile
-  tests/test-python-clarity.bash
+athina_web/              # Django web dashboard (lives in this repo; own Dockerfile.web)
+  accounts/              # roles, profiles (git/LLM credentials, display timezone), middleware
+  assignments/           # courses/assignments, reports, per-test overrides, provisioning
+  filemanager/           # in-browser file browser
+  templates/             # HTML templates
 
 tests/                   # pytest suite (see "Testing" below)
-  conftest.py            # DB backend fixtures (SQLite vs Docker MySQL)
-  test_athina.py         # main end-to-end-ish tests + shared helpers
-  test_canvas.py
-  test_docker.py
-  test_logger.py
-  test_moss.py
-  helper_files/logger_script.py
-  git/                   # a tiny local git repo fixture used by tests
-
-athina-web/              # Optional Django web interface (separate concern)
-  db.sqlite3             # dev SQLite DB
-  athinaweb/             # Django project
-
-dev-run.sh               # Dev stack orchestrator (generates compose + starts/stops)
-docker-compose.yml       # Minimal production compose (athina service)
-docker-compose.dev.yml   # Generated dev compose (not committed by hand)
-Dockerfile               # Container build for the athina service
+config-examples/         # Example assignment config + Dockerfile + test scripts
+Dockerfile               # CLI image
+Dockerfile.web           # Web dashboard image
 ```
+
+Note: the console entry point is `athina.cli:run` (declared in `setup.py`); there is
+no `bin/` script any more.
 
 ---
 
@@ -81,22 +77,37 @@ Dockerfile               # Container build for the athina service
 - **Single Python package** (`athina/`) with modules grouped by responsibility:
   configuration, e-learning integration, git handling, sandboxing, plagiarism,
   logging, and HTTP helpers.
-- **Entry point** is `bin/athina-cli`. It parses CLI args, acquires a process
-  lock, sets up the logger, and runs `main()` → `core_iteration()` per assignment.
+- **Entry point** is `athina.cli:run` (console script `athina-cli`). It parses CLI
+  args, acquires a process lock, sets up the logger, and runs `main()` →
+  `core_iteration()` per assignment.
 - **Core objects** are wired together in `core_iteration()`:
-  `Configuration` → `Canvas` (e-learning) → `Repository` (git) → `Tester`.
+  `Configuration` → `Canvas`/`GitLabIssues` (output adapter) → `Repository` → `Tester`.
 - **`Configuration`** is a "hyper object" holding all shared execution parameters
   (class attributes with defaults), loaded from a YAML file via `load_configuration()`.
+  Per-assignment `.env` files written by the web app supply credentials and some
+  settings (git, LLM, output method).
 - **`Tester`** forks/processes each student, runs each test script in a sandbox,
-  aggregates weighted grades, and submits results.
+  aggregates weighted grades, and submits results. It also stores a per-test
+  breakdown in `TestResult` for the dashboard's override UI.
 - **`Repository`** uses a **Chain of Responsibility** pattern (nested `Handler`
   classes) to decide whether a student's repo should be tested (empty repo,
   duplicate URL, private-repo check, new URL, webhook, pull).
+- **Webhook wake-ups**: a push webhook (handled by the web app) sets
+  `webhook_event` and drops a trigger file into the shared `athina_files` volume;
+  the daemon polls for it every 2s while idle instead of sleeping a full interval.
+  `webhook_fallback_interval` still forces a periodic pull so a missed delivery
+  cannot leave a student ungraded.
 - **Database** uses **Peewee ORM** with a pluggable backend: SQLite (dev/tests)
   or MySQL (production). Backend is chosen via env vars (`ATHINA_DB`, `ATHINA_TEST_MODE`).
+  Tables: `users`, `assignmentdata` (key/value per assignment, incl. `due_date`),
+  `testresults` (per-test scores + instructor overrides).
+- **Due dates** are stored in `assignmentdata.due_date` as naive **UTC**, set from
+  the web UI (which converts from the instructor's display timezone) and compared
+  against the student's latest commit date.
 - **Sandboxing** is Docker (`tester/docker.py`). Every assignment must ship a
   Dockerfile next to its config; the engine builds it and runs tests inside.
-  `tester/firejail.py` still exists but nothing calls it.
+  Containers run as root; file ownership is reclaimed only when the daemon itself
+  is non-root (as root the chown was a no-op, so it is skipped).
 - **Logging** is centralized in `logger.py`; the logger object can be deleted and
   recreated (workaround for multiprocessing/pickling).
 
@@ -108,15 +119,13 @@ Dockerfile               # Container build for the athina service
   in the test files. Test discovery: `test_*.py` / `Test*` / `test_*`.
 - **Run all tests:**
   ```bash
-  pipenv install --dev
-  pipenv run pytest
-  # or
-  ./run_tests.sh
+  pytest                 # or: ./run_tests.sh
   ```
 - **Two DB modes** (handled in `tests/conftest.py`):
   - **SQLite (default, local dev):** no DB setup needed. Set via `ATHINA_DB=sqlite`
     or `ATHINA_TEST_MODE=1`. Uses a per-process file DB at `/tmp/athina_test_<pid>.db`.
-  - **MySQL (production-like):** `ATHINA_USE_DOCKER_MYSQL=1 pipenv run pytest`.
+  - **MySQL (production-like):** `ATHINA_USE_DOCKER_MYSQL=1 pytest` (or
+  `ATHINA_USE_DOCKER_MYSQL=1 pipenv run pytest` if using the Pipfile).
     `conftest.py` auto-starts a `mysql:8.0` Docker container if none is available.
 - **Test runner script** `run_tests.sh` supports flags: `-d/--docker-mysql`,
   `-v/--verbose`, `-c/--coverage`, and a positional test path.
@@ -167,20 +176,25 @@ Dockerfile               # Container build for the athina service
 
 ```bash
 # Run the test suite (SQLite, local)
-./run_tests.sh
+pytest
 # Run a single test file
-./run_tests.sh tests/test_canvas.py
+pytest tests/test_canvas.py
 # Run with coverage
-./run_tests.sh -c
+pytest --cov=athina --cov-report=html
 # Run with Docker MySQL (production-like)
-ATHINA_USE_DOCKER_MYSQL=1 ./run_tests.sh
+ATHINA_USE_DOCKER_MYSQL=1 pytest
 
 # Run the CLI against an example config
-bin/athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git
+athina-cli --config config-examples/ --repo_url_testing=https://github.com/athina-edu/testing.git
 
-# Dev stack (web UI + service)
-./dev-run.sh start   # then open http://localhost:8080
-./dev-run.sh stop
+# Run against a live web dashboard
+athina-cli --json http://localhost:8000/assignments/api/ -s -v
+
+# Rebuild the images after changing engine or web code (a running container keeps
+# its old code until recreated -- this has silently masked fixes before)
+docker build -t athinaedu/athina:latest .
+docker build -f Dockerfile.web -t athinaedu/athina-web:latest .
+docker compose up -d --force-recreate athina athina-web
 ```
 
 See `DEVELOPMENT.md` for the full dev-environment guide (ports, DB reset,
