@@ -43,7 +43,9 @@ def _parse_marker(line):
         return None
     verdict = match.group(1).upper()
     rest = (match.group(2) or "").strip()
-    # "name: detail" -> name + detail; a bare name is also fine.
+    # "name: detail" -> name + detail. Only split on the FIRST ": " so a detail that
+    # itself contains one is preserved; when the text after the separator is empty
+    # the whole rest is the name.
     name, sep, detail = rest.partition(": ")
     name = name.strip()
     if not name:
