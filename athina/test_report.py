@@ -1,30 +1,84 @@
 """Parse the per-test records a test script can emit.
 
-Test scripts that opt in source `athina-test.sh` and print records to stderr of the
-form::
+Two notations are understood, so a test can report individual results without
+Athina caring where the line came from:
 
-    ATHINA_TEST:key|status|score|weight|name|detail
+1. The `athina-test.sh` helper (records go to stderr so they never pollute the
+   compared output)::
 
-(status is pass/fail/?; score is 0-100; detail is optional and may be empty).
+       ATHINA_TEST:key|status|score|weight|name|detail
 
-Scripts that do not opt in are unaffected: `derive_results` produces one row per
+   status is pass/fail/?; score is 0-100; detail is optional.
+
+2. A plain marker line in the test's normal output (the simplest form -- just
+   `echo` it alongside the existing PASS/FAIL output)::
+
+       #ATHINA# PASS | q1.sql: output matches instructor
+       #ATHINA# FAIL | q1.sql: output matches instructor
+
+   The part before the first ": " becomes the test's name/key; the rest is the
+   detail. A marker carries only a verdict, so its score is 100 or 0.
+
+Scripts that use neither are unaffected: `derive_results` produces one row per
 test script from the percentage Athina already parses, so every assignment gets a
-breakdown, whether or not it uses the protocol.
+breakdown whether or not it opts in.
 """
 
 import re
 
 PREFIX = "ATHINA_TEST:"
+MARKER = "#ATHINA#"
 _MAX = 60000  # keep a single record's detail bounded
 
 _RECORD = re.compile(r"^" + re.escape(PREFIX) + r"(.*)$")
+# #ATHINA# PASS | <name>: <detail>   (separator may be "|" or ":", detail optional)
+_MARKER = re.compile(r"^" + re.escape(MARKER) + r"\s*(PASS|FAIL|SKIP)\b\s*\|?\s*(.*)$",
+                     re.IGNORECASE)
+
+
+def _parse_marker(line):
+    """Turn a '#ATHINA# PASS | name: detail' line into a record, or None."""
+    match = _MARKER.match(line.strip())
+    if not match:
+        return None
+    verdict = match.group(1).upper()
+    rest = (match.group(2) or "").strip()
+    # "name: detail" -> name + detail; a bare name is also fine.
+    name, sep, detail = rest.partition(": ")
+    name = name.strip()
+    if not name:
+        return None
+    if verdict == "PASS":
+        passed, score = True, 100.0
+    elif verdict == "FAIL":
+        passed, score = False, 0.0
+    else:
+        passed, score = None, 0.0
+    return {
+        "key": name[:255],
+        "script": "",
+        "name": name[:255],
+        "weight": 1.0,
+        "score": score,
+        "passed": passed,
+        "detail": (detail.strip() if sep else "")[:_MAX],
+        # Markers name a check in plain words, so the same name can legitimately
+        # appear in two test scripts (e.g. "q1.sql" in both correctness and
+        # efficiency). The caller scopes these keys per script to keep them unique.
+        "scoped": True,
+    }
 
 
 def parse_records(text):
     """Return the records found in `text` as a list of dicts."""
     results = []
     for line in (text or "").splitlines():
-        match = _RECORD.match(line.strip())
+        stripped = line.strip()
+        marker = _parse_marker(stripped)
+        if marker is not None:
+            results.append(marker)
+            continue
+        match = _RECORD.match(stripped)
         if not match:
             continue
         parts = match.group(1).split("|")

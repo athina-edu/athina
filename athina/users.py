@@ -321,8 +321,15 @@ def replace_test_results(course_id, assignment_id, user_id, results):
     """
     existing = {row.key: row for row in return_test_results(course_id, assignment_id, user_id)}
     keep_keys = set()
+    seen = set()
     for item in results:
         key = str(item.get('key'))[:255]
+        # A test that reports the same key twice (or two scripts that collide)
+        # would otherwise abort the whole write on the composite primary key.
+        # Keep the first occurrence and ignore the duplicate.
+        if key in seen:
+            continue
+        seen.add(key)
         keep_keys.add(key)
         row = existing.get(key)
         if row is None:

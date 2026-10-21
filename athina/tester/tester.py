@@ -381,14 +381,26 @@ class Tester:
             test_grades.append(score / 100 * self.configuration.test_weights[x])
 
         if test_results is not None:
-            # Per-test rows for the override UI. Tests that opt into the athina-test
-            # protocol report their own items (from stderr, so they never pollute the
-            # compared output); anything else falls back to one row for this script.
+            # Per-test rows for the override UI. Two notations are supported (see
+            # athina.test_report): the athina-test helper, which writes to stderr so
+            # it never pollutes the compared output, and plain '#ATHINA# PASS|...'
+            # markers, which a test can simply echo next to its existing output --
+            # so both streams are scanned. Anything that reports nothing falls back
+            # to one row for this script.
             script_name = test_script
-            reported = parse_records(err.decode("utf-8", "backslashreplace") if err else "")
+            raw_err = err.decode("utf-8", "backslashreplace") if err else ""
+            raw_out = out.decode("utf-8", "backslashreplace") if out else ""
+            reported = parse_records(raw_err) + parse_records(raw_out)
             if reported:
                 for item in reported:
                     item["script"] = script_name
+                    # A '#ATHINA#' marker names a check in plain words, and the same
+                    # name can appear in two scripts ("q1.sql" in both correctness
+                    # and efficiency). Scope those keys by script so they stay
+                    # unique -- the helper protocol supplies its own keys, which are
+                    # already unique.
+                    if item.get("scoped"):
+                        item["key"] = ("%d:%s" % (x, item["key"]))[:255]
                 test_results.extend(reported)
             else:
                 test_results.extend(derive_results(x, script_name, score,
