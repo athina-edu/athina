@@ -2026,3 +2026,20 @@ class TestGroupBoardRendering(PerAssignmentRepoBase):
             with transaction.atomic():
                 GroupMembership.objects.create(group=g2, student=self.student,
                                                assignment=self.a1)
+
+
+class TestSentinelToNone(TestCase):
+    """The grader's year-1 "never" timestamps must not reach the template."""
+
+    def test_year_one_sentinel_becomes_none(self):
+        import datetime
+        self.assertIsNone(assignment_views._sentinel_to_none(
+            datetime.datetime(1, 1, 1, 0, 0, 0)))
+
+    def test_real_timestamp_is_preserved(self):
+        import datetime
+        value = datetime.datetime(2026, 10, 20, 18, 40, 0)
+        self.assertEqual(assignment_views._sentinel_to_none(value), value)
+
+    def test_none_passes_through(self):
+        self.assertIsNone(assignment_views._sentinel_to_none(None))

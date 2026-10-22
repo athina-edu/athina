@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils import timezone
 from unittest import mock
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from athina_web.accounts.forms import TACreateForm, FacultyCreateForm
 from athina_web.accounts.models import UserProfile
@@ -537,3 +537,41 @@ class TestTAInviteReset(TestCase):
         response = self.client.post(
             reverse('accounts:ta_invite_reset', kwargs={'user_id': stranger.pk}))
         self.assertEqual(response.status_code, 404)
+
+
+class TestAsUtcSentinel(TestCase):
+    """The grader's year-1 "never" sentinel must not reach timezone conversion.
+
+    ``astimezone()`` on ``0001-01-01`` raises ``OverflowError`` for any zone
+    west of UTC, because year 0 is not representable. The assignment page used
+    ``{{ user.14|as_utc|date:"..." }}`` on ``commit_date``, so every ungraded
+    student row (sentinel value) produced a 500 for users in a US timezone.
+    """
+
+    def test_sentinel_is_treated_as_missing(self):
+        from athina_web.accounts.templatetags.timezone_tags import as_utc
+        self.assertIsNone(as_utc(datetime(1, 1, 1, 0, 0, 0)))
+
+    def test_real_datetime_is_returned_utc_aware(self):
+        from athina_web.accounts.templatetags.timezone_tags import as_utc
+        value = as_utc(datetime(2026, 10, 20, 18, 40, 0))
+        self.assertEqual(value.tzinfo, dt_timezone.utc)
+
+    def test_filter_output_renders_in_a_western_timezone(self):
+        """The full template path: as_utc then the date filter, in US/Pacific."""
+        from django.template import Context, Template
+        with timezone.override('America/Los_Angeles'):
+            rendered = Template(
+                '{% load timezone_tags %}{% with v2=v|as_utc %}'
+                '{% if v2 %}{{ v2|date:"Y-m-d" }}{% else %}never{% endif %}'
+                '{% endwith %}').render(
+                    Context({'v': datetime(1, 1, 1, 0, 0, 0)}))
+        self.assertEqual(rendered.strip(), 'never')
+
+    def test_real_value_still_converts_to_local_time(self):
+        from django.template import Context, Template
+        with timezone.override('America/Los_Angeles'):
+            rendered = Template(
+                '{% load timezone_tags %}{{ v|as_utc|date:"Y-m-d H:i" }}').render(
+                    Context({'v': datetime(2026, 10, 20, 18, 40, 0)}))
+        self.assertEqual(rendered.strip(), '2026-10-20 11:40')

@@ -674,11 +674,16 @@ def assignment_view(request, assignment_id):
             # user[4] is commit_date: the commit the last grading run tested. Show it
             # as "last graded" so an instructor can tell which submission a grade came
             # from (it is refreshed before each test, so it tracks the graded commit).
+            # Both columns use a year-1 sentinel to mean "never"; map it to None so
+            # the template's {% if %} guard skips it instead of trying to render a
+            # date that cannot be shifted out of UTC.
             users.append((user[0], user[1], user[2], color, info, user[6],
                           base64.b64encode(user[7] if user[7] is not None else b"").decode("ascii"),
                           None, None,
                           user[8], user[9], user[11] or '',
-                          repo_url, issues_url, user[4], user[5], repo_web_url))
+                          repo_url, issues_url,
+                          _sentinel_to_none(user[4]), _sentinel_to_none(user[5]),
+                          repo_web_url))
     finally:
         conn.close()
 
@@ -821,6 +826,19 @@ def assignment_guidance(request, assignment_id, user_id):
     return JsonResponse({"guidance": guidance})
 
 
+def _sentinel_to_none(value):
+    """Map the grading engine's year-1 "never" timestamp to ``None``.
+
+    The engine stores ``0001-01-01 00:00:00`` in ``commit_date`` / ``last_graded``
+    for rows that have never been graded (and the web app writes it too when it
+    provisions a row). Rendering it would overflow, because shifting year 1 UTC
+    into a zone west of UTC lands in year 0, which datetime cannot represent.
+    """
+    if isinstance(value, datetime.datetime) and value.year < 2:
+        return None
+    return value
+
+
 def _get_assignment_due_date(course_id, assignment_id):
     """Return the due date stored by the grading engine, or None.
 
@@ -844,6 +862,11 @@ def _get_assignment_due_date(course_id, assignment_id):
     try:
         parsed = dateutil.parser.parse(row[0])
     except (ValueError, TypeError):
+        return None
+    # The engine's "no deadline" representation is a year-1 sentinel; rendering
+    # it in a timezone west of UTC overflows (see accounts.templatetags
+    # .timezone_tags). Surface it as "no due date" rather than a 500.
+    if parsed.year < 2:
         return None
     if timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, datetime.timezone.utc)
