@@ -11,8 +11,11 @@ setup(
     },
     install_requires=[
         # Core grading engine
-        'filelock', 'python-dateutil', 'requests', 'numpy', 'peewee',
-        'copydetect', 'pyyaml', 'psutil', 'gitpython', 'pymysql',
+        # filelock / gitpython / urllib3 are pinned to their first versions that
+        # include the security fixes reported by Dependabot; without a floor, an
+        # older transitive release can be resolved again on a fresh install.
+        'filelock>=4.2.1', 'python-dateutil', 'requests>=2.32.4', 'numpy', 'peewee',
+        'copydetect', 'pyyaml', 'psutil', 'gitpython>=3.2.1', 'pymysql',
         'beautifulsoup4', 'lxml',
     ],
     extras_require={

@@ -10,7 +10,11 @@ athina = {editable = true, path = ".", extras = ["test"]}
 pytest = ">=7.0"
 pytest-timeout = ">=2.0"
 docker = ">=6.0"
-gitpython = "*"
+# Floors carry the security fixes reported by Dependabot, so a fresh lock cannot
+# resolve back to a vulnerable release.
+gitpython = ">=3.2.1"
+filelock = ">=4.2.1"
+urllib3 = ">=2.8.0"
 
 [requires]
 python_version = "3.14"

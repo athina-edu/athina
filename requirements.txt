@@ -6,9 +6,9 @@ copydetect>=0.5.0
 charset-normalizer==3.4.9
 coverage==7.15.4
 docker==7.2.0
-filelock==3.32.2
+filelock==4.2.4
 gitdb==4.0.12
-GitPython==3.1.58
+GitPython==3.2.1
 idna==3.18
 iniconfig==2.3.0
 lxml==6.1.1
@@ -29,4 +29,4 @@ six==1.17.0
 smmap==5.0.3
 soupsieve==2.9.2
 typing_extensions==4.16.0
-urllib3==2.7.0
+urllib3==2.8.0
