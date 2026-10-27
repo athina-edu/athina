@@ -452,27 +452,31 @@ def dispatch_triggers():
         _request_full_pass()
 
     for event in events:
-        key = _job_key(event['course_id'], event['assignment_id'], event['user_id'])
+        # consume_triggers() has already narrowed every field to a validated int
+        # or a sanitized absolute path, so these values are safe to log as-is.
+        course_id = event['course_id']
+        assignment_id = event['assignment_id']
+        user_id = event['user_id']
+        key = _job_key(course_id, assignment_id, user_id)
         if key in _running_jobs:
-            LOGGER.logger.info("Student %s on course %s/assignment %s is already being graded — "
-                               "skipping duplicate trigger." % (event['user_id'],
-                                                                event['course_id'],
-                                                                event['assignment_id']))
+            LOGGER.logger.info("Student %d on course %d/assignment %d is already being graded — "
+                               "skipping duplicate trigger."
+                               % (user_id, course_id, assignment_id))
             continue
         directory = _directory_for_event(event) or event.get('directory') or ''
         if not directory:
-            LOGGER.logger.warning("Trigger for student %s (course %s/assignment %s) has no assignment "
-                                  "directory; scheduling a full pass instead." %
-                                  (event['user_id'], event['course_id'], event['assignment_id']))
+            LOGGER.logger.warning("Trigger for student %d (course %d/assignment %d) has no "
+                                  "assignment directory; scheduling a full pass instead."
+                                  % (user_id, course_id, assignment_id))
             _request_full_pass()
             continue
 
         event['directory'] = directory
-        pid = _spawn_job("student %s job" % key[2], _run_student_job, event)
+        pid = _spawn_job("student %d job" % user_id, _run_student_job, event)
         if pid is not None:
             _running_jobs[key] = (pid, time.time())
-            LOGGER.logger.info("Webhook trigger — started grading student %s (course %s/assignment %s)."
-                               % (event['user_id'], event['course_id'], event['assignment_id']))
+            LOGGER.logger.info("Webhook trigger — started grading student %d "
+                               "(course %d/assignment %d)." % (user_id, course_id, assignment_id))
 
 
 def _request_full_pass():

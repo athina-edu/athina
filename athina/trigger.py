@@ -15,7 +15,8 @@
 # is why every helper takes an optional `root`.
 import json
 import os
-import random
+import re
+import secrets
 import time
 
 __all__ = (
@@ -35,6 +36,57 @@ TRIGGER_POLL_SECONDS = 2
 # directory holding the per-student event files.
 DEFAULT_SHARED_DIR = "/code/athina_files"
 DEFAULT_TRIGGER_DIR = os.path.join(DEFAULT_SHARED_DIR, ".webhook_triggers")
+
+# Event fields are attacker-controlled in the sense that they arrive as files on a
+# shared volume: anything with write access to that volume could craft one. They
+# are parsed into the types below and nothing else, so a hostile payload can only
+# ever describe a different (course, assignment, student) to grade -- it cannot
+# smuggle newlines into the logs, or a path that escapes the assignment root.
+_MAX_ID = 2 ** 63 - 1
+
+
+def _parse_id(value):
+    """Coerce an event id to a non-negative int, or None when it is not one."""
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0 or parsed > _MAX_ID:
+        return None
+    return parsed
+
+
+def _parse_directory(value):
+    """Accept only a plain absolute path; strip anything that could forge a log line."""
+    if not isinstance(value, str):
+        return ""
+    # Control characters (notably CR/LF) would let an attacker inject log entries.
+    if re.search(r"[\x00-\x1f\x7f]", value):
+        return ""
+    if not os.path.isabs(value):
+        return ""
+    return value
+
+
+def _sanitize_event(data):
+    """Return a normalized student event, or None when the payload is unusable."""
+    if not isinstance(data, dict) or data.get("type") != "student":
+        return None
+    course_id = _parse_id(data.get("course_id"))
+    assignment_id = _parse_id(data.get("assignment_id"))
+    user_id = _parse_id(data.get("user_id"))
+    if course_id is None or assignment_id is None or user_id is None:
+        return None
+    return {
+        "type": "student",
+        "course_id": course_id,
+        "assignment_id": assignment_id,
+        "user_id": user_id,
+        "directory": _parse_directory(data.get("directory")),
+        "created": data.get("created") if isinstance(data.get("created"), (int, float)) else 0,
+    }
 
 
 def trigger_dir(root=None):
@@ -60,11 +112,18 @@ def full_pass_trigger_file(root=None):
 
 
 def _atomic_write(path, payload):
-    """Write `payload` to `path` so a reader never sees a half-written file."""
+    """Write `payload` to `path` so a reader never sees a half-written file.
+
+    The file is created owner-only (0o600): event files name a student and an
+    absolute path, and only the two containers sharing the volume need to read
+    them. Directory creation also restricts the mode to avoid a world-readable
+    signal channel.
+    """
     directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
+    os.makedirs(directory, exist_ok=True, mode=0o700)
     tmp = "%s.%d.tmp" % (path, os.getpid())
-    with open(tmp, "w") as fh:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
         fh.write(payload)
     os.replace(tmp, path)
 
@@ -86,9 +145,9 @@ def write_student_trigger(course_id, assignment_id, user_id,
         "directory": assignment_dir or "",
         "created": created,
     }
-    path = os.path.join(trigger_dir(root), "student-%s-%s-%d-%d.json" % (
+    path = os.path.join(trigger_dir(root), "student-%s-%s-%d-%s.json" % (
         event["assignment_id"], event["user_id"],
-        int(created * 1000), random.getrandbits(32)))
+        int(created * 1000), secrets.token_hex(8)))
     _atomic_write(path, json.dumps(event))
     return path
 
@@ -153,9 +212,9 @@ def consume_triggers(root=None):
             os.remove(path)
         except OSError:
             pass
-        if isinstance(data, dict) and data.get("type") == "student" and \
-                all(k in data for k in ("course_id", "assignment_id", "user_id")):
-            events.append(data)
+        event = _sanitize_event(data)
+        if event is not None:
+            events.append(event)
 
     full_pass = False
     path = full_pass_trigger_file(root)
