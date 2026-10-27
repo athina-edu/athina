@@ -34,7 +34,8 @@ class TestTriggerSignals(TestCase):
         self.assertEqual(write.call_args[0][0], 5)
         self.assertEqual(write.call_args[0][1], 9)
         self.assertIn(write.call_args[0][2], (11, 12))
-        self.assertTrue(write.call_args[1]['assignment_dir'].endswith('SQL 1'))
+        # Trailing separator matters: the engine globs '<dir>/*.yaml'.
+        self.assertTrue(write.call_args[1]['assignment_dir'].endswith('SQL 1/'))
 
     def test_no_ids_falls_back_to_full_pass(self):
         """When the students cannot be named, ask for the whole pass."""

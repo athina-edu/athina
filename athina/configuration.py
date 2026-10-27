@@ -88,10 +88,18 @@ class Configuration:
     @staticmethod
     def find_yaml(directory):
         if os.path.isdir(directory):
-            # Find a cfg file in the directory
-            try:
-                cfg_file = glob.glob('%s*.yaml' % directory)[0]
-            except IndexError:
+            # Find a cfg file in the directory.
+            #
+            # Join with the separator instead of concatenating: the web API
+            # returns "<dir>/" (trailing slash), while a webhook trigger event
+            # carries the same directory without one. Concatenating produced
+            # "<dir>*.yaml", which matches nothing without the slash, and the
+            # fallback below then returned the bare directory so the caller
+            # died with "IsADirectoryError: [Errno 21] Is a directory".
+            matches = glob.glob(os.path.join(directory, '*.yaml'))
+            if matches:
+                cfg_file = matches[0]
+            else:
                 cfg_file = directory  # this will fail later on but we have done all that we can
         else:
             cfg_file = directory

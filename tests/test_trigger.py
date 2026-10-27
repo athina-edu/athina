@@ -154,17 +154,18 @@ class TestDispatch(TestCase):
         self.assertIn((7, 3, 42), cli._running_jobs)
         self.assertIn((7, 3, 43), cli._running_jobs)
 
-    def test_event_without_directory_is_resolved_from_run_list(self):
-        cli.RUN_LIST = [{'directory': '/code/known', 'course_id': 7, 'assignment_id': 3}]
+    def test_run_list_directory_wins_over_the_event(self):
+        """The API form (with trailing slash) is authoritative over the event."""
+        cli.RUN_LIST = [{'directory': '/code/known/', 'course_id': 7, 'assignment_id': 3}]
         cli._run_list_fetched_at = __import__('time').time()  # treat the cached list as fresh
         events = [{'type': 'student', 'course_id': 7, 'assignment_id': 3,
-                   'user_id': 42, 'directory': ''}]
+                   'user_id': 42, 'directory': '/code/known'}]
         try:
             with mock.patch.object(cli, 'consume_triggers', return_value=(events, False)), \
                     mock.patch.object(cli, '_spawn_job', return_value=1234) as mock_spawn:
                 cli.dispatch_triggers()
             spawned_event = mock_spawn.call_args[0][2]
-            self.assertEqual(spawned_event['directory'], '/code/known')
+            self.assertEqual(spawned_event['directory'], '/code/known/')
         finally:
             cli.RUN_LIST = []
             cli._run_list_fetched_at = None

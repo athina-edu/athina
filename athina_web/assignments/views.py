@@ -1019,8 +1019,10 @@ def _trigger_daemon(course_id_val=None, assignment_id_val=None, user_ids=None,
         if course_id_val is not None and assignment_id_val is not None and user_ids:
             directory = ''
             if assignment is not None:
+                # Match the form the web API reports ('<dir>/'): the engine's
+                # find_yaml appends '*.yaml', so the separator matters.
                 directory = os.path.normpath(os.path.join(settings.BASE_DIR,
-                                                          assignment.absolute_path))
+                                                          assignment.absolute_path)) + os.sep
             write_student_trigger(course_id_val, assignment_id_val, min(user_ids),
                                   assignment_dir=directory, root=root)
         else:

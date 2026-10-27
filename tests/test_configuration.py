@@ -18,6 +18,21 @@ class TestConfiguration(TestCase):
         result = Configuration.find_yaml(TEST_TMP_DIR + "/")
         self.assertTrue(result.endswith(".yaml"))
 
+    def test_find_yaml_directory_without_trailing_slash(self):
+        """A webhook event carries the directory with no trailing slash.
+
+        `find_yaml` used to concatenate ('%s*.yaml'), so without the slash the
+        glob matched nothing, the bare directory was returned, and the caller
+        died with IsADirectoryError.
+        """
+        create_test_config()
+        yaml_path = os.path.join(TEST_TMP_DIR, "test_assignment.yaml")
+        with open(yaml_path, "w") as f:
+            f.write("auth_token: abc\n")
+        result = Configuration.find_yaml(TEST_TMP_DIR)
+        self.assertTrue(result.endswith(".yaml"), result)
+        self.assertTrue(os.path.isfile(result), result)
+
     def test_find_yaml_directory_no_yaml(self):
         d = "/tmp/cov_no_yaml"
         os.makedirs(d, exist_ok=True)

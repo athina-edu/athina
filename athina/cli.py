@@ -397,27 +397,41 @@ def _refresh_run_list():
     Only needed to resolve a trigger that did not carry a directory (e.g. an
     older web image). Throttled because the API's serializer runs a git fetch per
     assignment, which is far too expensive to repeat on every tick.
+
+    The attempt is stamped even when it fails, so an unreachable web app is not
+    hammered once per event; the previous list stays in use.
     """
     global RUN_LIST, _run_list_fetched_at
+    now = time.time()
     if _run_list_fetched_at is not None and \
-            (time.time() - _run_list_fetched_at) < TRIGGER_WAIT_SECONDS:
+            (now - _run_list_fetched_at) < TRIGGER_WAIT_SECONDS:
         return RUN_LIST
+    _run_list_fetched_at = now
     run_list = _fetch_run_list()
     if run_list:
         RUN_LIST = run_list
-        _run_list_fetched_at = time.time()
     return RUN_LIST
 
 
 def _directory_for_event(event):
-    """Resolve an event's assignment directory from the last fetched run list."""
-    for record in _refresh_run_list():
+    """Resolve an event's assignment directory from the cached run list.
+
+    The run list comes from the web API and is the authoritative form (it always
+    carries a trailing slash); prefer it over the directory recorded in the event
+    when it is already cached. Deliberately does not fetch: dispatch must stay
+    fast and must not depend on the API being reachable.
+    """
+    for record in RUN_LIST:
         if not record.get('directory'):
             continue
-        if record.get('course_id') is not None and record.get('assignment_id') is not None and \
-                int(record['course_id']) == int(event['course_id']) and \
-                int(record['assignment_id']) == int(event['assignment_id']):
-            return record['directory']
+        if record.get('course_id') is None or record.get('assignment_id') is None:
+            continue
+        try:
+            if int(record['course_id']) == int(event['course_id']) and \
+                    int(record['assignment_id']) == int(event['assignment_id']):
+                return record['directory']
+        except (TypeError, ValueError):
+            continue
     return ''
 
 
@@ -445,7 +459,7 @@ def dispatch_triggers():
                                                                 event['course_id'],
                                                                 event['assignment_id']))
             continue
-        directory = event.get('directory') or _directory_for_event(event)
+        directory = _directory_for_event(event) or event.get('directory') or ''
         if not directory:
             LOGGER.logger.warning("Trigger for student %s (course %s/assignment %s) has no assignment "
                                   "directory; scheduling a full pass instead." %
