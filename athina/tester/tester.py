@@ -407,20 +407,42 @@ class Tester:
                                                    weight=self.configuration.test_weights[x],
                                                    detail=out.decode("utf-8", "backslashreplace")))
 
-    def start_testing_db(self):
-        self.logger.logger.info("Pre-fetching all user repositories")
+    def start_testing_db(self, user_ids=None):
+        """Test every student that has new work, or only `user_ids` when given.
+
+        `user_ids` is how a webhook-triggered run is scoped: only those students'
+        repositories are pulled and tested, so a push never turns into a pass over
+        the whole course. On a targeted run a student whose tester lock is still
+        held by another process is skipped rather than overridden — the whole point
+        is to never run two jobs for the same student.
+        """
+        targeted = user_ids is not None
+        wanted = set(user_ids or ())
+        if targeted:
+            self.logger.logger.info("Pre-fetching repository for %d targeted student(s)" % len(wanted))
+        else:
+            self.logger.logger.info("Pre-fetching all user repositories")
         # Pre-fetching is important for group assignments where grade is submitted to multiple members and all
         # user dbs need to be updated later on
         reverse_repository_index = dict()
 
         for user in return_all_students(self.configuration.course_id, self.configuration.assignment_id):
+            if targeted and user.user_id not in wanted:
+                continue
             if self.configuration.no_repo is not True:
                 if user.repository_url is not None:
                     # Always pull the student repo to detect new commits — even if tester is active.
                     # The tester lock only prevents re-running tests, not fetching updates.
                     if user.force_test:
-                        # Force test overrides any active tester lock — terminate stale lock and proceed
+                        # Force test overrides any active tester lock — terminate stale lock and proceed.
+                        # A targeted (webhook) run never overrides: a live lock means a job is already
+                        # grading this student, and a duplicate run is exactly what we must avoid.
                         if not self._tester_is_inactive(user.user_id):
+                            if targeted:
+                                self.logger.logger.info(
+                                    "A test is already running for %s — skipping the triggered run." %
+                                    user.user_fullname)
+                                continue
                             self.logger.logger.info("Force test requested — overriding active tester lock for %s" %
                                                     user.user_fullname)
                             self._tester_lock_unlock(user.user_id, lock=False)
@@ -435,6 +457,11 @@ class Tester:
                     if user.force_test or self._tester_is_inactive(user.user_id) or has_new_commit:
                         # Release stale tester lock if a new commit was detected
                         if has_new_commit and not self._tester_is_inactive(user.user_id):
+                            if targeted:
+                                self.logger.logger.info(
+                                    "A test is already running for %s — skipping the triggered run." %
+                                    user.user_fullname)
+                                continue
                             self.logger.logger.info("New commit detected — overriding active tester lock for %s" %
                                                     user.user_fullname)
                             self._tester_lock_unlock(user.user_id, lock=False)

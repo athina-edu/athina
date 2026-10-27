@@ -66,6 +66,8 @@ from athina.gitlab_issues import GitLabIssues
 from athina.logger import Logger
 from athina.plagiarism import *
 from athina.tester.tester import *
+from athina.trigger import (TRIGGER_POLL_SECONDS, consume_triggers,
+                            triggers_pending, write_full_pass_trigger)
 from athina.url import *
 from athina.users import *
 
@@ -76,42 +78,102 @@ ATHINA_WEB_URL = None
 ARGS = None
 lock = None
 LOGGER = None
+# Last assignment list fetched from the web API; used to resolve a webhook event's
+# (course_id, assignment_id) to the assignment directory when the event does not
+# carry one.
+RUN_LIST = []
+_run_list_fetched_at = None
 
 # A GitLab push webhook reaches the *web* container, which cannot run the grading
-# daemon. It drops a "trigger" file into the shared athina_files volume instead; the
-# daemon wakes early (below) and runs a pass immediately. Kept in a hidden dir so it
-# is never mistaken for an assignment. Override with ATHINA_TRIGGER_FILE for local dev.
-TRIGGER_FILE = os.environ.get("ATHINA_TRIGGER_FILE", "/code/athina_files/.webhook_trigger")
+# daemon. It drops a small JSON file per event into the shared athina_files volume;
+# the daemon wakes and grades *just that student*. A full pass still runs every
+# TRIGGER_WAIT_SECONDS as a safety net for anything the events did not cover.
+#
+# The loop must never be held up by grading. Each job therefore runs in its own
+# forked process; `_running_jobs` tracks which (course, assignment, user) tuples
+# are in flight so a second push for the same student is dropped rather than
+# starting a duplicate run.
 TRIGGER_WAIT_SECONDS = 60
+
+# (course_id, assignment_id, user_id) -> (pid, started_at) for student jobs in flight.
+_running_jobs = {}
+# pid of the forked full-pass (safety-net poll) job, or None.
+_poll_pid = None
+# When the last full pass was started; gates the one-minute safety net.
+_last_full_pass_at = None
+
+
+def _job_key(course_id, assignment_id, user_id):
+    return (int(course_id), int(assignment_id), int(user_id))
+
+
+def _reap_finished_jobs():
+    """Drop jobs whose forked process has exited.
+
+    Non-blocking: this runs between events and between polls, so it must never
+    wait on a child that is still testing.
+    """
+    global _poll_pid
+    for key, (pid, _started) in list(_running_jobs.items()):
+        try:
+            done, _status = os.waitpid(pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            # Already reaped (or never our child) — the slot is free.
+            del _running_jobs[key]
+            continue
+        if done == pid:
+            del _running_jobs[key]
+
+    if _poll_pid is not None:
+        try:
+            done, _status = os.waitpid(_poll_pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            done = _poll_pid
+        if done == _poll_pid:
+            _poll_pid = None
+
+
+def _job_is_running(course_id, assignment_id, user_id):
+    _reap_finished_jobs()
+    return _job_key(course_id, assignment_id, user_id) in _running_jobs
+
+
+def _resume_child_logging():
+    """Give a forked worker its own logger and drop inherited DB connections."""
+    try:
+        LOGGER.delete_logger()
+        LOGGER.create_logger()
+    except Exception:  # pragma: no cover - logging must not kill a worker
+        pass
+    try:
+        Database.close_db()
+    except Exception:  # pragma: no cover
+        pass
 
 
 def _wait_for_trigger(timeout):
-    """Sleep up to `timeout` seconds, returning True if a webhook trigger arrived.
+    """Sleep up to `timeout` seconds, returning True if a trigger arrived.
 
-    Polls for the trigger file (cheap: one stat every 2s) and clears it before
-    returning, so a delivery that lands while a pass is already running is not lost —
-    it is picked up by the next wait.
+    Polls the trigger directory (cheap: one listdir every 2s). Events are only
+    *peeked* at here — they are left in place for the dispatcher to consume, so a
+    delivery that lands just as this returns is never dropped.
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if os.path.isfile(TRIGGER_FILE):
-            try:
-                os.remove(TRIGGER_FILE)
-            except OSError:
-                pass
+        _reap_finished_jobs()
+        if triggers_pending():
             return True
-        time.sleep(2)
+        time.sleep(TRIGGER_POLL_SECONDS)
     return False
 
 
 def trigger_immediate_pass():
-    """Signal the daemon to run a pass as soon as it finishes the current one."""
-    os.makedirs(os.path.dirname(TRIGGER_FILE), exist_ok=True)
-    try:
-        with open(TRIGGER_FILE, "w") as fh:
-            fh.write(str(time.time()))
-    except OSError:
-        pass
+    """Ask the daemon for a full pass over every assignment.
+
+    Used by operators and by anything that cannot name a single student. Normal
+    webhook traffic uses per-student events instead (see athina.trigger).
+    """
+    write_full_pass_trigger()
 
 
 def lock_process():
@@ -160,14 +222,15 @@ def run():
 
     # Start main process
     if ARGS.service is True:
-        # Run as a daemon. main() returns quickly when a GitLab push webhook asks for
-        # an immediate pass (it wakes early instead of sleeping the full interval).
+        # Run as a daemon. Each loop iteration:
+        #   1. dispatches any webhook/force-rerun events (one student each), in
+        #      forked workers, so the loop is never held up by grading;
+        #   2. runs the full safety-net pass (also in a forked worker) when one is
+        #      due — every TRIGGER_WAIT_SECONDS, so a missed webhook is still caught;
+        #   3. sleeps until an event arrives or the minute is up.
         while True:
-            main()
-            # A webhook that arrives mid-sleep touches the trigger file; watch for it
-            # and wake up so that student is graded without waiting out the interval.
-            if _wait_for_trigger(TRIGGER_WAIT_SECONDS):
-                LOGGER.logger.info('Webhook trigger received — starting an immediate pass.')
+            service_tick()
+            _wait_for_trigger(TRIGGER_WAIT_SECONDS)
     else:
         main()
 
@@ -202,8 +265,8 @@ def parse_command_line():
     return args
 
 
-def main():
-    # Build the list of assignments to check (Athina Web = json format, command line = 1 assignment only)
+def _fetch_run_list():
+    """Fetch the list of assignments to grade from the web API (or --config)."""
     run_list = []
     if ARGS.json is not None:
         try:
@@ -218,60 +281,267 @@ def main():
                 "No assignments returned by %s. Check that the URL is reachable "
                 "from this container and that its host is in Django ALLOWED_HOSTS."
                 % ARGS.json)
-        else:
-            LOGGER.logger.info("Fetched %d assignment(s) from %s" % (len(run_list), ARGS.json))
+            return None
+        LOGGER.logger.info("Fetched %d assignment(s) from %s" % (len(run_list), ARGS.json))
     elif ARGS.config is not None:
         run_list.append({'directory': ARGS.config})
     else:
         raise SyntaxError("You need to provide either --config or --json.")
+    return run_list
+
+
+def main(run_list=None):
+    """Run a full pass over every assignment (the safety-net poll)."""
+    if run_list is None:
+        run_list = _fetch_run_list()
+        if not run_list:
+            return
+
+    global RUN_LIST
+    RUN_LIST = run_list
 
     # Iterate through each assignment
     user_data = Database(logger=LOGGER)
     for run_record in run_list:
-        # Pull the latest from the remote repo for this assignment directory.
-        # The online version is the ground truth — local edits are discarded.
-        _pull_assignment_repo(run_record.get('directory', ''))
+        process_assignment(run_record, user_data)
 
-        # Build configuration object
-        configuration = Configuration(logger=LOGGER)
-        try:
-            configuration.load_configuration(run_record['directory'])
-        except (ValueError, TypeError, yaml.YAMLError):
-            LOGGER.logger.error("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
-                                "missing or incorrect (e.g., no quotes are necessary for strings).")
-            continue  # in case a use forgets and gives empty values in their config
 
-        # If the API provided course_id/assignment_id, override the YAML values.
-        # This is how db-input-mode works: IDs live in the Django model, not the YAML.
-        if 'course_id' in run_record and run_record['course_id'] is not None:
-            configuration.course_id = int(run_record['course_id'])
-        if 'assignment_id' in run_record and run_record['assignment_id'] is not None:
-            configuration.assignment_id = int(run_record['assignment_id'])
+def process_assignment(run_record, user_data=None, only_user_id=None):
+    """Grade one assignment, or (when `only_user_id` is given) just one student.
 
-        configuration.athina_web_url = ATHINA_WEB_URL
+    `only_user_id` is what a webhook asks for: only that student's repository is
+    pulled and tested, so a push does not trigger a pass over the whole course.
+    """
+    # Pull the latest from the remote repo for this assignment directory.
+    # The online version is the ground truth — local edits are discarded.
+    _pull_assignment_repo(run_record.get('directory', ''))
 
-        # If --import_submissions was provided, load student data from the JSON file
-        if ARGS.import_submissions is not None:
-            _load_submissions_from_file(configuration)
+    # Build configuration object
+    configuration = Configuration(logger=LOGGER)
+    try:
+        configuration.load_configuration(run_record['directory'])
+    except (ValueError, TypeError, yaml.YAMLError):
+        LOGGER.logger.error("Error reading the configuration file. Probably a value is empty (e.g., course_id=),"
+                            "missing or incorrect (e.g., no quotes are necessary for strings).")
+        return  # in case a use forgets and gives empty values in their config
 
-        # Starting statement
+    # If the API provided course_id/assignment_id, override the YAML values.
+    # This is how db-input-mode works: IDs live in the Django model, not the YAML.
+    if 'course_id' in run_record and run_record['course_id'] is not None:
+        configuration.course_id = int(run_record['course_id'])
+    if 'assignment_id' in run_record and run_record['assignment_id'] is not None:
+        configuration.assignment_id = int(run_record['assignment_id'])
+
+    configuration.athina_web_url = ATHINA_WEB_URL
+
+    # If --import_submissions was provided, load student data from the JSON file
+    if ARGS.import_submissions is not None:
+        _load_submissions_from_file(configuration)
+
+    if user_data is None:
+        user_data = Database(logger=LOGGER)
+
+    # Starting statement
+    if only_user_id is None:
         LOGGER.logger.info("Processing...")
+    else:
+        LOGGER.logger.info("Processing student %s only..." % only_user_id)
 
-        core_iteration(configuration, user_data)
+    core_iteration(configuration, user_data, only_user_id=only_user_id)
 
-        del configuration
-        LOGGER.logger.info("Processing done.")
+    del configuration
+    LOGGER.logger.info("Processing done.")
+
+
+def _spawn_job(name, target, *args):
+    """Fork a worker so the trigger/poll loop keeps running while it tests.
+
+    Returns the child pid, or None if forking failed (grading is then skipped for
+    that job rather than blocking the loop).
+    """
+    try:
+        pid = os.fork()
+    except OSError as exc:
+        LOGGER.logger.error("Could not fork a worker for %s: %s" % (name, exc))
+        return None
+
+    if pid == 0:  # child
+        try:
+            _resume_child_logging()
+            target(*args)
+        except BaseException as exc:  # never let a worker take down the daemon
+            try:
+                LOGGER.logger.error("%s failed: %s" % (name, exc))
+            except Exception:
+                pass
+        finally:
+            try:
+                Database.close_db()
+            except Exception:
+                pass
+            os._exit(0)
+    return pid
+
+
+def _run_student_job(event):
+    """Worker body: grade one student on one assignment."""
+    process_assignment({'directory': event['directory'],
+                        'course_id': event['course_id'],
+                        'assignment_id': event['assignment_id']},
+                       only_user_id=event['user_id'])
+
+
+def _refresh_run_list():
+    """(Re)load the assignment list from the web API, throttled.
+
+    Only needed to resolve a trigger that did not carry a directory (e.g. an
+    older web image). Throttled because the API's serializer runs a git fetch per
+    assignment, which is far too expensive to repeat on every tick.
+    """
+    global RUN_LIST, _run_list_fetched_at
+    if _run_list_fetched_at is not None and \
+            (time.time() - _run_list_fetched_at) < TRIGGER_WAIT_SECONDS:
+        return RUN_LIST
+    run_list = _fetch_run_list()
+    if run_list:
+        RUN_LIST = run_list
+        _run_list_fetched_at = time.time()
+    return RUN_LIST
+
+
+def _directory_for_event(event):
+    """Resolve an event's assignment directory from the last fetched run list."""
+    for record in _refresh_run_list():
+        if not record.get('directory'):
+            continue
+        if record.get('course_id') is not None and record.get('assignment_id') is not None and \
+                int(record['course_id']) == int(event['course_id']) and \
+                int(record['assignment_id']) == int(event['assignment_id']):
+            return record['directory']
+    return ''
+
+
+def dispatch_triggers():
+    """Start a worker for every pending webhook/force-rerun event.
+
+    Each event is one student. A student who is already being graded is skipped,
+    so repeated pushes never start duplicate runs. Failures are logged and the
+    event dropped — the one-minute poll is the safety net.
+    """
+    events, full_pass = consume_triggers()
+    # Drop jobs whose process has exited first, so a finished student does not
+    # look like one that is still being graded.
+    _reap_finished_jobs()
+
+    if full_pass:
+        LOGGER.logger.info('Full-pass trigger received — scheduling a complete pass.')
+        _request_full_pass()
+
+    for event in events:
+        key = _job_key(event['course_id'], event['assignment_id'], event['user_id'])
+        if key in _running_jobs:
+            LOGGER.logger.info("Student %s on course %s/assignment %s is already being graded — "
+                               "skipping duplicate trigger." % (event['user_id'],
+                                                                event['course_id'],
+                                                                event['assignment_id']))
+            continue
+        directory = event.get('directory') or _directory_for_event(event)
+        if not directory:
+            LOGGER.logger.warning("Trigger for student %s (course %s/assignment %s) has no assignment "
+                                  "directory; scheduling a full pass instead." %
+                                  (event['user_id'], event['course_id'], event['assignment_id']))
+            _request_full_pass()
+            continue
+
+        event['directory'] = directory
+        pid = _spawn_job("student %s job" % key[2], _run_student_job, event)
+        if pid is not None:
+            _running_jobs[key] = (pid, time.time())
+            LOGGER.logger.info("Webhook trigger — started grading student %s (course %s/assignment %s)."
+                               % (event['user_id'], event['course_id'], event['assignment_id']))
+
+
+def _request_full_pass():
+    """Mark the full pass as due now; `service_tick` starts it when it is safe."""
+    global _last_full_pass_at
+    _last_full_pass_at = None
+
+
+def _schedule_full_pass():
+    """Start the safety-net pass in a worker, unless one is already running."""
+    global _poll_pid, _last_full_pass_at
+    _reap_finished_jobs()
+    if _poll_pid is not None:
+        LOGGER.logger.debug("A full pass is already running — not starting another.")
+        return
+    pid = _spawn_job("full pass", main)
+    if pid is not None:
+        _poll_pid = pid
+        _last_full_pass_at = time.time()
+
+
+def _full_pass_due():
+    """True when the one-minute safety-net pass is due and can be started.
+
+    Deferred while any student job is in flight: the full pass overrides a live
+    tester lock when it sees a new commit, which would re-grade a student a
+    triggered job is already working on.
+    """
+    if _poll_pid is not None:
+        return False
+    _reap_finished_jobs()
+    if _running_jobs:
+        return False
+    if _last_full_pass_at is None:
+        return True
+    return (time.time() - _last_full_pass_at) >= TRIGGER_WAIT_SECONDS
+
+
+def service_tick():
+    """One iteration of the daemon loop.
+
+    Dispatch pending per-student events first, so a push is graded immediately
+    and the loop returns to the trigger wait without being held up. The full pass
+    only runs when TRIGGER_WAIT_SECONDS has elapsed, so a burst of webhooks never
+    turns into a burst of whole-course passes.
+    """
+    dispatch_triggers()
+    if _full_pass_due():
+        _schedule_full_pass()
+    _reap_finished_jobs()
 
 
 def _pull_assignment_repo(directory):
     """Pull the latest from the remote for an assignment's git repo.
     The online version is always the ground truth — local edits are discarded.
+
+    Several workers can run concurrently (one per triggered student, plus the
+    safety-net pass), and they all share the assignment checkout. A per-directory
+    lock serialises the pull so two `git checkout -- .` / `git pull` calls never
+    race over the same index.
     """
     if not directory or not os.path.isdir(directory):
         return
     git_dir = os.path.join(directory, '.git')
     if not os.path.isdir(git_dir):
         return  # not a git repo (e.g., manually created directory)
+    pull_lock = filelock.FileLock(os.path.join(git_dir, "athina-pull.lock"))
+    try:
+        pull_lock.acquire(timeout=120)
+    except filelock.Timeout:
+        if LOGGER and LOGGER.logger:
+            LOGGER.logger.warning("Could not lock %s for a pull; skipping this pull." % directory)
+        return
+    try:
+        _do_pull_assignment_repo(directory)
+    finally:
+        try:
+            pull_lock.release()
+        except Exception:
+            pass
+
+
+def _do_pull_assignment_repo(directory):
     try:
         import git as _git
         repo = _git.Repo(directory)
@@ -325,7 +595,13 @@ def _load_submissions_from_file(configuration):
     LOGGER.logger.info("Import complete: %d created, %d updated." % (created, updated))
 
 
-def core_iteration(configuration, user_data):
+def core_iteration(configuration, user_data, only_user_id=None):
+    """Grade one assignment.
+
+    `only_user_id` restricts the run to a single student. A webhook uses it so a
+    push grades that student only — the rest of the course is untouched. The
+    one-minute safety-net pass calls this with `only_user_id=None`.
+    """
     # Determine output mode: Canvas or GitLab Issues
     if configuration.output_method == "gitlab_issues":
         e_learning = GitLabIssues(configuration, LOGGER)
@@ -334,9 +610,21 @@ def core_iteration(configuration, user_data):
         e_learning = Canvas(configuration, LOGGER)
 
     # --- INPUT: gather student submissions ---
-    use_canvas_input = (configuration.input_method == "canvas" and configuration.auth_token != "")
+    # A single-student run must not pull the whole roster from Canvas (that is
+    # expensive and would undo the point of a targeted webhook run). The row
+    # already exists in the grading DB when a push arrives.
+    use_canvas_input = (configuration.input_method == "canvas" and
+                        configuration.auth_token != "" and
+                        only_user_id is None)
 
-    if use_canvas_input:
+    if only_user_id is not None:
+        LOGGER.logger.info("Targeted run for student %s (course %s, assignment %s)" % (
+            only_user_id, configuration.course_id, configuration.assignment_id))
+        stored_due = load_key_from_assignment_data(configuration.course_id,
+                                                   configuration.assignment_id, "due_date")
+        configuration.due_date = (dateutil.parser.parse(stored_due) if stored_due is not None
+                                  else dateutil.parser.parse("2050-01-01 00:00:00"))
+    elif use_canvas_input:
         # For mixed-mode (canvas input + gitlab output), we need a Canvas object
         # for input operations even if the output adapter is GitLabIssues.
         if configuration.output_method == "gitlab_issues":
@@ -383,8 +671,10 @@ def core_iteration(configuration, user_data):
         else:
             configuration.due_date = dateutil.parser.parse("2050-01-01 00:00:00")
 
-        # Duplicate URL check still applies
-        if student_count > 0:
+        # Duplicate URL check still applies (full passes only: on a targeted run the
+        # single student's own URL cannot have become a duplicate since the last
+        # pass, and scanning the whole roster would defeat the point).
+        if student_count > 0 and only_user_id is None:
             LOGGER.logger.debug("Checking for duplicate urls...")
             user_data.check_duplicate_url(same_url_limit=configuration.same_url_limit,
                                           course_id=configuration.course_id,
@@ -428,12 +718,18 @@ def core_iteration(configuration, user_data):
         tester.process_student_assignment(1)
         LOGGER.logger.info("Single repository testing completed.")
         sys.exit(0)  # This is used for testing so no further processing is necessary
+    elif only_user_id is not None:
+        # Webhook-triggered run: grade just this student on this assignment.
+        tester.start_testing_db(user_ids=[only_user_id])
     else:
         # Start testing changed records (new or updated) if any exist
         tester.start_testing_db()
 
     # Initiate plagiarism checks
-    if datetime.datetime.now(tzlocal()).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
+    # (full passes only: the daily check covers every recently graded submission,
+    # so running it from a single-student trigger would only duplicate work)
+    if only_user_id is None and \
+            datetime.datetime.now(tzlocal()).replace(tzinfo=None).hour == configuration.check_plagiarism_hour:
         plagiarism_checks_on_users(LOGGER, configuration, e_learning)
 
     # In case this script is run as another user the repo needs to be also set to be editable by anyone

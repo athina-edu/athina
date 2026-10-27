@@ -40,6 +40,8 @@ import threading
 from athina_web.athina_db import db_info
 from athina_web.accounts.models import UserProfile
 from athina_web.accounts.resend_email import send_email_safe
+# Shared with the grading daemon: one signal file per (student, assignment) event.
+from athina.trigger import write_full_pass_trigger, write_student_trigger
 
 
 def _user_can_access_course(user, course):
@@ -972,7 +974,14 @@ def assignment_force(request, assignment_id, user_id):
         cur.execute("SELECT repository_url FROM users WHERE user_id=%s AND course_id=%s AND assignment_id=%s LIMIT 1",
                     (user_id, course_id_val, assignment_id_val,))
         result = cur.fetchone()
+        # MySQL user ids actually touched; these are the students to wake the daemon for.
+        forced_user_ids = [user_id]
         if result and result[0]:
+            cur.execute("SELECT user_id FROM users WHERE course_id=%s AND assignment_id=%s AND repository_url=%s",
+                        (course_id_val, assignment_id_val, result[0],))
+            shared = [row[0] for row in cur.fetchall() or []]
+            if shared:
+                forced_user_ids = shared
             cur.execute("UPDATE users SET force_test=1, changed_state=1 WHERE course_id=%s AND assignment_id=%s AND repository_url=%s",
                         (course_id_val, assignment_id_val, result[0],))
         else:
@@ -981,25 +990,43 @@ def assignment_force(request, assignment_id, user_id):
         conn.commit()
         conn.close()
         # Wake the grading daemon now instead of waiting for its next poll, so the
-        # forced run starts immediately (it otherwise waits up to ~60s).
-        _trigger_daemon()
+        # forced run starts immediately — and only for the student(s) affected.
+        _trigger_daemon(course_id_val, assignment_id_val, forced_user_ids, assignment)
         return redirect('assignments:assignment_view', assignment_id=assignment.pk)
 
 
-def _trigger_daemon():
-    """Ask the grading daemon to run a pass now.
+def _trigger_daemon(course_id_val=None, assignment_id_val=None, user_ids=None,
+                    assignment=None):
+    """Ask the grading daemon to grade specific students now.
 
     The daemon lives in a different container and cannot be reached directly, so
     signal it through the shared athina_files volume (MEDIA_ROOT, resolved against
-    BASE_DIR exactly as filemanager.utils does). Best-effort: if the write fails the
-    daemon still picks the change up on its normal poll.
+    BASE_DIR exactly as filemanager.utils does).
+
+    A single event is written per assignment, naming the first affected student.
+    That is enough even for groups: the engine pulls that repository and submits
+    the grade to every student who shares it, so one job covers the whole group.
+    Writing one event per member would start several jobs for the same repository.
+
+    When the affected students cannot be identified (no ids) a full-pass marker is
+    written instead, which the daemon treats as "run the whole safety-net pass".
+    Best-effort either way: if the write fails the daemon still picks the change up
+    on its normal poll.
     """
     try:
-        trigger_dir = os.path.normpath(os.path.join(settings.BASE_DIR, settings.MEDIA_ROOT))
-        os.makedirs(trigger_dir, exist_ok=True)
-        with open(os.path.join(trigger_dir, '.webhook_trigger'), 'w') as fh:
-            fh.write(str(time.time()))
-    except OSError:
+        root = os.path.normpath(os.path.join(settings.BASE_DIR, settings.MEDIA_ROOT))
+        os.makedirs(root, exist_ok=True)
+        if course_id_val is not None and assignment_id_val is not None and user_ids:
+            directory = ''
+            if assignment is not None:
+                directory = os.path.normpath(os.path.join(settings.BASE_DIR,
+                                                          assignment.absolute_path))
+            write_student_trigger(course_id_val, assignment_id_val, min(user_ids),
+                                  assignment_dir=directory, root=root)
+        else:
+            write_full_pass_trigger(root=root)
+    except Exception:
+        # Best-effort; the daemon's next poll still finds the change.
         pass
 
 
@@ -1014,17 +1041,58 @@ def push_event(request):
         webhook_token = request.headers.get('X-Gitlab-Token', '')
         conn = connect_to_db()
         cur = conn.cursor()
-        # Find the places that this git url has been used and update that it has been changed
-        result = cur.execute('UPDATE users SET webhook_event=1 WHERE repository_url = %s AND webhook_token = %s',
-                             (student_git_url, webhook_token,))
+        # Find the places that this git url has been used and update that it has been changed.
+        # The rows we just flagged are exactly the students whose push this is, so read
+        # them back and wake the daemon for those students only.
+        cur.execute('SELECT user_id, course_id, assignment_id FROM users '
+                    'WHERE repository_url = %s AND webhook_token = %s',
+                    (student_git_url, webhook_token,))
+        rows = cur.fetchall() or []
+        cur.execute('UPDATE users SET webhook_event=1 WHERE repository_url = %s AND webhook_token = %s',
+                    (student_git_url, webhook_token,))
         conn.commit()
         conn.close()
-        # Ask the grading daemon to run a pass immediately instead of waiting out its
-        # poll interval. This container is only reachable through Cloudflare (Zero
-        # Trust Access), so the request is already authenticated by the network before
-        # the token check above.
-        _trigger_daemon()
+
+        if rows:
+            # Group assignments share a repository, so this is normally one
+            # (course, assignment) pair with one or more students.
+            by_assignment = {}
+            for user_id, course_id, assignment_id in rows:
+                by_assignment.setdefault((course_id, assignment_id), []).append(user_id)
+            for (course_id, assignment_id), user_ids in by_assignment.items():
+                _trigger_daemon(course_id, assignment_id, user_ids,
+                                _assignment_from_ids(course_id, assignment_id))
+        else:
+            # The push did not match a known repository/token. Do not start a
+            # course-wide pass for it — there is nothing to grade.
+            logging.getLogger('athina_web').info(
+                "Webhook for %s matched no student repository; ignoring.", student_git_url)
     return HttpResponse('ok')
+
+
+def _assignment_from_ids(course_id_val, assignment_id_val):
+    """Best-effort lookup of the Assignment whose YAML ids match.
+
+    Used to tell the daemon which directory to grade, so a triggered run starts
+    even if the daemon has not refreshed its assignment list yet. In db input mode
+    assignment_id IS the Django PK, so the direct lookup normally hits.
+    """
+    try:
+        direct = Assignment.objects.filter(pk=assignment_id_val).first()
+        if direct is not None:
+            yaml_course, yaml_assignment = _read_yaml_ids(direct)
+            if yaml_course == course_id_val and yaml_assignment == assignment_id_val:
+                return direct
+        for assignment in Assignment.objects.filter(active=True):
+            try:
+                yaml_course, yaml_assignment = _read_yaml_ids(assignment)
+            except Exception:
+                continue
+            if yaml_course == course_id_val and yaml_assignment == assignment_id_val:
+                return assignment
+    except Exception:
+        pass
+    return None
 
 
 class APIView(generics.ListAPIView):

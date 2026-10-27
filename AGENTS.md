@@ -92,9 +92,16 @@ no `bin/` script any more.
 - **`Repository`** uses a **Chain of Responsibility** pattern (nested `Handler`
   classes) to decide whether a student's repo should be tested (empty repo,
   duplicate URL, private-repo check, new URL, webhook, pull).
-- **Webhook wake-ups**: a push webhook (handled by the web app) sets
-  `webhook_event` and drops a trigger file into the shared `athina_files` volume;
-  the daemon polls for it every 2s while idle instead of sleeping a full interval.
+- **Webhook wake-ups** (`athina/trigger.py`): a push webhook (handled by the web
+  app) writes one JSON event per `(course, assignment, student)` into
+  `athina_files/.webhook_triggers/`, and the daemon grades **only that student**.
+  The web app writes one event per assignment — a group shares one repository, so
+  one job grades every member. The daemon wakes on new events (polling the
+  directory every 2s while idle) and starts each job in a **forked worker**, so the
+  trigger loop and the one-minute safety-net pass are never blocked by testing. A
+  job is skipped when that `(course, assignment, student)` is already in flight.
+  The legacy `.webhook_trigger` file still means "run a full pass", and the full
+  pass is deferred while any triggered job is running.
   `webhook_fallback_interval` still forces a periodic pull so a missed delivery
   cannot leave a student ungraded.
 - **Database** uses **Peewee ORM** with a pluggable backend: SQLite (dev/tests)
