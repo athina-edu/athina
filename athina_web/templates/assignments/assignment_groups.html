@@ -8,20 +8,23 @@
    Each group is a droppable column; students are draggable chips. Kept scoped
    to this page so nothing else inherits the layout. */
 .group-board {
-    display: flex;
+    /* A wrapping grid, not one endless row: as many columns as fit the
+       viewport, so the board never runs off the side of the screen. */
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
     gap: 1rem;
-    overflow-x: auto;
-    align-items: flex-start;
     padding-bottom: .5rem;
 }
 .group-column {
-    flex: 0 0 17rem;
     background: #f8f9fa;
     border: 1px solid #dee2e6;
     border-radius: .25rem;
     display: flex;
     flex-direction: column;
     max-height: 70vh;
+    /* Grid items default to min-width:auto, which would let a long email
+       push the column wider than its track instead of ellipsising. */
+    min-width: 0;
 }
 .group-column.is-drop-target {
     border-color: #007bff;
@@ -79,6 +82,33 @@
     font-size: .8rem;
     padding: .25rem;
 }
+/* Quick-add tile: a dashed box that becomes a real group with one click.
+   Deliberately NOT a .group-column — the drag code must never treat it as a
+   place to drop a student (it has no group id yet). */
+.group-column-quickadd {
+    border: 2px dashed #adb5bd;
+    border-radius: .25rem;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    min-height: 9rem;
+    padding: .75rem;
+    text-align: center;
+}
+.quick-add-group {
+    border: 1px solid #28a745;
+    background: #28a745;
+    color: #fff;
+    border-radius: .25rem;
+    padding: .5rem .9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.quick-add-group:hover:not(:disabled) { background: #218838; border-color: #1e7e34; }
+.quick-add-group:disabled { opacity: .6; cursor: progress; }
 </style>
 {% endblock %}
 
@@ -99,7 +129,7 @@
 <div class="mt-2">
 <h3>
     Groups: {{ assignment.name }}
-    {% if not is_group_assignment %}<span class="badge badge-secondary">Individual assignment</span>{% endif %}
+    {% if not is_group_assignment %}<span class="badge badge-secondary" id="individual-badge">Individual assignment</span>{% endif %}
 </h3>
 {% if course %}<h6 class="text-muted">{{ course.name }}</h6>{% endif %}
 <hr>
@@ -114,7 +144,7 @@
 </div>
 
 {% if not is_group_assignment %}
-<div class="alert alert-warning">
+<div class="alert alert-warning" id="individual-alert">
     <strong>This assignment is set up as individual work.</strong>
     Students each get their own repository. Group a student below and the assignment
     switches to a group assignment automatically, or tick
@@ -122,7 +152,8 @@
 </div>
 {% else %}
 <div class="alert alert-info py-2">
-    Drag students between groups. Each group shares <strong>one repository</strong>
+    Drag students between groups, or click <strong>+ Add empty group</strong> to create a new
+    drop target. Each group shares <strong>one repository</strong>
     for {{ assignment.name }}, named <code>{{ assignment.name|slugify }}-g&lt;N&gt;</code>.
     Provisioning creates one repo per group and points every member at it.
 </div>
@@ -198,6 +229,16 @@
         {% endif %}
     </div>
     {% endfor %}
+
+    <!-- Quick-add tile: one click creates an empty group column in place.
+         It sits after the groups so new boxes appear at the end of the grid. -->
+    {% if can_manage_students %}
+    <div class="group-column-quickadd">
+        <button type="button" class="quick-add-group" id="quick-add-group"
+                title="Add an empty group to drop students into">+ Add empty group</button>
+        <span class="group-board-empty mb-0">Creates a drop target instantly.</span>
+    </div>
+    {% endif %}
 </div>
 
 {% if groups and can_manage_students %}
@@ -220,6 +261,7 @@
     if (!board) { return; }
 
     var moveUrl = "{% url 'assignments:assignment_group_move' assignment_id=assignment.pk %}";
+    var quickAddUrl = "{% url 'assignments:assignment_group_quickcreate' assignment_id=assignment.pk %}";
     var canManage = {{ can_manage_students|yesno:"true,false" }};
     var status = document.getElementById("board-status");
     var dragged = null;
@@ -330,23 +372,116 @@
         moveChip(dragged, column);
     });
 
-    // The × button is the keyboard/touch-friendly equivalent of dragging to
-    // Unassigned, since drag-and-drop is unreliable on touch devices.
+    // One delegated handler for every board button — including the Rename /
+    // Delete links of columns the Quick-add button creates after page load.
     board.addEventListener("click", function (event) {
         var remove = event.target.closest(".remove-member");
-        if (!remove) { return; }
-        event.preventDefault();
-        moveChip(remove.closest(".student-chip"),
-                 board.querySelector('.group-column[data-group-id=""]'));
-    });
+        if (remove) {
+            // The × is the keyboard/touch-friendly equivalent of dragging to
+            // Unassigned, since drag-and-drop is unreliable on touch devices.
+            event.preventDefault();
+            moveChip(remove.closest(".student-chip"),
+                     board.querySelector('.group-column[data-group-id=""]'));
+            return;
+        }
 
-    $('.confirm-delete-group').click(function (e) {
-        var name = $(this).data('name');
-        if (!confirm('Delete group "' + name + '"?\n\nMembers keep their roster entry, ' +
-                     'but their shared repository URL is cleared so they are not graded against it.')) {
-            e.preventDefault();
+        var del = event.target.closest(".confirm-delete-group");
+        if (del && !confirm('Delete group "' + del.dataset.name + '"?\n\nMembers keep their roster entry, ' +
+                            'but their shared repository URL is cleared so they are not graded against it.')) {
+            event.preventDefault();
         }
     });
+
+    // --- Quick add: an empty group box without leaving the board. -----------
+    // The column is built with DOM APIs (names come from the server, so they
+    // are set as text and never parsed as HTML) and inserted before the tile;
+    // the delegated drag/drop handlers above already cover it.
+    var quickAddButton = document.getElementById("quick-add-group");
+
+    function buildGroupColumn(data) {
+        var column = document.createElement("div");
+        column.className = "group-column repo-unprovisioned";
+        column.dataset.groupId = String(data.id);
+
+        var header = document.createElement("div");
+        header.className = "group-column-header";
+        var title = document.createElement("span");
+        title.textContent = data.name;
+        title.title = data.name;
+        var badge = document.createElement("span");
+        badge.className = "badge badge-secondary";
+        badge.textContent = "0";
+        header.appendChild(title);
+        header.appendChild(badge);
+
+        var repo = document.createElement("div");
+        repo.className = "group-repo text-muted";
+        var repoName = document.createElement("span");
+        repoName.title = "Not provisioned yet";
+        repoName.textContent = data.repo_name;
+        repo.appendChild(repoName);
+
+        var body = document.createElement("div");
+        body.className = "group-column-body";
+        body.dataset.dropzone = String(data.id);
+        var empty = document.createElement("div");
+        empty.className = "group-board-empty";
+        empty.textContent = "Drop students here.";
+        body.appendChild(empty);
+
+        var footer = document.createElement("div");
+        footer.className = "p-2 d-flex justify-content-between border-top";
+        var rename = document.createElement("a");
+        rename.className = "btn btn-sm btn-outline-info";
+        rename.href = data.edit_url;
+        rename.textContent = "Rename";
+        var del = document.createElement("a");
+        del.className = "btn btn-sm btn-outline-danger confirm-delete-group";
+        del.href = data.delete_url;
+        del.dataset.name = data.name;
+        del.textContent = "Delete";
+        footer.appendChild(rename);
+        footer.appendChild(del);
+
+        column.appendChild(header);
+        column.appendChild(repo);
+        column.appendChild(body);
+        column.appendChild(footer);
+        return column;
+    }
+
+    if (quickAddButton) {
+        quickAddButton.addEventListener("click", function () {
+            quickAddButton.disabled = true;
+            setStatus("Adding group…");
+
+            var data = new FormData();
+            data.append("csrfmiddlewaretoken", csrfToken());
+
+            fetch(quickAddUrl, {method: "POST", body: data, credentials: "same-origin"})
+                .then(function (response) {
+                    if (!response.ok) { throw new Error("HTTP " + response.status); }
+                    return response.json();
+                })
+                .then(function (group) {
+                    board.insertBefore(buildGroupColumn(group),
+                                       quickAddButton.closest(".group-column-quickadd"));
+                    // The first group makes this a group assignment, so the
+                    // individual-work warning and badge are stale from here on.
+                    var warning = document.getElementById("individual-alert");
+                    if (warning) { warning.remove(); }
+                    var badge = document.getElementById("individual-badge");
+                    if (badge) { badge.remove(); }
+                    setStatus("Group added — drop students into it");
+                })
+                .catch(function () {
+                    setStatus("Could not add a group");
+                })
+                .finally(function () {
+                    quickAddButton.disabled = false;
+                });
+        });
+    }
 })();
 </script>
 {% endblock %}

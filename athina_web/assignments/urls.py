@@ -31,6 +31,9 @@ urlpatterns = [
     # Group assignments: students in a group share one repository.
     path('<int:assignment_id>/groups/', views.assignment_groups, name='assignment_groups'),
     path('<int:assignment_id>/groups/new/', views.assignment_group_create, name='assignment_group_create'),
+    # One-click empty group for the board's '+' tile (returns JSON, no reload).
+    path('<int:assignment_id>/groups/quickadd/', views.assignment_group_quickcreate,
+         name='assignment_group_quickcreate'),
     path('<int:assignment_id>/groups/autogroup/', views.assignment_group_autogroup, name='assignment_group_autogroup'),
     path('<int:assignment_id>/groups/random-name/', views.assignment_group_random_name, name='assignment_group_random_name'),
     path('<int:assignment_id>/groups/move/', views.assignment_group_move, name='assignment_group_move'),

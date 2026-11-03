@@ -104,8 +104,7 @@
                     var pct = data.percent || 0;
                     bar.style.width = pct + "%";
                     bar.textContent = pct + "%";
-                    text.textContent = data.current + " / " + data.total +
-                        (data.adopted ? " processed" : " processed");
+                    text.textContent = data.current + " / " + data.total + " processed";
                 } else {
                     text.textContent = "Preparing…";
                 }

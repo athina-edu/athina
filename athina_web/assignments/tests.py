@@ -1541,6 +1541,60 @@ class TestProvisionRunsInBackground(PerAssignmentRepoBase):
         self.assertEqual(final['percent'], 100)
         self.assertEqual(final['created'], 13)
 
+    def test_group_run_counts_one_unit_per_group_not_per_assignment(self):
+        """5 groups must read 5 / 5 — not 5 / 1 and a 500% bar.
+
+        The unit list used to book ONE unit for the whole group assignment
+        while the loop advanced once per group, so the bar raced past 100%.
+        """
+        self.a1.is_group_assignment = True
+        self.a1.save(update_fields=['is_group_assignment'])
+        for i in range(5):
+            group = StudentGroup.objects.create(
+                assignment=self.a1, name='Team %d' % i,
+                repo_index=StudentGroup(assignment=self.a1).next_repo_index())
+            GroupMembership.objects.create(
+                group=group, assignment=self.a1,
+                student=Student.objects.get(course=self.course,
+                                            email='s%d@uni.edu' % i))
+
+        with mock.patch.object(assignment_views, '_get_gitlab_config',
+                               lambda c: ('gitlab.example.edu', 'tok')), \
+             mock.patch.object(assignment_views, '_ensure_course_group',
+                               lambda *a, **k: (7, 'grp', False)), \
+             mock.patch.object(assignment_views, '_sync_course_group_members',
+                               lambda *a, **k: 0), \
+             mock.patch.object(assignment_views, '_sync_student_to_grading_db',
+                               lambda *a, **k: None), \
+             mock.patch.object(assignment_views, '_provision_group_gitlab',
+                               lambda c, a, g: True), \
+             mock.patch.object(assignment_views, '_write_group_settings',
+                               lambda *a, **k: None):
+            assignment_views._run_provision(self.course.pk, self.a1.pk, self.faculty.pk)
+            final = self.client.get(
+                reverse('assignments:provision_progress_api',
+                        kwargs={'assignment_id': self.a1.pk})).json()
+
+        self.assertEqual(final['status'], 'done', final)
+        self.assertEqual(final['total'], 5, "one unit per group")
+        self.assertEqual(final['current'], final['total'])
+        self.assertEqual(final['percent'], 100)
+        self.assertEqual(final['created'], 5)
+        # Each group's members are synced once — not once per group.
+        self.assertEqual(final['synced'], 5)
+
+    def test_percent_is_clamped_when_counts_drift(self):
+        """A `current` above `total` must not render a 1100% bar."""
+        key = assignment_views._provision_key(self.course.pk, self.a1.pk)
+        assignment_views._provision_progress[key] = {
+            'status': 'running', 'total': 1, 'current': 11,
+            'updated_at': timezone.now(),
+        }
+        data = self.client.get(reverse('assignments:provision_progress_api',
+                                       kwargs={'assignment_id': self.a1.pk})).json()
+
+        self.assertEqual(data['percent'], 100)
+
     def test_a_stalled_run_stops_the_page_polling(self):
         """A run that stops writing progress must not leave the page spinning."""
         from datetime import timedelta
@@ -1760,6 +1814,50 @@ class TestGroupViews(PerAssignmentRepoBase):
             reverse('assignments:assignment_group_create', kwargs={'assignment_id': self.a1.pk}),
             {'name': 'Nope'})
         self.assertEqual(create.status_code, 404)
+
+    def test_quickadd_creates_an_empty_group_as_json(self):
+        """The board's '+' tile must create a drop target without a reload."""
+        response = self.client.post(
+            reverse('assignments:assignment_group_quickcreate',
+                    kwargs={'assignment_id': self.a1.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        group = StudentGroup.objects.get(pk=data['id'])
+        self.assertEqual(group.assignment, self.a1)
+        self.assertEqual(group.name, data['name'])
+        self.assertEqual(group.memberships.count(), 0, "the tile adds an EMPTY group")
+        self.assertEqual(group.repo_index, 1)
+        self.assertIn('sql-1-g1', data['repo_name'])
+        # The JS-built column needs both action links.
+        self.assertIn(str(group.pk), data['edit_url'])
+        self.assertIn(str(group.pk), data['delete_url'])
+
+    def test_quickadd_flips_an_individual_assignment_to_group(self):
+        self.client.post(
+            reverse('assignments:assignment_group_quickcreate',
+                    kwargs={'assignment_id': self.a1.pk}))
+        self.assertTrue(Assignment.objects.get(pk=self.a1.pk).is_group_assignment)
+
+    def test_quickadd_requires_post(self):
+        response = self.client.get(
+            reverse('assignments:assignment_group_quickcreate',
+                    kwargs={'assignment_id': self.a1.pk}))
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(StudentGroup.objects.filter(assignment=self.a1).count(), 0)
+
+    def test_quickadd_is_denied_to_tas(self):
+        ta = User.objects.create_user(username='ta-quick', password='x')
+        ta.profile.role = UserProfile.ROLE_TA
+        ta.profile.managed_by.add(self.faculty)
+        ta.profile.save()
+        self.client.force_login(ta)
+
+        response = self.client.post(
+            reverse('assignments:assignment_group_quickcreate',
+                    kwargs={'assignment_id': self.a1.pk}))
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(StudentGroup.objects.filter(assignment=self.a1).count(), 0)
 
 
 class TestTeamNames(TestCase):
@@ -2009,6 +2107,24 @@ class TestGroupBoardRendering(PerAssignmentRepoBase):
         self.assertIn('data-student-id="%d"' % self.student.pk, html)
         self.assertIn('data-student-id="%d"' % other.pk, html)
         self.assertIn('draggable="true"', html)
+
+    def test_board_is_a_wrapping_grid_with_a_quick_add_tile(self):
+        """Columns wrap into a grid; only managers get the '+' tile."""
+        html = self.client.get(reverse('assignments:assignment_groups',
+                                       kwargs={'assignment_id': self.a1.pk})).content.decode()
+        self.assertIn('grid-template-columns', html)
+        # The tile's markup, not the script's getElementById string.
+        self.assertIn('id="quick-add-group"', html)
+
+        ta = User.objects.create_user(username='ta-board', password='x')
+        ta.profile.role = UserProfile.ROLE_TA
+        ta.profile.managed_by.add(self.faculty)
+        ta.profile.save()
+        self.client.force_login(ta)
+
+        html = self.client.get(reverse('assignments:assignment_groups',
+                                       kwargs={'assignment_id': self.a1.pk})).content.decode()
+        self.assertNotIn('id="quick-add-group"', html)
 
     def test_membership_assignment_is_denormalised(self):
         group = StudentGroup.objects.create(assignment=self.a1, name='Alpha', repo_index=1)

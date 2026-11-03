@@ -1333,12 +1333,17 @@ def _run_provision(course_id, assignment_id, user_id):
         students = list(Student.objects.filter(course=course))
 
         # Total units of work, so the progress bar is meaningful. A group
-        # assignment costs one unit per group (or per student if ungrouped); an
-        # individual assignment costs one per student per assignment.
+        # assignment costs one unit PER GROUP (or per student if it has no
+        # groups yet); an individual assignment costs one per student per
+        # assignment. The loop below advances once per group, so booking the
+        # whole assignment as a single unit let `current` run past `total`
+        # (e.g. 11 groups reported as "11 / 1 processed" with a 1100% bar).
         units = []
         for assignment in assignments:
-            if assignment.is_group_assignment and assignment.groups.exists():
-                units.append(('group', assignment, None))
+            groups = list(assignment.groups.all()) if assignment.is_group_assignment else []
+            if groups:
+                for group in groups:
+                    units.append(('group', assignment, group))
             else:
                 for student in students:
                     units.append(('student', assignment, student))
@@ -1364,37 +1369,42 @@ def _run_provision(course_id, assignment_id, user_id):
             _write_group_settings(assignment, has_groups=bool(groups))
 
         done = 0
-        for kind, assignment, student in units:
+        for kind, assignment, target in units:
             if kind == 'group':
-                for group in assignment.groups.all():
-                    done += 1
-                    report(current=done, current_item="%s — group %s" % (assignment.name, group.name))
-                    member_ids = list(group.memberships.values_list('student_id', flat=True))
-                    already = (AssignmentRepo.objects
-                               .filter(assignment=assignment, student_id__in=member_ids)
-                               .exclude(repository_url='')
-                               .exists())
-                    if already:
-                        adopted += 1
-                    # Always re-run, even when the repo is recorded. It is
-                    # idempotent and it repairs membership: a group provisioned
-                    # before Maintainer was granted leaves every member unable to
-                    # push to the shared protected master branch.
-                    result = _provision_group_gitlab(course, assignment, group)
-                    if result is True:
-                        if not already:
-                            created += 1
-                        notified += 1  # group provisioning notifies every member
-                    elif result:
-                        errors.append("%s (%s): %s" % (group.name, assignment.name, result))
-                # Sync every member's row for this group assignment.
-                for member_id in assignment.groups.values_list('memberships__student_id', flat=True):
+                group = target
+                done += 1
+                report(current=done, current_item="%s — group %s" % (assignment.name, group.name))
+                member_ids = list(group.memberships.values_list('student_id', flat=True))
+                already = (AssignmentRepo.objects
+                           .filter(assignment=assignment, student_id__in=member_ids)
+                           .exclude(repository_url='')
+                           .exists())
+                if already:
+                    adopted += 1
+                # Always re-run, even when the repo is recorded. It is
+                # idempotent and it repairs membership: a group provisioned
+                # before Maintainer was granted leaves every member unable to
+                # push to the shared protected master branch.
+                result = _provision_group_gitlab(course, assignment, group)
+                if result is True:
+                    if not already:
+                        created += 1
+                    notified += 1  # group provisioning notifies every member
+                elif result:
+                    errors.append("%s (%s): %s" % (group.name, assignment.name, result))
+                # Sync THIS group's members only. Each group is its own unit,
+                # so syncing every group per unit would multiply `synced` by
+                # the number of groups.
+                for member_id in member_ids:
                     member = next((s for s in students if s.pk == member_id), None)
                     if member is not None:
                         _sync_student_to_grading_db(member, assignment=assignment)
                         synced += 1
+                report(created=created, adopted=adopted, synced=synced,
+                       notified=notified, errors=list(errors))
                 continue
 
+            student = target
             done += 1
             report(current=done, current_item="%s — %s" % (assignment.name, student.email))
             repo, _was_created = AssignmentRepo.objects.get_or_create(
@@ -1492,7 +1502,9 @@ def _provision_status_payload(key, redirect_url):
                 "redirect": redirect_url}
     total = state.get('total', 0)
     current = state.get('current', 0)
-    percent = int((current / total) * 100) if total else 0
+    # Clamp to 100: this number becomes the bar's width, and a `current` above
+    # `total` must never render a 1100% bar.
+    percent = min(100, int((current / total) * 100)) if total else 0
     status = state.get('status', 'running')
 
     # A run that stops making progress would otherwise leave the page polling
@@ -2199,6 +2211,48 @@ def assignment_group_random_name(request, assignment_id):
     if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
         raise Http404
     return JsonResponse({"name": _next_group_name(assignment)})
+
+
+@login_required
+def assignment_group_quickcreate(request, assignment_id):
+    """Create an empty group from the board's '+' tile; return it as JSON.
+
+    The full create page stays available for naming a group and picking its
+    first members. This endpoint exists so the board can add a drop target
+    without a reload, which is what the quick-add button does.
+    """
+    assignment = get_object_or_404(Assignment, pk=assignment_id)
+    if assignment.course_id is None or not _user_can_manage_students(request.user, assignment.course):
+        raise Http404
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required."}, status=405)
+
+    # next_repo_index() reads the max on every call, so take it once and use it
+    # for both the row and the repository name derived from it.
+    index = StudentGroup(assignment=assignment).next_repo_index()
+    group = StudentGroup.objects.create(
+        assignment=assignment,
+        name=_next_group_name(assignment),
+        repo_index=index,
+    )
+    # Same flag flip as the create form and autogroup: a group on the board
+    # must make provisioning treat this assignment as grouped.
+    if not assignment.is_group_assignment:
+        assignment.is_group_assignment = True
+        assignment.save(update_fields=['is_group_assignment'])
+
+    return JsonResponse({
+        "ok": True,
+        "id": group.pk,
+        "name": group.name,
+        "repo_name": _group_repo_name(assignment, group),
+        "edit_url": reverse('assignments:assignment_group_edit',
+                            kwargs={'assignment_id': assignment.pk,
+                                    'group_id': group.pk}),
+        "delete_url": reverse('assignments:assignment_group_delete',
+                              kwargs={'assignment_id': assignment.pk,
+                                      'group_id': group.pk}),
+    })
 
 
 @login_required
