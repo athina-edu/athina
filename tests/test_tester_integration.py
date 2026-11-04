@@ -212,19 +212,19 @@ class TestProcessStudentAssignment(TestCase):
 
     def test_report_keeps_head_and_tail_when_clipped(self):
         tester = self._tester()
-        clipped = tester._clip_report("HEAD" + ("z" * 1000) + "TAIL", 100).decode()
+        clipped = tester._clip_report("HEAD" + ("z" * 1000) + "TAIL", 100)
         self.assertIn("HEAD", clipped)
         self.assertIn("TAIL", clipped)
         self.assertIn("chars omitted", clipped)
 
     def test_report_under_budget_is_stored_verbatim(self):
         tester = self._tester()
-        self.assertEqual(tester._clip_report("short report", 1024), b"short report")
+        self.assertEqual(tester._clip_report("short report", 1024), "short report")
 
     def test_empty_report_stays_empty(self):
         tester = self._tester()
-        self.assertEqual(tester._clip_report("", 1024), b"")
-        self.assertEqual(tester._clip_report(None, 1024), b"")
+        self.assertEqual(tester._clip_report("", 1024), "")
+        self.assertEqual(tester._clip_report(None, 1024), "")
 
     # ---- GitLab issues mode -------------------------------------------
 

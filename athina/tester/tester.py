@@ -108,7 +108,7 @@ class Tester:
         try:
             user_object.last_report = (
                 "Report too large to store (%d chars). The grade and per-test "
-                "results are unaffected." % len(report or "")).encode("utf-8")
+                "results are unaffected." % len(report or ""))
             user_object.save()
         except Exception as e:
             self.logger.logger.error(
@@ -116,19 +116,21 @@ class Tester:
 
     @staticmethod
     def _clip_report(report, max_report_size):
-        """Bound a report to `max_report_size` bytes-ish, keeping head and tail.
+        """Bound a report to `max_report_size` characters, keeping head and tail.
 
         `max_report_size` is the same budget used to trim test output, so a
         report can never be built that the column is not expected to hold.
+        A str is returned (peewee encodes it for the blob column), which is what
+        the in-memory model has always held after grading.
         """
         if not report:
-            return b""
+            return ""
         if max_report_size and max_report_size > 0 and len(report) > max_report_size:
             half = max_report_size // 2
             omitted = len(report) - max_report_size
             report = ("%s\n... (%d chars omitted) ...\n%s"
                       % (report[:half], omitted, report[-half:]))
-        return report.encode("utf-8", "backslashreplace")
+        return report
 
     def _tester_is_inactive(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
