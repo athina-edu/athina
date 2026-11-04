@@ -122,6 +122,33 @@ def generate_llm_feedback(configuration, student_code, test_results, test_descri
         return None
 
 
+#: Directories never walked when collecting a submission for feedback.
+_SKIP_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'env',
+              '.tox', 'dist', 'build', '.eggs'}
+
+#: Extensions considered source code for feedback purposes.
+_CODE_EXTENSIONS = {'.py', '.r', 'r', '.java', '.c', '.cpp', '.h', '.js',
+                    '.ts', '.go', '.rs', '.rb', '.sh', '.sql', '.html', '.css'}
+
+
+def _is_code_file(fname):
+    """True when `fname` is a visible file with a source-code extension."""
+    if fname.startswith('.'):
+        return False
+    return os.path.splitext(fname)[1].lower() in _CODE_EXTENSIONS
+
+
+def _read_if_small(fpath, max_file_bytes):
+    """Return the file's text, or None when it is too large or unreadable."""
+    try:
+        if 0 < max_file_bytes < os.path.getsize(fpath):
+            return None
+        with open(fpath, 'r', errors='replace') as f:
+            return f.read()
+    except (OSError, IOError):
+        return None
+
+
 def read_student_code(student_code_dir, max_files=20,
                       max_file_bytes=DEFAULT_MAX_STUDENT_FILE_BYTES):
     """Read student source code files from a directory.
@@ -134,38 +161,21 @@ def read_student_code(student_code_dir, max_files=20,
     small slice of it anyway. Pass 0 (or a negative value) to disable the check.
     """
     code_files = {}
-    skip_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'env',
-                 '.tox', 'dist', 'build', '.eggs'}
-    code_extensions = {'.py', '.r', '.R', '.java', '.c', '.cpp', '.h', '.js',
-                       '.ts', '.go', '.rs', '.rb', '.sh', '.sql', '.html', '.css'}
-
     if not os.path.isdir(student_code_dir):
         return code_files
 
     for root, dirs, files in os.walk(student_code_dir):
-        # Skip hidden and无关 directories
-        dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith('.')]
+        # Skip hidden and unrelated directories
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith('.')]
 
         for fname in sorted(files):
-            if fname.startswith('.'):
+            if not _is_code_file(fname):
                 continue
-            _, ext = os.path.splitext(fname)
-            if ext.lower() not in code_extensions:
-                continue
-
             fpath = os.path.join(root, fname)
-            rel_path = os.path.relpath(fpath, student_code_dir)
-
-            try:
-                if max_file_bytes and max_file_bytes > 0:
-                    if os.path.getsize(fpath) > max_file_bytes:
-                        continue
-                with open(fpath, 'r', errors='replace') as f:
-                    content = f.read()
-                code_files[rel_path] = content
-            except (OSError, IOError):
+            content = _read_if_small(fpath, max_file_bytes)
+            if content is None:
                 continue
-
+            code_files[os.path.relpath(fpath, student_code_dir)] = content
             if len(code_files) >= max_files:
                 return code_files
 

@@ -203,6 +203,40 @@ def _excerpt(text, limit):
     return _clip(text, limit)
 
 
+def _render_record(record):
+    """Render one parsed test record as a single verdict line, or None."""
+    if not isinstance(record, dict):
+        return None
+    passed = record.get("passed")
+    if passed is True:
+        verdict = "PASS"
+    elif passed is False:
+        verdict = "FAIL"
+    else:
+        verdict = "SKIP"
+    name = record.get("name") or record.get("key") or "test"
+    line = "%s | %s" % (verdict, name)
+    bits = _record_bits(record)
+    if bits:
+        line += ": " + "; ".join(bits)
+    return line[:400]
+
+
+def _record_bits(record):
+    """Return the optional detail/score fragments of a record."""
+    bits = []
+    detail = record.get("detail") or ""
+    if detail:
+        bits.append(str(detail).strip().splitlines()[0][:200])
+    score = record.get("score")
+    if score is not None:
+        try:
+            bits.append("score %.0f" % float(score))
+        except (TypeError, ValueError):
+            pass
+    return bits
+
+
 def render_results(test_results):
     """Render parsed per-test records as compact verdict lines.
 
@@ -214,33 +248,89 @@ def render_results(test_results):
     Lines are shaped like the marker notation so the model sees one consistent
     format whichever notation the test script used.
     """
-    lines = []
-    for record in test_results or ():
-        if not isinstance(record, dict):
+    lines = (_render_record(record) for record in test_results or ())
+    return [line for line in lines if line]
+
+
+def _code_section(student_code, max_file_chars, max_code_chars):
+    """Return the STUDENT CODE section, respecting both budgets."""
+    parts = []
+    if not student_code:
+        return ["(No code files found)"]
+
+    remaining = max_code_chars
+    omitted = []
+    for filename, content in student_code.items():
+        if max_code_chars > 0 and remaining <= 0:
+            omitted.append(filename)
             continue
-        passed = record.get("passed")
-        if passed is True:
-            verdict = "PASS"
-        elif passed is False:
-            verdict = "FAIL"
-        else:
-            verdict = "SKIP"
-        name = record.get("name") or record.get("key") or "test"
-        detail = record.get("detail") or ""
-        score = record.get("score")
-        bits = []
-        if detail:
-            bits.append(str(detail).strip().splitlines()[0][:200])
-        if score is not None:
-            try:
-                bits.append("score %.0f" % float(score))
-            except (TypeError, ValueError):
-                pass
-        line = "%s | %s" % (verdict, name)
-        if bits:
-            line += ": " + "; ".join(bits)
-        lines.append(line[:400])
-    return lines
+        limit = max_file_chars
+        if max_code_chars > 0 and max_file_chars > 0:
+            limit = min(max_file_chars, remaining)
+        content, used = _fit_file(content, limit)
+        parts.append("--- %s ---" % filename)
+        parts.append(content)
+        remaining -= used
+    if omitted:
+        parts.append("... (%d more file(s) omitted: %s)" % (
+            len(omitted), ", ".join(omitted[:10])))
+    return parts
+
+
+def _fit_file(content, limit):
+    """Clip one file to `limit` chars. Returns (content, chars counted)."""
+    original = len(content)
+    if limit <= 0 or original <= limit:
+        return content, original
+    # Truncate very large files to prevent context overflow
+    return (_clip(content, limit) + "\n... (truncated, %d total chars)" % original,
+            limit)
+
+
+def _test_section(test_results, test_records, max_test_chars):
+    """Return the TEST RESULTS section, verdicts first and a bounded log excerpt."""
+    verdicts = render_results(test_records)
+    markers, rest = split_markers(test_results)
+    # A marker line the parsed records do not already cover (records come from
+    # either notation) is still worth sending -- one short line per check.
+    verdicts_text = "\n".join(verdicts)
+    summary = verdicts + [m for m in markers
+                          if m.lstrip()[len(MARKER_PREFIX):].strip() not in verdicts_text]
+
+    if not test_results and not summary:
+        return ["(No test results available)"]
+
+    parts = []
+    budget = max_test_chars
+    if summary:
+        kept = _clip("\n".join(summary), budget)
+        parts.append("Summary of test verdicts:")
+        parts.append(kept)
+        budget = budget - len(kept) if budget > 0 else budget
+
+    if rest.strip():
+        excerpt, note = _log_excerpt(rest, summary, budget, max_test_chars)
+        parts.append(note)
+        if excerpt:
+            parts.append(excerpt)
+    return parts
+
+
+def _log_excerpt(rest, summary, budget, max_test_chars):
+    """Choose the raw-log excerpt for the TEST RESULTS section.
+
+    Returns (excerpt, heading). When every check is already described by
+    `summary` the log is only supporting evidence, so it gets a small
+    signal-first slice; otherwise it is the only signal and keeps its budget.
+    """
+    if not summary:
+        return _excerpt(rest, budget), "Excerpt of the raw test output:"
+    if max_test_chars > 0 and budget <= 0:
+        return None, "(raw test output omitted to stay within budget)"
+    limit = DEFAULT_MAX_EXCERPT_CHARS
+    if budget > 0:
+        limit = min(budget, limit)
+    return _excerpt(rest, limit), "Excerpt of the raw test output:"
 
 
 def build_student_message(student_code, test_results, test_descriptions,
@@ -255,9 +345,9 @@ def build_student_message(student_code, test_results, test_descriptions,
         max_file_chars: per-file character budget (None = DEFAULT_MAX_FILE_CHARS)
         max_code_chars: total code budget (None = DEFAULT_MAX_CODE_CHARS)
         max_test_chars: test-output budget (None = DEFAULT_MAX_TEST_CHARS)
-        test_records: optional parsed per-test records (athina.test_report). When
-            given, their compact verdicts are sent first and the raw log is only
-            a fallback excerpt -- that is what keeps a chatty assignment (a
+        test_records: optional parsed per-test records (athina.test_report).
+            When given, their compact verdicts are sent first and the raw log is
+            only a fallback excerpt -- that is what keeps a chatty assignment (a
             database course printing thousands of rows) from dominating the
             request without changing the grading signal at all.
 
@@ -275,70 +365,12 @@ def build_student_message(student_code, test_results, test_descriptions,
 
     # Student code
     parts.append("=== STUDENT CODE ===")
-    if not student_code:
-        parts.append("(No code files found)")
-    else:
-        remaining = max_code_chars
-        omitted = []
-        for filename, content in student_code.items():
-            if max_code_chars > 0 and remaining <= 0:
-                omitted.append(filename)
-                continue
-            limit = max_file_chars
-            if max_code_chars > 0:
-                limit = min(max_file_chars, remaining) if max_file_chars > 0 else remaining
-            original = len(content)
-            if limit > 0 and original > limit:
-                # Truncate very large files to prevent context overflow
-                content = _clip(content, limit)
-                content += "\n... (truncated, %d total chars)" % original
-                original = limit
-            parts.append("--- %s ---" % filename)
-            parts.append(content)
-            remaining -= original
-        if omitted:
-            parts.append("... (%d more file(s) omitted: %s)" % (
-                len(omitted), ", ".join(omitted[:10])))
+    parts.extend(_code_section(student_code, max_file_chars, max_code_chars))
     parts.append("")
 
     # Test results
     parts.append("=== TEST RESULTS ===")
-    verdicts = render_results(test_records)
-    markers, rest = split_markers(test_results)
-    # A marker line that the parsed records do not already cover (records come
-    # from either notation, so they usually subsume the markers) is still worth
-    # sending -- it is one short line per check.
-    verdicts_text = "\n".join(verdicts)
-    extra_markers = [m for m in markers
-                     if m.lstrip()[len(MARKER_PREFIX):].strip() not in verdicts_text]
-
-    if not test_results and not verdicts and not extra_markers:
-        parts.append("(No test results available)")
-    else:
-        budget = max_test_chars
-        summary = verdicts + extra_markers
-        if summary:
-            kept = _clip("\n".join(summary), budget)
-            parts.append("Summary of test verdicts:")
-            parts.append(kept)
-            budget = budget - len(kept) if budget > 0 else budget
-
-        if rest.strip():
-            if summary:
-                # Every check is already described above, so the log is only
-                # supporting evidence: a small, signal-first slice is enough.
-                if max_test_chars > 0 and budget <= 0:
-                    parts.append("(raw test output omitted to stay within budget)")
-                else:
-                    limit = DEFAULT_MAX_EXCERPT_CHARS
-                    if budget > 0:
-                        limit = min(budget, limit)
-                    parts.append("Excerpt of the raw test output:")
-                    parts.append(_excerpt(rest, limit))
-            else:
-                # Nothing structured to lean on -- the log is the only signal.
-                parts.append("Excerpt of the raw test output:")
-                parts.append(_excerpt(rest, budget))
+    parts.extend(_test_section(test_results, test_records, max_test_chars))
     parts.append("")
 
     # Test descriptions
