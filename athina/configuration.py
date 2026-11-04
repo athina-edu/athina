@@ -57,6 +57,15 @@ class Configuration:
     llm_endpoint_url = ""
     llm_api_key = ""
     llm_model = "gpt-4o-mini"
+    # Prompt budgets (characters). Test output is capped because a database
+    # assignment can print hundreds of thousands of rows, and the code budget is
+    # separate from the per-file one so twenty small files cannot add up to a
+    # context overflow. 0 disables that particular limit.
+    llm_max_file_chars = 8000   # per code file
+    llm_max_code_chars = 40000  # all code files combined
+    llm_max_test_chars = 12000  # raw test output (verdict lines kept first)
+    # Files above this size are not read at all (a committed .sql dump).
+    llm_max_student_file_bytes = 262144
 
     # Non-Canvas mode settings
     # input_method: 'canvas' (fetch from Canvas API) or 'db' (read from local database)
@@ -280,6 +289,10 @@ class Configuration:
         self.load_value(config, 'llm_enabled', self.llm_enabled)
         self.load_value(config, 'llm_endpoint_url', self.llm_endpoint_url)
         self.load_value(config, 'llm_model', self.llm_model)
+        # Prompt budgets: YAML wins, then the environment (written by athina-web).
+        for _budget in ('llm_max_file_chars', 'llm_max_code_chars',
+                        'llm_max_test_chars', 'llm_max_student_file_bytes'):
+            self.load_value_with_env(config, _budget, getattr(self, _budget), cast=int)
         # API key and endpoint can also come from environment (written by athina-web .env)
         self.llm_endpoint_url = os.environ.get('LLM_ENDPOINT_URL', self.llm_endpoint_url)
         self.llm_api_key = os.environ.get('LLM_API_KEY', self.llm_api_key)

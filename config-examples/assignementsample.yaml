@@ -40,6 +40,16 @@ llm_enabled: false
 llm_endpoint_url: https://api.openai.com/v1
 llm_model: gpt-4o-mini
 
+# Prompt budgets (characters). They bound what a single feedback request costs,
+# which matters when a test script prints a lot (a database assignment echoes
+# thousands of rows). Test verdicts are always sent in full; only the raw log is
+# trimmed. Set a value to 0 to disable that limit, or omit the keys to use these
+# defaults. Each can also be overridden with the matching LLM_MAX_* env var.
+#   llm_max_file_chars: 8000          # one source file
+#   llm_max_code_chars: 40000         # all source files combined
+#   llm_max_test_chars: 12000         # raw test output (verdicts prioritised)
+#   llm_max_student_file_bytes: 262144  # skip larger files entirely (SQL dumps)
+
 # A command for testing whatever files exist in the user's repo.
 # Tests are independent and no information carries over (all directories reset to the repo state).
 # The test are executed from within the test_dir so can be invoked directly in the list without absolute paths

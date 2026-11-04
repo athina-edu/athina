@@ -212,12 +212,15 @@ class Tester:
                         student_code_dir = "%s/repodata%s/u%s" % (
                             self.configuration.config_dir, self.configuration.assignment_id,
                             current_user_id)
-                        student_code = read_student_code(student_code_dir)
+                        student_code = read_student_code(
+                            student_code_dir,
+                            max_file_bytes=getattr(
+                                self.configuration, 'llm_max_student_file_bytes', None))
                         test_desc = parse_test_descriptions(self.configuration)
                         test_output = "\n".join([t.decode("utf-8", "backslashreplace") for t in test_reports])
                         guidance = generate_llm_feedback(
                             self.configuration, student_code, test_output, test_desc,
-                            logger=self.logger)
+                            logger=self.logger, test_records=test_results)
                         if guidance:
                             llm_guidance = guidance
                             self.logger.logger.info(">>> LLM guidance generated for %s (%d chars)" % (

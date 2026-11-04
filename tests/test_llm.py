@@ -179,6 +179,54 @@ class TestReadStudentCode(TestCase):
         finally:
             os.chmod(path, 0o600)
 
+    def test_skips_oversized_files(self):
+        # A committed database dump (the employees sample is 168 MB) must not be
+        # read into memory just so the prompt budget can throw it away.
+        self._write("q1.sql", "SELECT 1;")
+        self._write("emp_employees.sql", "x" * 5000)
+        result = read_student_code(self.tmp, max_file_bytes=1024)
+        self.assertIn("q1.sql", result)
+        self.assertNotIn("emp_employees.sql", result)
+
+    def test_size_limit_can_be_disabled(self):
+        self._write("emp_employees.sql", "x" * 5000)
+        result = read_student_code(self.tmp, max_file_bytes=0)
+        self.assertIn("emp_employees.sql", result)
+
+    def test_file_at_the_limit_is_kept(self):
+        self._write("exact.sql", "x" * 1024)
+        self.assertIn("exact.sql", read_student_code(self.tmp, max_file_bytes=1024))
+
+
+class TestPromptBudgetConfig(TestCase):
+    """generate_llm_feedback must pass the assignment budgets through."""
+
+    def test_configured_budgets_reach_the_prompt(self):
+        configuration, logger = _llm_config()
+        configuration.llm_max_test_chars = 500
+        big_output = "w" * 20000
+        with mock.patch('requests.post', return_value=_openai_response()) as post:
+            generate_llm_feedback(configuration, {}, big_output, [], logger)
+        sent = post.call_args.kwargs['json']['messages'][1]['content']
+        self.assertIn("chars omitted", sent)
+        self.assertLess(len(sent), 20000)
+
+    def test_defaults_apply_when_budgets_are_absent(self):
+        # A configuration built before these settings existed (or any object that
+        # simply does not define them) must still get the module defaults.
+        configuration = mock.Mock(spec=['llm_enabled', 'llm_endpoint_url',
+                                        'llm_api_key', 'llm_model'])
+        configuration.llm_enabled = True
+        configuration.llm_endpoint_url = "https://api.example.com/v1"
+        configuration.llm_api_key = "sk-test"
+        configuration.llm_model = "gpt-4o-mini"
+        big_output = "w" * 50000
+        with mock.patch('requests.post', return_value=_openai_response()) as post:
+            generate_llm_feedback(configuration, {}, big_output, [], None)
+        sent = post.call_args.kwargs['json']['messages'][1]['content']
+        self.assertIn("chars omitted", sent)
+        self.assertLess(len(sent), 50000)
+
 
 class TestParseTestDescriptions(TestCase):
     def test_builds_descriptions_with_weights(self):

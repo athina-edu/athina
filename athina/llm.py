@@ -12,11 +12,16 @@ import re
 from athina.url import request_url
 from athina.llm_agent_prompt import get_system_prompt, build_student_message, sanitize_output
 
-__all__ = ('generate_llm_feedback',)
+__all__ = ('generate_llm_feedback', 'read_student_code', 'parse_test_descriptions')
+
+#: Files above this size are not read for LLM feedback. Database courses
+#: routinely commit a dump (the employees sample is 168 MB uncompressed); the
+#: prompt budget would discard the text anyway, so reading it only costs memory.
+DEFAULT_MAX_STUDENT_FILE_BYTES = 256 * 1024
 
 
 def generate_llm_feedback(configuration, student_code, test_results, test_descriptions,
-                          logger=None):
+                          logger=None, test_records=None):
     """Generate AI guidance for a student's submission.
 
     Args:
@@ -25,6 +30,9 @@ def generate_llm_feedback(configuration, student_code, test_results, test_descri
         test_results: string of test output
         test_descriptions: list of human-readable test descriptions
         logger: optional Logger instance
+        test_records: optional parsed per-test records (athina.test_report).
+            These are the compact, structured verdicts already shown in the grade
+            report; when supplied they replace most of the raw log in the prompt.
 
     Returns:
         String with guidance text, or None if LLM is not configured/failed
@@ -41,9 +49,19 @@ def generate_llm_feedback(configuration, student_code, test_results, test_descri
             logger.logger.debug("LLM feedback skipped: no endpoint or API key configured")
         return None
 
-    # Build the user message
-    user_message = build_student_message(student_code, test_results, test_descriptions)
+    # Build the user message. The budgets come from the assignment config so a
+    # course with chatty test scripts can be reined in without a code change.
+    user_message = build_student_message(
+        student_code, test_results, test_descriptions,
+        max_file_chars=getattr(configuration, 'llm_max_file_chars', None),
+        max_code_chars=getattr(configuration, 'llm_max_code_chars', None),
+        max_test_chars=getattr(configuration, 'llm_max_test_chars', None),
+        test_records=test_records)
     system_prompt = get_system_prompt()
+
+    if logger:
+        logger.logger.debug("LLM prompt: %d chars input (%d code files)" % (
+            len(user_message), len(student_code or {})))
 
     # OpenAI-compatible chat completions endpoint
     url = "%s/chat/completions" % endpoint_url
@@ -104,11 +122,16 @@ def generate_llm_feedback(configuration, student_code, test_results, test_descri
         return None
 
 
-def read_student_code(student_code_dir, max_files=20):
+def read_student_code(student_code_dir, max_files=20,
+                      max_file_bytes=DEFAULT_MAX_STUDENT_FILE_BYTES):
     """Read student source code files from a directory.
 
     Returns dict of {filename: content} for common code files.
     Skips hidden files, .git, __pycache__, node_modules, etc.
+
+    Files larger than `max_file_bytes` are skipped rather than read: a committed
+    database dump can be hundreds of megabytes, and the LLM prompt only keeps a
+    small slice of it anyway. Pass 0 (or a negative value) to disable the check.
     """
     code_files = {}
     skip_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'env',
@@ -134,6 +157,9 @@ def read_student_code(student_code_dir, max_files=20):
             rel_path = os.path.relpath(fpath, student_code_dir)
 
             try:
+                if max_file_bytes and max_file_bytes > 0:
+                    if os.path.getsize(fpath) > max_file_bytes:
+                        continue
                 with open(fpath, 'r', errors='replace') as f:
                     content = f.read()
                 code_files[rel_path] = content
