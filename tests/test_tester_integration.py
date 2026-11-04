@@ -94,10 +94,62 @@ class TestProcessStudentAssignment(TestCase):
         self.assertFalse(refreshed.force_test)
         self.assertEqual(len(result), 1)
 
+    # ---- grade-once invariant ------------------------------------------
+    #
+    # The daemon must grade the latest commit exactly once: after a run the
+    # stored commit_date has to equal the commit that was just tested, so the
+    # next poll sees "no new commit" and does not test again.
+
+    def test_stored_commit_date_moves_to_the_commit_that_was_tested(self):
+        self._student()
+        self.configuration.no_repo = False   # repo mode is what tracks a commit
+        tested_commit = datetime(2024, 5, 6, 7, 8, 9)
+        self.repository.retrieve_last_commit_date.return_value = tested_commit
+        tester = self._tester(test_grade=0.9)
+        tester.process_student_assignment(900)
+
+        refreshed = Users.get(Users.user_id == 900)
+        self.assertEqual(refreshed.commit_date, tested_commit)
+        self.assertFalse(refreshed.changed_state)
+
+    def test_a_failing_grade_also_advances_the_commit_date(self):
+        """A low score is a normal result, not an error: it must still be recorded.
+
+        If a failing grade left commit_date behind, the same commit would be
+        re-tested on every poll (and, with LLM feedback on, re-billed each time).
+        """
+        self._student()
+        self.configuration.no_repo = False
+        tested_commit = datetime(2024, 5, 6, 7, 8, 9)
+        self.repository.retrieve_last_commit_date.return_value = tested_commit
+        tester = self._tester(test_grade=0.0)
+        tester.process_student_assignment(900)
+
+        refreshed = Users.get(Users.user_id == 900)
+        self.assertEqual(refreshed.last_grade, 0)
+        self.assertEqual(refreshed.commit_date, tested_commit)
+        self.assertFalse(refreshed.changed_state)
+
+    def test_a_broken_test_script_still_advances_the_commit_date(self):
+        """A script that produces no parsable score scores 0 -- and is not retried."""
+        self._student()
+        self.configuration.no_repo = False
+        tested_commit = datetime(2024, 5, 6, 7, 8, 9)
+        self.repository.retrieve_last_commit_date.return_value = tested_commit
+        tester = self._tester()
+        tester._run_test = lambda x, reports, grades, user: (
+            reports.append(b"Segmentation fault"), grades.append(0.0))
+        tester.process_student_assignment(900)
+
+        refreshed = Users.get(Users.user_id == 900)
+        self.assertEqual(refreshed.commit_date, tested_commit)
+        self.assertFalse(refreshed.changed_state)
+
     def test_stores_raw_report_without_llm_feedback(self):
         self._student()
         tester = self._tester()
         tester.process_student_assignment(900)
+
         refreshed = Users.get(Users.user_id == 900)
         # last_report is a BlobField, so it reads back as bytes.
         self.assertIn(b"test report output", refreshed.last_report)
