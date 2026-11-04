@@ -75,6 +75,61 @@ class Tester:
 
         return user_object  # returning the user object
 
+    def _save_grading_state(self, user_object, user_id):
+        """Persist the fields that mark this submission as graded.
+
+        These decide whether the next poll tests the student again, so they are
+        saved on their own, before the (optional) report. If this fails there is
+        nothing sensible left to do: re-raise so the failure is visible instead
+        of silently regrading forever.
+        """
+        user_object.save()
+
+    def _save_report(self, user_object, user_id, report, llm_guidance, max_report_size):
+        """Store the report and LLM guidance, degrading gracefully on failure.
+
+        Display data must never undo a completed grade. Reports are clipped to
+        the same `max_file_size` budget the test output uses, and any write
+        error is logged rather than propagated.
+        """
+        clipped = self._clip_report(report, max_report_size)
+        try:
+            user_object.last_report = clipped
+            if llm_guidance:
+                user_object.llm_guidance = llm_guidance
+            user_object.save()
+            return
+        except Exception as e:
+            self.logger.logger.error(
+                "Could not store report for %s (%d chars); keeping grade only: %s"
+                % (user_id, len(clipped or ""), e))
+
+        # Retry with a short placeholder so the UI still shows something.
+        try:
+            user_object.last_report = (
+                "Report too large to store (%d chars). The grade and per-test "
+                "results are unaffected." % len(report or "")).encode("utf-8")
+            user_object.save()
+        except Exception as e:
+            self.logger.logger.error(
+                "Could not store report placeholder for %s: %s" % (user_id, e))
+
+    @staticmethod
+    def _clip_report(report, max_report_size):
+        """Bound a report to `max_report_size` bytes-ish, keeping head and tail.
+
+        `max_report_size` is the same budget used to trim test output, so a
+        report can never be built that the column is not expected to hold.
+        """
+        if not report:
+            return b""
+        if max_report_size and max_report_size > 0 and len(report) > max_report_size:
+            half = max_report_size // 2
+            omitted = len(report) - max_report_size
+            report = ("%s\n... (%d chars omitted) ...\n%s"
+                      % (report[:half], omitted, report[-half:]))
+        return report.encode("utf-8", "backslashreplace")
+
     def _tester_is_inactive(self, user_id):
         user_object = return_a_student(self.configuration.course_id, self.configuration.assignment_id, user_id)
         return user_object.tester_active is False or (
@@ -276,16 +331,21 @@ class Tester:
                 # Store raw test output only (LLM feedback is in llm_guidance, appended by web view)
                 raw_reports = [t for t in student_reports if not (isinstance(t, (bytes, str)) and
                               (b'LLM Feedback:' in t if isinstance(t, bytes) else 'LLM Feedback:' in t))]
-                current_user_object.last_report = "\n".join([test.decode("utf-8", "backslashreplace") if isinstance(test, bytes)
-                                                             else str(test) for test in raw_reports])
                 if issue_iid:
                     current_user_object.gitlab_issue_iid = issue_iid
 
-                # Store LLM guidance separately for the web UI modal
-                if llm_guidance:
-                    current_user_object.llm_guidance = llm_guidance
+                # Persist in two steps, and never let the optional report take the
+                # grading state down with it. `last_report`/`llm_guidance` are
+                # display data; commit_date + changed_state are what stops this
+                # student from being regraded on the next poll. Saving them
+                # together meant a too-large report (1406) rolled back the whole
+                # row and the student was re-graded every cycle, forever.
+                self._save_grading_state(current_user_object, current_user_id)
 
-                current_user_object.save()
+                report = "\n".join([test.decode("utf-8", "backslashreplace") if isinstance(test, bytes)
+                                    else str(test) for test in raw_reports])
+                self._save_report(current_user_object, current_user_id, report,
+                                  llm_guidance, self.configuration.max_file_size)
 
                 # Store the per-test breakdown for the override UI. Done after the
                 # grade is finalised, and outside the shared test_reports list, so

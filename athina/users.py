@@ -23,6 +23,19 @@ __all__ = ('Database', 'Users', 'AssignmentData', 'TestResult',
 # Enable SQLite test mode explicitly via ATHINA_DB=sqlite or ATHINA_TEST_MODE=1.
 # Avoid automatic detection via pytest modules to keep production behavior unchanged.
 use_sqlite = os.environ.get('ATHINA_DB', '').lower() == 'sqlite' or os.environ.get('ATHINA_TEST_MODE', '') == '1'
+
+
+class MediumBlobField(peewee.BlobField):
+    """A BLOB wide enough for a full test report (MySQL MEDIUMBLOB, 16 MB).
+
+    Peewee's BlobField always emits `BLOB`, which MySQL caps at 65,535 bytes. A
+    report is allowed to be `max_file_size` KB per test script, so a chatty
+    assignment could overflow it -- and the resulting DataError aborted the save
+    of commit_date/changed_state, leaving the student to be regraded on every
+    poll. SQLite ignores the distinction, so this is safe for the test backend.
+    """
+    field_type = 'MEDIUMBLOB'
+
 if use_sqlite:
     # Use a file-based sqlite database for tests / CI so forked worker processes can
     # access the same DB. In-memory sqlite databases are per-process and won't be
@@ -98,6 +111,32 @@ class Database:
                 self.reset_database()
                 DB.connect()
         DB.create_tables([Users, AssignmentData, TestResult])
+        self._upgrade_schema()
+
+    @staticmethod
+    def _upgrade_schema():
+        """Apply small in-place schema upgrades that `create_tables` cannot.
+
+        `create_tables` only creates missing tables; it never widens an existing
+        column. Deployments created before `last_report` became a MEDIUMBLOB still
+        hold a 64 KB BLOB, so widen it once here. Each step is idempotent and
+        best-effort: a failure must never stop the daemon from connecting, since
+        the alternative is no grading at all.
+        """
+        if isinstance(DB, peewee.SqliteDatabase):
+            return  # SQLite accepts arbitrarily large values; nothing to widen.
+        try:
+            cursor = DB.execute_sql(
+                "SELECT DATA_TYPE FROM information_schema.columns "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+                "AND COLUMN_NAME = 'last_report'")
+            row = cursor.fetchone()
+            if row and str(row[0]).lower() in ('blob', 'tinyblob'):
+                DB.execute_sql("ALTER TABLE users MODIFY COLUMN last_report MEDIUMBLOB NULL")
+        except Exception:
+            # Older MySQL users without information_schema access, or a
+            # transient error: leave the column alone and carry on.
+            pass
 
     @staticmethod
     def close_db():
@@ -189,7 +228,12 @@ class Users(BaseModel):
     last_graded = peewee.DateTimeField(default=datetime(1, 1, 1, 0, 0))
     changed_state = peewee.BooleanField(default=False)
     last_grade = peewee.SmallIntegerField(null=True)
-    last_report = peewee.BlobField(default="", null=True)
+    # MEDIUMBLOB, not BLOB: a BLOB tops out at 65,535 bytes, while an assignment
+    # may legitimately allow max_file_size of a few hundred KB per test script.
+    # Overflowing used to raise DataError *after* grading, which aborted the save
+    # of commit_date/changed_state and made the student be regraded forever
+    # ("full pass failed: (1406, Data too long for column 'last_report')").
+    last_report = MediumBlobField(default="", null=True)
     plagiarism_max = peewee.IntegerField(default=0, null=True, column_name='moss_max')
     plagiarism_average = peewee.IntegerField(default=0, null=True, column_name='moss_average')
     tester_active = peewee.BooleanField(default=False)

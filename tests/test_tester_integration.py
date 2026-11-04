@@ -168,6 +168,64 @@ class TestProcessStudentAssignment(TestCase):
         self.assertEqual(refreshed.last_grade, 90)  # grading still happened
         self.assertFalse(refreshed.llm_guidance)
 
+    # ---- report storage -----------------------------------------------
+
+    def test_oversized_report_does_not_block_grading(self):
+        """Regression: a too-large report used to roll back the whole row.
+
+        `last_report` was a BLOB (64 KB) while a report may be `max_file_size`
+        KB, so MySQL raised 1406 *after* grading and the student's
+        commit_date/changed_state were never saved -- they were then re-graded
+        on every poll, forever.
+        """
+        self._student()
+        self.configuration.max_file_size = 128          # tiny budget
+        tester = self._tester()
+        tester._run_test = lambda x, reports, grades, user: (
+            reports.append(b"x" * 50000), grades.append(0.9))
+        tester.process_student_assignment(900)
+
+        refreshed = Users.get(Users.user_id == 900)
+        self.assertEqual(refreshed.last_grade, 90)
+        self.assertFalse(refreshed.changed_state)
+        self.assertLessEqual(len(refreshed.last_report), 128 + 200)
+
+    def test_grading_state_is_saved_even_if_report_write_fails(self):
+        self._student()
+        tester = self._tester()
+        seen = {}
+
+        def _save(instance, *args, **kwargs):
+            # Fail only when a report is being written, like a 1406 does.
+            if getattr(instance, 'last_report', None):
+                raise Exception("(1406, Data too long for column 'last_report')")
+            seen['grade'] = instance.last_grade
+            seen['changed_state'] = instance.changed_state
+
+        with mock.patch.object(Users, 'save', _save):
+            tester.process_student_assignment(900)
+
+        # The grading state was written before the report was attempted, and the
+        # worker kept going instead of aborting the whole assignment run.
+        self.assertEqual(seen.get('grade'), 90)
+        self.assertIs(seen.get('changed_state'), False)
+
+    def test_report_keeps_head_and_tail_when_clipped(self):
+        tester = self._tester()
+        clipped = tester._clip_report("HEAD" + ("z" * 1000) + "TAIL", 100).decode()
+        self.assertIn("HEAD", clipped)
+        self.assertIn("TAIL", clipped)
+        self.assertIn("chars omitted", clipped)
+
+    def test_report_under_budget_is_stored_verbatim(self):
+        tester = self._tester()
+        self.assertEqual(tester._clip_report("short report", 1024), b"short report")
+
+    def test_empty_report_stays_empty(self):
+        tester = self._tester()
+        self.assertEqual(tester._clip_report("", 1024), b"")
+        self.assertEqual(tester._clip_report(None, 1024), b"")
+
     # ---- GitLab issues mode -------------------------------------------
 
     def test_gitlab_mode_creates_initial_issue(self):

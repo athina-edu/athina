@@ -12,6 +12,55 @@ class TestUsers(TestCase):
         user_data = Database(logger=logger)
         self.assertIsNotNone(user_data.db)
 
+    def test_last_report_column_is_wide_enough_for_a_full_report(self):
+        """A report may exceed 64 KB, so the column must not be a plain BLOB.
+
+        `max_file_size` is expressed in KB (1024 by default) while MySQL's BLOB
+        tops out at 65,535 bytes; overflowing it raised 1406 and aborted the
+        post-grading save, which re-graded the student on every poll.
+        """
+        self.assertEqual(Users.last_report.field_type, 'MEDIUMBLOB')
+
+    def test_schema_upgrade_widens_an_existing_blob_column(self):
+        """Deployments created before the change still hold a 64 KB BLOB."""
+        database = Database.__new__(Database)
+        cursor = mock.Mock()
+        cursor.fetchone.return_value = ('blob',)
+        fake_db = mock.Mock()
+        fake_db.execute_sql.side_effect = [cursor, None]
+        with mock.patch('athina.users.DB', fake_db):
+            database._upgrade_schema()
+        self.assertEqual(fake_db.execute_sql.call_count, 2)
+        self.assertIn("MEDIUMBLOB", fake_db.execute_sql.call_args[0][0])
+
+    def test_schema_upgrade_skips_an_already_wide_column(self):
+        database = Database.__new__(Database)
+        cursor = mock.Mock()
+        cursor.fetchone.return_value = ('mediumblob',)
+        fake_db = mock.Mock()
+        fake_db.execute_sql.side_effect = [cursor, None]
+        with mock.patch('athina.users.DB', fake_db):
+            database._upgrade_schema()
+        self.assertEqual(fake_db.execute_sql.call_count, 1)  # SELECT only
+
+    def test_schema_upgrade_survives_a_missing_table(self):
+        database = Database.__new__(Database)
+        fake_db = mock.Mock()
+        fake_db.execute_sql.side_effect = Exception("permission denied")
+        with mock.patch('athina.users.DB', fake_db):
+            database._upgrade_schema()  # must not raise
+
+    def test_schema_upgrade_is_skipped_on_sqlite(self):
+        import athina.users as users_module
+        database = Database.__new__(Database)
+        with mock.patch.object(users_module, 'DB', users_module.DB):
+            self.assertIsInstance(users_module.DB, users_module.peewee.SqliteDatabase)
+            database._upgrade_schema()
+        # No SQL was attempted against the sqlite backend.
+        with mock.patch.object(users_module.DB, 'execute_sql') as execute:
+            database._upgrade_schema()
+        execute.assert_not_called()
+
     def test_database_health_empty_db(self):
         # Empty DB should be considered healthy (IndexError path)
         user_data = Database()
