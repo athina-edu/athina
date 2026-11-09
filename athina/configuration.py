@@ -49,7 +49,9 @@ class Configuration:
     use_webhook = False
     # When webhooks are enabled, still poll each repo at least this often (seconds)
     # so a missed/blocked webhook delivery cannot leave a student ungraded. 0 = off.
-    webhook_fallback_interval = 3600
+    # 120s matches the daemon's full-pass interval; this per-student clock is only
+    # consulted when a pass reaches a student whose push has not been seen.
+    webhook_fallback_interval = 120
     gitlab_check_repo_is_private = False
 
     # LLM feedback settings (OpenAI-compatible endpoint)

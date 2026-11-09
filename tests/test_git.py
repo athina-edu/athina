@@ -44,6 +44,83 @@ class TestGit(TestCase):
         with mock.patch.object(repo, '_retrieve_git_log', side_effect=FileNotFoundError):
             self.assertIsNone(repo.retrieve_last_commit_date(1))
 
+    # ---- webhook safety-net clock --------------------------------------
+    #
+    # The fallback poll must be due per student. It used to read a single
+    # per-assignment timestamp, so whichever student ran first consumed the tick
+    # and everyone else's pull was skipped forever.
+
+    def _student(self, user_id, fallback_at=None):
+        return Users.create(user_id=user_id, course_id=1, assignment_id=1,
+                            repository_url="https://x/y.git",
+                            webhook_fallback_at=fallback_at)
+
+    def test_fallback_is_due_when_the_student_was_never_polled(self):
+        configuration, logger = make_config()
+        configuration.webhook_fallback_interval = 3600
+        repo = Repository(logger, configuration, mock.Mock())
+        repo.user_values = self._student(1, fallback_at=None)
+        self.assertTrue(repo._webhook_fallback_due())
+
+    def test_fallback_is_not_due_within_the_interval(self):
+        configuration, logger = make_config()
+        configuration.webhook_fallback_interval = 3600
+        repo = Repository(logger, configuration, mock.Mock())
+        repo.user_values = self._student(2, fallback_at=datetime.now())
+        self.assertFalse(repo._webhook_fallback_due())
+
+    def test_fallback_is_due_after_the_interval(self):
+        from datetime import timedelta
+        configuration, logger = make_config()
+        configuration.webhook_fallback_interval = 3600
+        repo = Repository(logger, configuration, mock.Mock())
+        repo.user_values = self._student(3, fallback_at=datetime.now() - timedelta(hours=2))
+        self.assertTrue(repo._webhook_fallback_due())
+
+    def test_one_students_poll_does_not_consume_anothers_tick(self):
+        """Regression: the clock was per assignment, so only the first ran."""
+        from datetime import timedelta
+        configuration, logger = make_config()
+        configuration.webhook_fallback_interval = 3600
+        repo = Repository(logger, configuration, mock.Mock())
+
+        first = self._student(10)
+        second = self._student(11)
+
+        repo.user_values = first
+        self.assertTrue(repo._webhook_fallback_due())
+        repo._mark_webhook_fallback_check()
+
+        # The second student has never been polled and must still be due.
+        repo.user_values = second
+        self.assertTrue(repo._webhook_fallback_due())
+
+        # And the first is now inside its interval.
+        repo.user_values = return_a_student(1, 1, 10)
+        self.assertFalse(repo._webhook_fallback_due())
+
+    def test_fallback_disabled_when_interval_is_zero(self):
+        configuration, logger = make_config()
+        configuration.webhook_fallback_interval = 0
+        repo = Repository(logger, configuration, mock.Mock())
+        repo.user_values = self._student(4)
+        self.assertFalse(repo._webhook_fallback_due())
+
+    def test_fallback_is_due_when_the_stamp_is_unusable(self):
+        """A non-datetime stamp must not crash the sweep; treat it as 'due'."""
+        configuration, logger = make_config()
+        configuration.webhook_fallback_interval = 3600
+        repo = Repository(logger, configuration, mock.Mock())
+        repo.user_values = mock.Mock(webhook_fallback_at="not-a-datetime")
+        self.assertTrue(repo._webhook_fallback_due())
+
+    def test_mark_fallback_persists_on_the_user_row(self):
+        configuration, logger = make_config()
+        repo = Repository(logger, configuration, mock.Mock())
+        repo.user_values = self._student(5)
+        repo._mark_webhook_fallback_check()
+        self.assertIsNotNone(return_a_student(1, 1, 5).webhook_fallback_at)
+
     def test_retrieve_last_commit_date_error(self):
         configuration, logger = make_config()
         e_learning = mock.Mock()

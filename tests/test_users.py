@@ -21,27 +21,49 @@ class TestUsers(TestCase):
         """
         self.assertEqual(Users.last_report.field_type, 'MEDIUMBLOB')
 
+    @staticmethod
+    def _upgrade_calls(blob_type, fallback_column_present):
+        """Run _upgrade_schema against a fake DB and return the emitted SQL.
+
+        Each execute_sql returns its own cursor: the blob probe, the fallback
+        probe, then (only when needed) the ALTER statements.
+        """
+        database = Database.__new__(Database)
+
+        def _cursor(value):
+            cur = mock.Mock()
+            cur.fetchone.return_value = (value,)
+            return cur
+
+        fake_db = mock.Mock()
+        fake_db.execute_sql.side_effect = [
+            _cursor(blob_type),
+            _cursor(1 if fallback_column_present else 0),
+            None,   # ALTER last_report (only when the probe said blob)
+            None,   # ALTER users ADD COLUMN (only when the column is missing)
+        ]
+        with mock.patch('athina.users.DB', fake_db):
+            database._upgrade_schema()
+        return [c[0][0] for c in fake_db.execute_sql.call_args_list]
+
     def test_schema_upgrade_widens_an_existing_blob_column(self):
         """Deployments created before the change still hold a 64 KB BLOB."""
-        database = Database.__new__(Database)
-        cursor = mock.Mock()
-        cursor.fetchone.return_value = ('blob',)
-        fake_db = mock.Mock()
-        fake_db.execute_sql.side_effect = [cursor, None]
-        with mock.patch('athina.users.DB', fake_db):
-            database._upgrade_schema()
-        self.assertEqual(fake_db.execute_sql.call_count, 2)
-        self.assertIn("MEDIUMBLOB", fake_db.execute_sql.call_args[0][0])
+        sql = self._upgrade_calls('blob', fallback_column_present=True)
+        self.assertTrue(any("MEDIUMBLOB" in s for s in sql))
 
     def test_schema_upgrade_skips_an_already_wide_column(self):
-        database = Database.__new__(Database)
-        cursor = mock.Mock()
-        cursor.fetchone.return_value = ('mediumblob',)
-        fake_db = mock.Mock()
-        fake_db.execute_sql.side_effect = [cursor, None]
-        with mock.patch('athina.users.DB', fake_db):
-            database._upgrade_schema()
-        self.assertEqual(fake_db.execute_sql.call_count, 1)  # SELECT only
+        sql = self._upgrade_calls('mediumblob', fallback_column_present=True)
+        self.assertFalse(any("MEDIUMBLOB" in s for s in sql))
+
+    def test_schema_upgrade_adds_the_per_user_fallback_column(self):
+        """The fallback clock moved from assignmentdata to users."""
+        sql = self._upgrade_calls('mediumblob', fallback_column_present=False)
+        added = [s for s in sql if "ADD COLUMN webhook_fallback_at" in s]
+        self.assertEqual(len(added), 1)
+
+    def test_schema_upgrade_leaves_an_existing_fallback_column_alone(self):
+        sql = self._upgrade_calls('mediumblob', fallback_column_present=True)
+        self.assertFalse(any("ADD COLUMN webhook_fallback_at" in s for s in sql))
 
     def test_schema_upgrade_survives_a_missing_table(self):
         database = Database.__new__(Database)

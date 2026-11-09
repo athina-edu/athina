@@ -100,6 +100,32 @@ class TestProcessStudentAssignment(TestCase):
     # stored commit_date has to equal the commit that was just tested, so the
     # next poll sees "no new commit" and does not test again.
 
+    def test_full_sweep_leaves_a_student_whose_lock_is_held_to_the_next_pass(self):
+        """A full pass must never start a second test for a busy student.
+
+        It must also not clear that student's changed_state -- the newer commit has
+        to stay visible so the next pass (or the in-flight job) picks it up.
+        """
+        self._student(force_test=False, changed_state=True,
+                      last_graded=datetime(2024, 1, 1))
+
+        tester = self._tester()
+        tester.configuration.no_repo = False
+        # The student's repo reports a new commit, but their tester lock is live.
+        tester.repository.check_repository_changes.return_value = True
+        tester.repository.retrieve_last_commit_date.return_value = datetime(2024, 5, 6)
+
+        spawned = []
+        with mock.patch.object(tester, '_tester_is_inactive', return_value=False), \
+                mock.patch.object(tester, '_spawn_worker',
+                                  side_effect=lambda ids: spawned.extend(ids)), \
+                mock.patch.object(tester, 'process_student_assignment') as mock_process, \
+                mock.patch('athina.tester.tester.docker_build'):
+            tester.start_testing_db()
+
+        mock_process.assert_not_called()
+        self.assertEqual(spawned, [])
+
     def test_stored_commit_date_moves_to_the_commit_that_was_tested(self):
         self._student()
         self.configuration.no_repo = False   # repo mode is what tracks a commit

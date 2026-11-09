@@ -67,7 +67,8 @@ from athina.logger import Logger
 from athina.plagiarism import *
 from athina.tester.tester import *
 from athina.trigger import (TRIGGER_POLL_SECONDS, consume_triggers,
-                            triggers_pending, write_full_pass_trigger)
+                            requeue_student_trigger, triggers_pending,
+                            write_full_pass_trigger)
 from athina.url import *
 from athina.users import *
 
@@ -86,21 +87,31 @@ _run_list_fetched_at = None
 
 # A GitLab push webhook reaches the *web* container, which cannot run the grading
 # daemon. It drops a small JSON file per event into the shared athina_files volume;
-# the daemon wakes and grades *just that student*. A full pass still runs every
-# TRIGGER_WAIT_SECONDS as a safety net for anything the events did not cover.
+# the daemon wakes and grades *just that student*. Independently, a full pass runs
+# every POLL_INTERVAL_SECONDS as a safety net for pushes that never arrived.
 #
 # The loop must never be held up by grading. Each job therefore runs in its own
 # forked process; `_running_jobs` tracks which (course, assignment, user) tuples
-# are in flight so a second push for the same student is dropped rather than
-# starting a duplicate run.
+# are in flight so a second push for the same student never starts a duplicate run.
+# The maximum time the loop sleeps between iterations. Triggers are polled much
+# more often (TRIGGER_POLL_SECONDS) and wake it early, so push latency stays low.
 TRIGGER_WAIT_SECONDS = 60
+
+# How often a full pass over every active assignment runs. A full pass pulls each
+# repository and grades anything whose commit moved, so it catches pushes whose
+# webhook never arrived. It runs alongside triggered jobs: per-student locking is
+# what prevents double grading, not a course-wide "everything must be idle" gate.
+POLL_INTERVAL_SECONDS = 120
 
 # (course_id, assignment_id, user_id) -> (pid, started_at) for student jobs in flight.
 _running_jobs = {}
 # pid of the forked full-pass (safety-net poll) job, or None.
 _poll_pid = None
-# When the last full pass was started; gates the one-minute safety net.
+# When the last full pass was started; gates the two-minute safety net.
 _last_full_pass_at = None
+# Set when something asks for a pass that could not be started yet (e.g. the
+# assignment directory could not be resolved). Cleared when the pass starts.
+_pass_requested = False
 
 
 def _job_key(course_id, assignment_id, user_id):
@@ -226,11 +237,13 @@ def run():
         #   1. dispatches any webhook/force-rerun events (one student each), in
         #      forked workers, so the loop is never held up by grading;
         #   2. runs the full safety-net pass (also in a forked worker) when one is
-        #      due — every TRIGGER_WAIT_SECONDS, so a missed webhook is still caught;
-        #   3. sleeps until an event arrives or the minute is up.
+        #      due -- every POLL_INTERVAL_SECONDS, so a missed webhook is still
+        #      caught even while other students are being graded;
+        #   3. sleeps until an event arrives, a running job finishes, or the
+        #      poll is due.
         while True:
             service_tick()
-            _wait_for_trigger(TRIGGER_WAIT_SECONDS)
+            _wait_for_trigger(TRIGGER_POLL_SECONDS * 5)
     else:
         main()
 
@@ -438,9 +451,11 @@ def _directory_for_event(event):
 def dispatch_triggers():
     """Start a worker for every pending webhook/force-rerun event.
 
-    Each event is one student. A student who is already being graded is skipped,
-    so repeated pushes never start duplicate runs. Failures are logged and the
-    event dropped — the one-minute poll is the safety net.
+    Each event is one student. A student who is already being graded is *deferred*,
+    never dropped: the event is put back on the queue and runs as soon as that
+    student's current job finishes. That is what makes "push while a test is
+    running" grade the newer commit instead of losing it. Failures are logged and
+    the event dropped -- the periodic full pass is the safety net.
     """
     events, full_pass = consume_triggers()
     # Drop jobs whose process has exited first, so a finished student does not
@@ -458,11 +473,6 @@ def dispatch_triggers():
         assignment_id = event['assignment_id']
         user_id = event['user_id']
         key = _job_key(course_id, assignment_id, user_id)
-        if key in _running_jobs:
-            LOGGER.logger.info("Student %d on course %d/assignment %d is already being graded — "
-                               "skipping duplicate trigger."
-                               % (user_id, course_id, assignment_id))
-            continue
         directory = _directory_for_event(event) or event.get('directory') or ''
         if not directory:
             LOGGER.logger.warning("Trigger for student %d (course %d/assignment %d) has no "
@@ -472,22 +482,47 @@ def dispatch_triggers():
             continue
 
         event['directory'] = directory
-        pid = _spawn_job("student %d job" % user_id, _run_student_job, event)
-        if pid is not None:
-            _running_jobs[key] = (pid, time.time())
-            LOGGER.logger.info("Webhook trigger — started grading student %d "
-                               "(course %d/assignment %d)." % (user_id, course_id, assignment_id))
+        if key in _running_jobs:
+            # A test is already running for this student. Queue the event so the
+            # commit that just landed is graded once the current run finishes;
+            # dropping it would silently leave the student on the older commit.
+            requeue_student_trigger(course_id, assignment_id, user_id, directory)
+            LOGGER.logger.info(
+                "Student %d on course %d/assignment %d is already being graded — "
+                "queued this trigger for the next run." % (user_id, course_id, assignment_id))
+            continue
+
+        _start_student_job(event, course_id, assignment_id, user_id, key)
+
+
+def _start_student_job(event, course_id, assignment_id, user_id, key):
+    """Fork a worker for one student and record it as in flight."""
+    pid = _spawn_job("student %d job" % user_id, _run_student_job, event)
+    if pid is not None:
+        _running_jobs[key] = (pid, time.time())
+        LOGGER.logger.info("Webhook trigger — started grading student %d "
+                           "(course %d/assignment %d)." % (user_id, course_id, assignment_id))
+
+
+def _start_queued_student_jobs():
+    """Placeholder removed: a requeued trigger is picked up by the next dispatch.
+
+    Requeueing rewrites the event file, so `triggers_pending()` is true and the
+    loop wakes immediately; `dispatch_triggers()` then starts it because the
+    student is no longer in `_running_jobs`.
+    """
 
 
 def _request_full_pass():
-    """Mark the full pass as due now; `service_tick` starts it when it is safe."""
-    global _last_full_pass_at
+    """Mark the full pass as due now; `service_tick` starts it when it can."""
+    global _last_full_pass_at, _pass_requested
     _last_full_pass_at = None
+    _pass_requested = True
 
 
 def _schedule_full_pass():
     """Start the safety-net pass in a worker, unless one is already running."""
-    global _poll_pid, _last_full_pass_at
+    global _poll_pid, _last_full_pass_at, _pass_requested
     _reap_finished_jobs()
     if _poll_pid is not None:
         LOGGER.logger.debug("A full pass is already running — not starting another.")
@@ -496,32 +531,39 @@ def _schedule_full_pass():
     if pid is not None:
         _poll_pid = pid
         _last_full_pass_at = time.time()
+        _pass_requested = False
 
 
 def _full_pass_due():
-    """True when the one-minute safety-net pass is due and can be started.
+    """True when the periodic safety-net pass is due and can be started.
 
-    Deferred while any student job is in flight: the full pass overrides a live
-    tester lock when it sees a new commit, which would re-grade a student a
-    triggered job is already working on.
+    Deliberately NOT deferred while student jobs run: the pass iterates every
+    student and pulls each repository, and the per-student tester lock is what
+    stops two graders touching the same student. Gating the whole pass on
+    "nothing else is running" meant one long test could starve the safety net --
+    which is what pushes with a missed webhook depend on.
+
+    A pass that was explicitly *requested* (an unresolvable trigger) is started
+    straight away; otherwise the POLL_INTERVAL_SECONDS timer applies.
     """
     if _poll_pid is not None:
         return False
     _reap_finished_jobs()
-    if _running_jobs:
-        return False
+    if _pass_requested:
+        return True
     if _last_full_pass_at is None:
         return True
-    return (time.time() - _last_full_pass_at) >= TRIGGER_WAIT_SECONDS
+    return (time.time() - _last_full_pass_at) >= POLL_INTERVAL_SECONDS
 
 
 def service_tick():
     """One iteration of the daemon loop.
 
     Dispatch pending per-student events first, so a push is graded immediately
-    and the loop returns to the trigger wait without being held up. The full pass
-    only runs when TRIGGER_WAIT_SECONDS has elapsed, so a burst of webhooks never
-    turns into a burst of whole-course passes.
+    and the loop returns to the trigger wait without being held up. Then run the
+    periodic full pass when it is due. The two are safe to overlap because every
+    grader takes a per-student tester lock; that lock -- not a global idle check
+    -- is what prevents grading the same student twice.
     """
     dispatch_triggers()
     if _full_pass_due():

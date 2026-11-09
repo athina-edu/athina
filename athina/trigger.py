@@ -23,6 +23,7 @@ __all__ = (
     'TRIGGER_POLL_SECONDS',
     'consume_triggers',
     'full_pass_trigger_file',
+    'requeue_student_trigger',
     'triggers_pending',
     'trigger_dir',
     'write_full_pass_trigger',
@@ -146,6 +147,34 @@ def write_student_trigger(course_id, assignment_id, user_id,
         "created": created,
     }
     path = os.path.join(trigger_dir(root), "student-%s-%s-%d-%s.json" % (
+        event["assignment_id"], event["user_id"],
+        int(created * 1000), secrets.token_hex(8)))
+    _atomic_write(path, json.dumps(event))
+    return path
+
+
+def requeue_student_trigger(course_id, assignment_id, user_id, assignment_dir="",
+                            root=None, delay=1.0):
+    """Put a trigger back so it runs as soon as the student's current job ends.
+
+    Used when a push arrives while that student is already being graded: the
+    newer commit must not be lost. Writing the event file back (rather than
+    dropping it) means the idle loop wakes on `triggers_pending()` and the next
+    dispatch starts the job, because the student is no longer in flight by then.
+
+    `created` is pushed slightly into the future so the file sorts after any
+    event still being consumed in this pass.
+    """
+    created = time.time() + delay
+    event = {
+        "type": "student",
+        "course_id": int(course_id),
+        "assignment_id": int(assignment_id),
+        "user_id": int(user_id),
+        "directory": assignment_dir or "",
+        "created": created,
+    }
+    path = os.path.join(trigger_dir(root), "requeued-%s-%s-%d-%s.json" % (
         event["assignment_id"], event["user_id"],
         int(created * 1000), secrets.token_hex(8)))
     _atomic_write(path, json.dumps(event))

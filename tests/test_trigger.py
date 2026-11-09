@@ -1,9 +1,12 @@
 """Tests for the webhook trigger/dispatch mechanism.
 
-Covers the three properties the daemon must guarantee:
+Covers the four properties the daemon must guarantee:
   1. a webhook event grades only the student named in it;
   2. the trigger/poll loop is never blocked by testing (jobs are forked);
-  3. a second event for a student who is already being graded is dropped.
+  3. a push for a student who is already being graded never starts a second
+     test for them, but is queued so the newer commit is graded afterwards;
+  4. the periodic full pass runs alongside student jobs, because the per-student
+     tester lock -- not a global idle gate -- is what prevents double grading.
 """
 import json
 import os
@@ -57,6 +60,29 @@ class TestTriggerFiles(TestCase):
         trigger.write_student_trigger(7, 3, 43, root=self.root)
         events, _ = trigger.consume_triggers(root=self.root)
         self.assertEqual(sorted(e['user_id'] for e in events), [42, 43])
+
+    def test_requeue_round_trips_as_a_normal_student_event(self):
+        """A deferred push is re-queued, so the next dispatch picks it up."""
+        trigger.requeue_student_trigger(7, 3, 42, assignment_dir="/code/a", root=self.root)
+        self.assertTrue(trigger.triggers_pending(root=self.root))
+        events, _ = trigger.consume_triggers(root=self.root)
+        self.assertEqual(len(events), 1)
+        self.assertEqual((events[0]['course_id'], events[0]['assignment_id'],
+                          events[0]['user_id']), (7, 3, 42))
+        self.assertEqual(events[0]['directory'], "/code/a")
+
+    def test_requeue_writes_a_distinct_file_each_time(self):
+        """Repeated pushes during one test must not collapse into one event."""
+        p1 = trigger.requeue_student_trigger(7, 3, 42, root=self.root)
+        p2 = trigger.requeue_student_trigger(7, 3, 42, root=self.root)
+        self.assertNotEqual(p1, p2)
+
+    def test_requeue_sorts_after_events_already_being_consumed(self):
+        trigger.write_student_trigger(7, 3, 42, root=self.root)
+        path = trigger.requeue_student_trigger(7, 3, 42, root=self.root, delay=1.0)
+        self.assertIn('requeued-', os.path.basename(path))
+        with open(path) as fh:
+            self.assertGreater(json.load(fh)['created'], time.time())
 
     def test_full_pass_marker(self):
         trigger.write_full_pass_trigger(root=self.root)
@@ -234,8 +260,12 @@ class TestDispatch(TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def test_dispatch_is_skipped_while_job_runs(self):
-        """No duplicate job for a student already being graded."""
+    def test_dispatch_defers_and_requeues_while_job_runs(self):
+        """A push during a live test must be queued, not dropped.
+
+        No duplicate job starts, but the event is written back so the newer
+        commit is graded as soon as the running test finishes.
+        """
         # A real live child, so the reaper keeps the job marked as running.
         pid = os.fork()
         if pid == 0:  # pragma: no cover - child
@@ -247,9 +277,12 @@ class TestDispatch(TestCase):
         events = [{'type': 'student', 'course_id': 7, 'assignment_id': 3,
                    'user_id': 42, 'directory': '/code/a'}]
         with mock.patch.object(cli, 'consume_triggers', return_value=(events, False)), \
-                mock.patch.object(cli, '_spawn_job') as mock_spawn:
+                mock.patch.object(cli, '_spawn_job') as mock_spawn, \
+                mock.patch.object(cli, 'requeue_student_trigger') as mock_requeue:
             cli.dispatch_triggers()
-        mock_spawn.assert_not_called()
+        mock_spawn.assert_not_called()          # never two graders for one student
+        mock_requeue.assert_called_once()       # ...but the newer commit is kept
+        self.assertEqual(mock_requeue.call_args[0][:3], (7, 3, 42))
 
     def test_dispatch_spawns_one_job_per_student(self):
         events = [
@@ -304,7 +337,13 @@ class TestDispatch(TestCase):
         mock_spawn.assert_not_called()
         self.assertIsNone(cli._last_full_pass_at)
 
-    def test_requested_pass_runs_once_jobs_finish(self):
+    def test_full_pass_runs_alongside_student_jobs(self):
+        """The safety net must not be starved by a long-running student test.
+
+        Correctness comes from the per-student tester lock, not from a global
+        "everything is idle" gate: a pass that waits for every job to finish is a
+        safety net that never runs when the course is busy.
+        """
         cli._last_full_pass_at = None
         pid = os.fork()
         if pid == 0:  # pragma: no cover - child
@@ -314,12 +353,20 @@ class TestDispatch(TestCase):
         cli._running_jobs[(7, 3, 42)] = (pid, 0)
 
         with mock.patch.object(cli, 'dispatch_triggers'), \
-                mock.patch.object(cli, '_spawn_job') as mock_spawn:
+                mock.patch.object(cli, '_spawn_job', return_value=4321) as mock_spawn, \
+                mock.patch.object(cli, '_reap_finished_jobs'):
             cli.service_tick()
-        mock_spawn.assert_not_called()  # a student job is still in flight
+        self.assertIs(mock_spawn.call_args[0][1], cli.main)
 
-        _kill_child(pid)
-        cli._running_jobs.clear()
+    def test_requested_pass_is_not_delayed_by_running_jobs(self):
+        cli._request_full_pass()
+        pid = os.fork()
+        if pid == 0:  # pragma: no cover - child
+            time.sleep(30)
+            os._exit(0)
+        self.addCleanup(_kill_child, pid)
+        cli._running_jobs[(7, 3, 42)] = (pid, 0)
+
         with mock.patch.object(cli, 'dispatch_triggers'), \
                 mock.patch.object(cli, '_spawn_job', return_value=4321) as mock_spawn, \
                 mock.patch.object(cli, '_reap_finished_jobs'):

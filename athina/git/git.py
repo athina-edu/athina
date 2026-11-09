@@ -128,12 +128,18 @@ class Repository:
         return changed_state
 
     def _webhook_fallback_due(self):
-        """True when the periodic safety-net poll for this assignment is due.
+        """True when this student's periodic safety-net poll is due.
 
-        When webhooks are enabled the repo is normally pulled only on a push event.
-        This returns True once every configuration.webhook_fallback_interval seconds
-        (per assignment) so repositories are still checked periodically even if a
-        webhook delivery never arrives.
+        When webhooks are enabled the repo is normally pulled only on a push
+        event, so the safety net exists for deliveries that never arrive.
+
+        The clock is **per student**. `check_repository_changes()` runs the
+        handler chain once per student, so a per-assignment timestamp was consumed
+        by whichever student came first in the roster and every other student was
+        skipped forever -- their "safety net" never ran at all (observed on the
+        live install: 11,261 skipped pulls versus 17 fallback polls, all of them
+        for the first user). Keeping the stamp on the user row gives each student
+        their own tick.
         """
         interval = getattr(self.configuration, 'webhook_fallback_interval', 0)
         try:
@@ -142,26 +148,26 @@ class Repository:
             return False
         if interval <= 0:
             return False
-        last = load_key_from_assignment_data(self.configuration.course_id,
-                                             self.configuration.assignment_id,
-                                             'webhook_fallback_last')
+        last = getattr(self.user_values, 'webhook_fallback_at', None)
         if last is None:
             return True
         try:
-            last_ts = datetime.fromisoformat(last)
-        except (TypeError, ValueError):
+            elapsed = (datetime.now(tzlocal()).replace(tzinfo=None) - last).total_seconds()
+        except TypeError:
             return True
-        return (datetime.now(tzlocal()).replace(tzinfo=None) - last_ts).total_seconds() >= interval
+        return elapsed >= interval
 
     def _mark_webhook_fallback_check(self):
-        """Record that the safety-net poll just ran, for _webhook_fallback_due."""
+        """Record that this student's safety-net poll just ran."""
+        now = datetime.now(tzlocal()).replace(tzinfo=None)
         try:
-            update_key_in_assignment_data(
-                self.configuration.course_id, self.configuration.assignment_id,
-                'webhook_fallback_last',
-                datetime.now(tzlocal()).replace(tzinfo=None).isoformat())
+            Users.update(webhook_fallback_at=now).where(
+                Users.user_id == self.user_values.user_id,
+                Users.course_id == self.user_values.course_id,
+                Users.assignment_id == self.user_values.assignment_id).execute()
+            self.user_values.webhook_fallback_at = now
         except Exception:
-            # Best-effort bookkeeping; a missing table should not break grading.
+            # Best-effort bookkeeping; a missing column/table must not break grading.
             pass
 
     def pull_git_repo(self, user_id):

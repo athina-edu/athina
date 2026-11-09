@@ -162,11 +162,17 @@ docker_no_internet: false
 
 # Currently this is supported only for gitlab and requires that the personal access token for git
 # that is provided has read/write privileges in the user's repository.
-# Upon git clone, Athina will try once to set the webhook. If successful (requires also the webhook's website
-# to be accessible) then it will monitor repository changes based on push events. If the webhook fails,
-# Athina will git pull on a student's repository every 60 secs (the fallback behavior).
+# Upon git clone, Athina will try once to set the webhook. If successful a push grades
+# only the student who pushed, immediately. The periodic full pass below still runs as a
+# safety net for pushes whose delivery never arrived.
 # If enabled, it can substantially speed up athina's processing of repo changes.
 use_webhook: false
+
+# How often (seconds) a full pass over every active assignment pulls each repository and
+# grades anything whose commit moved. This runs even while other students are being
+# tested; the per-student tester lock is what prevents grading the same student twice.
+# Set to 0 to disable the periodic pass (webhooks only).
+webhook_fallback_interval: 120
 
 # If you are using gitlab, you can enforce that a repository is private otherwise it won't be graded
 # This is so that others student won't be able to find past or current assignments from other students

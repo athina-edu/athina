@@ -138,6 +138,19 @@ class Database:
             # transient error: leave the column alone and carry on.
             pass
 
+        # The webhook fallback clock moved from assignmentdata to a per-user
+        # column (see git._webhook_fallback_due). Add it to existing databases.
+        try:
+            cursor = DB.execute_sql(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+                "AND COLUMN_NAME = 'webhook_fallback_at'")
+            row = cursor.fetchone()
+            if row and int(row[0] or 0) == 0:
+                DB.execute_sql("ALTER TABLE users ADD COLUMN webhook_fallback_at DATETIME NULL")
+        except Exception:
+            pass
+
     @staticmethod
     def close_db():
         DB.close()
@@ -243,6 +256,10 @@ class Users(BaseModel):
     use_webhook = peewee.BooleanField(default=False)
     webhook_event = peewee.BooleanField(default=False)
     webhook_token = peewee.CharField(max_length=255, default='')
+    # Timestamp of this student's last safety-net poll (see git._webhook_fallback_due).
+    # Per user, not per assignment: the change-checking handler runs once per
+    # student, so a shared stamp let the first student consume every tick.
+    webhook_fallback_at = peewee.DateTimeField(null=True)
     llm_guidance = peewee.TextField(default="", null=True)
 
     class Meta:

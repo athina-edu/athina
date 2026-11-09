@@ -527,9 +527,16 @@ class Tester:
                                     "A test is already running for %s — skipping the triggered run." %
                                     user.user_fullname)
                                 continue
-                            self.logger.logger.info("New commit detected — overriding active tester lock for %s" %
-                                                    user.user_fullname)
-                            self._tester_lock_unlock(user.user_id, lock=False)
+                            # Full pass: a test for this student is already in flight.
+                            # Do NOT override its lock and do NOT drop the newer
+                            # commit -- leave the student out of this pass. The
+                            # periodic pass (and the in-flight job) will pick the new
+                            # commit up when that run finishes, because the stored
+                            # commit_date only advances to what was actually tested.
+                            self.logger.logger.info(
+                                "A test is already running for %s — leaving this newer commit to the "
+                                "next pass." % user.user_fullname)
+                            continue
                         reverse_repository_index[user.repository_url] = user.user_id
                     else:
                         self.logger.logger.warning("Tester active for user %s - %s - %s" %
