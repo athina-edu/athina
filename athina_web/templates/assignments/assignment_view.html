@@ -103,7 +103,7 @@
                 <td>
                     <div class="btn-group btn-group-sm" role="group">
                         <a class="btn btn-outline-primary" href="{% url 'assignments:assignment_report' assignment_id=assignment.pk user_id=user.0 report_type='test' %}">📋 Test</a>
-                        <a class="btn btn-outline-secondary" href="{% url 'assignments:assignment_report' assignment_id=assignment.pk user_id=user.0 report_type='plagiarism' %}">🔍 Plagiarism</a>
+                        <a class="btn btn-outline-secondary" href="{% url 'assignments:assignment_report' assignment_id=assignment.pk user_id=user.0 report_type='plagiarism' %}" target="_blank" rel="noopener noreferrer">🔍 Plagiarism</a>
                         {% if can_override %}
                         <a class="btn btn-outline-warning" title="Adjust individual test scores and post them"
                            href="{% url 'assignments:assignment_overrides' assignment_id=assignment.pk user_id=user.0 %}">✏️ Adjust</a>
