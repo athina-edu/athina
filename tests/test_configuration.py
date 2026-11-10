@@ -43,6 +43,26 @@ class TestConfiguration(TestCase):
         result = Configuration.find_yaml("/tmp/somefile.yaml")
         self.assertEqual(result, "/tmp/somefile.yaml")
 
+    def test_load_configuration_config_dir_without_trailing_slash(self):
+        """config_dir must be the assignment directory either way.
+
+        The web API reports "<dir>/" but a trigger event or --config may pass
+        "<dir>". os.path.dirname() on the bare form yielded the parent, so .env,
+        tests/ and repodata<id> resolved one level too high and grading silently
+        submitted 0.
+        """
+        assignment_dir = os.path.join(TEST_TMP_DIR, "Assignment7")
+        os.makedirs(os.path.join(assignment_dir, "tests"), exist_ok=True)
+        with open(os.path.join(assignment_dir, "athina.yaml"), "w") as f:
+            f.write("course_id: 2\n")
+
+        for directory in (assignment_dir, assignment_dir + "/"):
+            configuration, _ = make_config()
+            configuration.load_configuration(directory)
+            self.assertEqual(configuration.config_dir, assignment_dir, directory)
+            self.assertEqual(configuration.config_filename, "athina.yaml", directory)
+            self.assertEqual(configuration.course_id, 2, directory)
+
     def test_default_dir(self):
         Configuration.default_dir()
         self.assertTrue(os.path.isdir(Configuration.config_dir))

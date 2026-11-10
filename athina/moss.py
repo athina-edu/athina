@@ -56,8 +56,15 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
         logger.logger.error("copydetect package not installed. Run: pip install copydetect")
         return results
 
-    plagiarism = Plagiarism(logger=logger, service_type="copydetect",
-                            threshold=getattr(configuration, 'copydetect_threshold', 0.33))
+    plagiarism = Plagiarism(
+        logger=logger, service_type="copydetect",
+        threshold=getattr(configuration, 'copydetect_threshold', 0.33),
+        noise_threshold=getattr(configuration, 'copydetect_noise_threshold', 25),
+        guarantee_threshold=getattr(configuration, 'copydetect_guarantee_threshold', 25),
+        disable_filtering=getattr(configuration, 'copydetect_disable_filtering', False),
+        same_name_only=getattr(configuration, 'copydetect_same_name_only', False),
+        boilerplate_dir=getattr(configuration, 'copydetect_boilerplate_dir', None),
+    )
 
     directory_list = _collect_submission_directories(configuration)
 
@@ -134,6 +141,11 @@ class Plagiarism:
     service_type = None
     logger = None
     threshold = 0.33
+    noise_threshold = 25
+    guarantee_threshold = 25
+    disable_filtering = False
+    same_name_only = False
+    boilerplate_dir = None
 
     def __init__(self, logger, **kwargs):
         self.logger = logger
@@ -144,6 +156,11 @@ class Plagiarism:
                 raise ImportError('copydetect package not installed. Run: pip install copydetect')
             self.service_type = "copydetect"
             self.threshold = kwargs.get("threshold", 0.33)
+            self.noise_threshold = kwargs.get("noise_threshold", 25)
+            self.guarantee_threshold = kwargs.get("guarantee_threshold", 25)
+            self.disable_filtering = kwargs.get("disable_filtering", False)
+            self.same_name_only = kwargs.get("same_name_only", False)
+            self.boilerplate_dir = kwargs.get("boilerplate_dir", None)
         else:
             self.service_type = None
 
@@ -169,7 +186,8 @@ class Plagiarism:
         self.logger.logger.info("CopyDetect: comparing %d student directories (extensions: %s)" % (
             len(student_dirs), ext_list or "auto"))
 
-        detector = self._run_detector(student_dirs, ext_list)
+        report_path = os.path.join(os.path.dirname(student_dirs[0]), "..", "copydetect_report.html")
+        detector = self._run_detector(student_dirs, ext_list, report_path=report_path)
         if detector is None:
             return dict()
 
@@ -191,15 +209,30 @@ class Plagiarism:
                 extensions.add(glob_part[2:])
         return student_dirs, extensions
 
-    def _run_detector(self, student_dirs, ext_list):
-        """Instantiate and run the CopyDetector, or None on failure."""
+    def _run_detector(self, student_dirs, ext_list, report_path=None):
+        """Instantiate and run the CopyDetector, or None on failure.
+
+        copydetect>=0.5 renamed the constructor kwarg that used to be
+        ``disable_autoopen`` to ``autoopen`` (and dropped the automatic-open
+        default), and ``generate_html_report`` no longer takes a path -- the
+        output path must be set on construction via ``out_file`` instead.
+        """
         try:
-            detector = _copydetect.CopyDetector(
+            kwargs = dict(
                 test_dirs=student_dirs,
                 extensions=ext_list,
                 display_t=self.threshold,
-                disable_autoopen=True
+                noise_t=self.noise_threshold,
+                guarantee_t=self.guarantee_threshold,
+                disable_filtering=self.disable_filtering,
+                same_name_only=self.same_name_only,
+                autoopen=False,
             )
+            if report_path is not None:
+                kwargs["out_file"] = report_path
+            if self.boilerplate_dir is not None and os.path.isdir(self.boilerplate_dir):
+                kwargs["boilerplate_dirs"] = [self.boilerplate_dir]
+            detector = _copydetect.CopyDetector(**kwargs)
             detector.run()
             return detector
         except Exception as e:
@@ -207,11 +240,16 @@ class Plagiarism:
             return None
 
     def _save_html_report(self, detector, student_dirs, course_id, assignment_id):
-        """Generate the HTML report and record its path against the assignment."""
+        """Generate the HTML report and record its path against the assignment.
+
+        The report path must already have been set as ``out_file`` when the
+        detector was constructed (see ``_run_detector``); copydetect>=0.5's
+        ``generate_html_report`` writes there and takes no path argument.
+        """
         report_dir = os.path.join(os.path.dirname(student_dirs[0]), "..")
         report_path = os.path.join(report_dir, "copydetect_report.html")
         try:
-            detector.generate_html_report(os.path.dirname(report_path))
+            detector.generate_html_report()
             self.logger.logger.info("CopyDetect report saved to: %s" % report_path)
             update_key_in_assignment_data(course_id, assignment_id, "plagiarism_report", report_path)
         except Exception as e:
@@ -222,21 +260,31 @@ class Plagiarism:
 
         CopyDetect indexes files, not students, so file paths are parsed to
         recover the user id from the ``.../u<id>/...`` directory layout.
+
+        copydetect>=0.5 renamed ``file_list``/``similarity`` to
+        ``test_files``/``similarity_matrix``, and the matrix now holds a pair
+        of asymmetric containment percentages per file pair (how much of
+        file i overlaps file j, and vice versa -- they differ when the two
+        files are different lengths) instead of one symmetric value. We take
+        the higher of the two, since either direction is equally valid
+        evidence of overlap and a partial copy embedded in a longer file
+        should not be diluted by the longer file's own size.
         """
         file_to_user = {}
-        for idx, filepath in enumerate(detector.file_list):
+        for idx, filepath in enumerate(detector.test_files):
             match = re.search(r'u(\d+)/', filepath)
             if match:
                 file_to_user[idx] = int(match.group(1))
 
-        similarity_matrix = detector.similarity
+        similarity_matrix = detector.similarity_matrix
         comparisons = dict()
 
         n = similarity_matrix.shape[0]
         for i in range(n):
             for j in range(i + 1, n):
-                sim_pct = int(round(similarity_matrix[i][j] * 100))
-                if sim_pct == 0:
+                sim_i, sim_j = similarity_matrix[i][j]
+                sim_pct = int(round(max(sim_i, sim_j) * 100))
+                if sim_pct <= 0:
                     continue
                 user_i = file_to_user.get(i)
                 user_j = file_to_user.get(j)

@@ -17,10 +17,17 @@ from tests.test_athina import create_logger
 
 
 def _detector_stub(similarity, file_list):
-    """Build a stand-in for a ran CopyDetector."""
+    """Build a stand-in for a ran CopyDetector.
+
+    ``similarity`` is given as the old, symmetric (n, n) matrix copydetect
+    used to expose; it is expanded into copydetect>=0.5's (n, n, 2) shape by
+    duplicating each value for both containment directions, since the tests
+    using this helper only care about the symmetric case.
+    """
     detector = mock.Mock()
-    detector.similarity = np.array(similarity)
-    detector.file_list = file_list
+    sym = np.array(similarity)
+    detector.similarity_matrix = np.stack([sym, sym], axis=-1)
+    detector.test_files = file_list
     return detector
 
 
@@ -111,6 +118,25 @@ class TestPlagiarism(TestCase):
     def test_plagiarism_init_copydetect_default_threshold(self):
         p = Plagiarism(logger=create_logger(), service_type="copydetect")
         self.assertEqual(p.threshold, 0.33)
+
+    def test_plagiarism_init_copydetect_defaults_for_new_knobs(self):
+        p = Plagiarism(logger=create_logger(), service_type="copydetect")
+        self.assertEqual(p.noise_threshold, 25)
+        self.assertEqual(p.guarantee_threshold, 25)
+        self.assertFalse(p.disable_filtering)
+        self.assertFalse(p.same_name_only)
+        self.assertIsNone(p.boilerplate_dir)
+
+    def test_plagiarism_init_copydetect_custom_knobs(self):
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       noise_threshold=150, guarantee_threshold=150,
+                       disable_filtering=True, same_name_only=True,
+                       boilerplate_dir="/tmp/boilerplate")
+        self.assertEqual(p.noise_threshold, 150)
+        self.assertEqual(p.guarantee_threshold, 150)
+        self.assertTrue(p.disable_filtering)
+        self.assertTrue(p.same_name_only)
+        self.assertEqual(p.boilerplate_dir, "/tmp/boilerplate")
 
     def test_init_copydetect_without_package_raises(self):
         with mock.patch('athina.moss._HAS_COPYDETECT', False):
@@ -206,6 +232,39 @@ class TestRunDetector(TestCase):
         cd.CopyDetector.assert_called_once()
         cd.CopyDetector.return_value.run.assert_called_once()
         self.assertIs(detector, cd.CopyDetector.return_value)
+
+    def test_passes_tuning_knobs_to_copydetector(self):
+        """The constructor must use copydetect's current kwarg names
+        (autoopen, not disable_autoopen) and forward the tuning knobs."""
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       noise_threshold=150, guarantee_threshold=150,
+                       disable_filtering=True, same_name_only=True)
+        with mock.patch('athina.moss._copydetect') as cd:
+            p._run_detector(["/tmp/u1"], ["sql"], report_path="/tmp/report.html")
+        _, kwargs = cd.CopyDetector.call_args
+        self.assertEqual(kwargs["noise_t"], 150)
+        self.assertEqual(kwargs["guarantee_t"], 150)
+        self.assertTrue(kwargs["disable_filtering"])
+        self.assertTrue(kwargs["same_name_only"])
+        self.assertEqual(kwargs["out_file"], "/tmp/report.html")
+        self.assertEqual(kwargs["autoopen"], False)
+        self.assertNotIn("disable_autoopen", kwargs)
+
+    def test_boilerplate_dir_forwarded_when_it_exists(self):
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       boilerplate_dir="/tmp")  # always exists
+        with mock.patch('athina.moss._copydetect') as cd:
+            p._run_detector(["/tmp/u1"], ["sql"])
+        _, kwargs = cd.CopyDetector.call_args
+        self.assertEqual(kwargs["boilerplate_dirs"], ["/tmp"])
+
+    def test_boilerplate_dir_omitted_when_missing(self):
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       boilerplate_dir="/tmp/does-not-exist-at-all")
+        with mock.patch('athina.moss._copydetect') as cd:
+            p._run_detector(["/tmp/u1"], ["sql"])
+        _, kwargs = cd.CopyDetector.call_args
+        self.assertNotIn("boilerplate_dirs", kwargs)
 
     def test_returns_none_and_logs_on_failure(self):
         p = Plagiarism(logger=create_logger(), service_type="copydetect")

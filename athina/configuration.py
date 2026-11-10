@@ -26,6 +26,34 @@ class Configuration:
     plagiarism_pattern = "*.py"  # file glob pattern for plagiarism detection
     plagiarism_publish = False  # whether to publish similarity results to e-learning
     copydetect_threshold = 0.33  # similarity threshold for display (0.0-1.0)
+    # copydetect's winnowing match thresholds, in characters of matching token
+    # sequence. The library's own defaults (25/25) are tuned for languages like
+    # Python/Java with large token vocabularies and control flow; short,
+    # single-statement submissions in a constrained grammar (SQL answering a
+    # fixed prompt against a fixed schema) collapse to the same few structural
+    # shapes at that threshold, producing near-universal false positives.
+    # Raise both for terse/constrained languages.
+    copydetect_noise_threshold = 25
+    copydetect_guarantee_threshold = 25
+    # If true, compares the literal token stream instead of copydetect's default
+    # filtered/abstracted one (which replaces identifiers with generic
+    # placeholders). The abstraction is appropriate for general-purpose code,
+    # where two students renaming the same variables is not meaningful, but for
+    # SQL most of a query's identifiers are schema column/table names every
+    # correct submission must reference verbatim, so abstracting them away
+    # erases the very distinction (a student's own alias/formatting choices)
+    # that would indicate real copying. Keep false for general-purpose code.
+    copydetect_disable_filtering = False
+    # If true, only compares files with the same name across submissions (e.g.
+    # q3.sql against other students' q3.sql, never q4.sql) -- appropriate when
+    # each question is its own file, meaningless otherwise.
+    copydetect_same_name_only = False
+    # Directory of instructor-provided starter/boilerplate code (e.g. the
+    # per-question stub files given to students) to exclude from comparison, so
+    # shared prompt text and mandated snippets don't count as similarity.
+    # Defaults to the assignment config repo's own "assignments" directory
+    # (the student-facing half of athina-assignments-style repos) when present.
+    copydetect_boilerplate_dir = None
     check_plagiarism_hour = 1
     git_username = "test"
     git_password = "test"
@@ -208,8 +236,9 @@ class Configuration:
 
     def load_configuration(self, directory):
         # Load Configuration file
+        config_path = self.find_yaml(directory)
         try:
-            with open(self.find_yaml(directory), 'r') as stream:
+            with open(config_path, 'r') as stream:
                 config = yaml.safe_load(stream)
         except (yaml.YAMLError, IsADirectoryError) as exc:
             self.logger.logger.error(exc)
@@ -222,9 +251,19 @@ class Configuration:
         # Max memory that can be used by docker in docker notation, 1m, 2g etc.
         self.docker_memory_limit = os.environ.get('DOCKER_MEMORY_LIMIT', "2g")
 
-        # Read Configuration file
-        self.config_dir = os.path.dirname(directory)
-        self.config_filename = os.path.split(self.find_yaml(directory))[1]  # cfg filename or dir name
+        # Read Configuration file.
+        #
+        # Resolve the directory from the config file itself rather than from the
+        # caller's argument. Callers pass the assignment directory both with and
+        # without a trailing slash: the web API reports "<dir>/", while a webhook
+        # trigger event or a hand-written --config may omit it. os.path.dirname()
+        # on the bare form returns the *parent* of the assignment, so the .env,
+        # tests/ and repodata<id> directories were all resolved one level too
+        # high -- grading then failed to authenticate (401), copied no tests and
+        # silently submitted a grade of 0.
+        config_path = os.path.normpath(config_path)
+        self.config_dir = config_path if os.path.isdir(config_path) else os.path.dirname(config_path)
+        self.config_filename = os.path.split(config_path)[1]  # cfg filename or dir name
 
         # Load assignment-specific .env (written by athina-web with LLM credentials,
         # git credentials, etc.) into the process environment so the LLM section below
@@ -253,6 +292,15 @@ class Configuration:
         self.load_value(config, 'plagiarism_pattern', self.plagiarism_pattern)
         self.load_value(config, 'plagiarism_publish', self.plagiarism_publish)
         self.load_value(config, 'copydetect_threshold', self.copydetect_threshold)
+        self.load_value(config, 'copydetect_noise_threshold', self.copydetect_noise_threshold)
+        self.load_value(config, 'copydetect_guarantee_threshold', self.copydetect_guarantee_threshold)
+        self.load_value(config, 'copydetect_disable_filtering', self.copydetect_disable_filtering)
+        self.load_value(config, 'copydetect_same_name_only', self.copydetect_same_name_only)
+        self.load_value(config, 'copydetect_boilerplate_dir', self.copydetect_boilerplate_dir)
+        if self.copydetect_boilerplate_dir is None:
+            default_boilerplate = os.path.join(self.config_dir, 'assignments')
+            if os.path.isdir(default_boilerplate):
+                self.copydetect_boilerplate_dir = default_boilerplate
 
         self.load_value(config, 'git_username', self.git_username)
         self.load_value(config, 'git_password', self.git_password)
