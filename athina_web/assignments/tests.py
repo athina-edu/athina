@@ -1,4 +1,6 @@
 import os
+import shutil
+import tempfile
 
 from django.conf import settings
 from django.test import TestCase
@@ -2159,3 +2161,99 @@ class TestSentinelToNone(TestCase):
 
     def test_none_passes_through(self):
         self.assertIsNone(assignment_views._sentinel_to_none(None))
+
+
+class TestPlagiarismFlag(TestCase):
+    """How a student's max similarity is classified against the class
+    baseline for the "Plagiarism Max/Avg" column -- CopyDetect's raw
+    percentage has no fixed good/bad meaning on its own."""
+
+    def test_not_yet_checked(self):
+        css, title = assignment_views._plagiarism_flag(None, None)
+        self.assertEqual(css, "text-muted")
+        self.assertIn("Not yet checked", title)
+
+    def test_no_baseline_yet(self):
+        css, title = assignment_views._plagiarism_flag(85, 0)
+        self.assertEqual(css, "text-muted")
+        self.assertIn("No class baseline", title)
+
+    def test_near_baseline_is_not_flagged(self):
+        css, title = assignment_views._plagiarism_flag(52, 48)
+        self.assertEqual(css, "text-success")
+        self.assertIn("independently-written", title)
+
+    def test_moderately_above_baseline_is_a_soft_warning(self):
+        css, title = assignment_views._plagiarism_flag(60, 48)
+        self.assertEqual(css, "text-warning font-weight-bold")
+
+    def test_well_above_baseline_is_flagged(self):
+        css, title = assignment_views._plagiarism_flag(85, 48)
+        self.assertEqual(css, "text-danger font-weight-bold")
+        self.assertIn("worth a closer look", title)
+
+
+class TestPlagiarismReportView(TestCase):
+    """The plagiarism report link must serve copydetect's HTML file
+    directly -- the grading DB stores a filesystem path, not a URL, so
+    redirecting the browser to it (the old behavior) 404s."""
+
+    def setUp(self):
+        self.faculty = User.objects.create_user(username='prof2', password='x')
+        self.faculty.profile.role = UserProfile.ROLE_FACULTY
+        self.faculty.profile.save()
+        self.course = Course.objects.create(name='CSCI 330', owner=self.faculty.id)
+
+        self.base_dir = tempfile.mkdtemp(prefix="test_base_dir_")
+        self.addCleanup(shutil.rmtree, self.base_dir, ignore_errors=True)
+        assignment_dir = os.path.join(self.base_dir, "athina_files", "4", "SQL 2")
+        os.makedirs(assignment_dir)
+        self.report_path = os.path.join(assignment_dir, "copydetect_report.html")
+        with open(self.report_path, "w") as f:
+            f.write("<html><body>copydetect report</body></html>")
+
+        self.assignment = Assignment.objects.create(
+            name='SQL 2', course=self.course, owner=self.faculty.id,
+            absolute_path='athina_files/4/SQL 2')
+        self.client.force_login(self.faculty)
+
+    def _get(self):
+        with mock.patch.object(assignment_views, 'settings') as mock_settings:
+            mock_settings.BASE_DIR = self.base_dir
+            with mock.patch.object(assignment_views, '_read_yaml_ids', return_value=(2, 4)), \
+                    mock.patch.object(assignment_views, 'connect_to_db') as mock_connect:
+                cursor = mock.Mock()
+                cursor.fetchone.return_value = (self.report_path,)
+                mock_connect.return_value.cursor.return_value = cursor
+                return self.client.get(reverse(
+                    'assignments:assignment_report',
+                    kwargs={'assignment_id': self.assignment.pk, 'user_id': 1,
+                           'report_type': 'plagiarism'}))
+
+    def test_serves_report_file_content_directly(self):
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"copydetect report", response.content)
+        self.assertEqual(response['Content-Type'], 'text/html')
+
+    def test_path_outside_assignment_dir_is_refused(self):
+        outside = tempfile.mkdtemp(prefix="test_outside_")
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        sneaky_path = os.path.join(outside, "secret.html")
+        with open(sneaky_path, "w") as f:
+            f.write("should never be served")
+
+        with mock.patch.object(assignment_views, 'settings') as mock_settings:
+            mock_settings.BASE_DIR = self.base_dir
+            with mock.patch.object(assignment_views, '_read_yaml_ids', return_value=(2, 4)), \
+                    mock.patch.object(assignment_views, 'connect_to_db') as mock_connect:
+                cursor = mock.Mock()
+                cursor.fetchone.return_value = (sneaky_path,)
+                mock_connect.return_value.cursor.return_value = cursor
+                response = self.client.get(reverse(
+                    'assignments:assignment_report',
+                    kwargs={'assignment_id': self.assignment.pk, 'user_id': 1,
+                           'report_type': 'plagiarism'}))
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(b"should never be served", response.content)

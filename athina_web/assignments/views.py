@@ -598,6 +598,38 @@ def assignment_log(request, assignment_id):
         return redirect('filemanager:view_file', inner_path="%s%s%s" % (assignment.name, "|", latest_file))
 
 
+def _plagiarism_flag(max_sim, avg_sim):
+    """Classify a student's max similarity relative to the class baseline.
+
+    CopyDetect's raw percentage has no fixed good/bad meaning by itself --
+    a terse, schema-constrained assignment can put *every* honestly,
+    independently-written submission's baseline similarity in the same
+    range (shared boilerplate, few ways to phrase a correct short answer).
+    What's actually informative is how far a student's highest match sits
+    above moss_average, the class-wide mean similarity for this assignment
+    (computed once per run and stored on every student row) -- that
+    average *is* the "normal for this assignment" baseline to read the max
+    against, not an absolute threshold.
+    """
+    if max_sim is None:
+        return "text-muted", "Not yet checked for plagiarism."
+    if not avg_sim:
+        return "text-muted", "No class baseline yet (average not computed)."
+    delta = max_sim - avg_sim
+    if delta >= 20:
+        return ("text-danger font-weight-bold",
+               "%s%% above this assignment's class-average similarity (%s%%) -- "
+               "worth a closer look." % (format(delta, '+'), avg_sim))
+    if delta >= 10:
+        return ("text-warning font-weight-bold",
+               "%s%% above this assignment's class-average similarity (%s%%)." %
+               (format(delta, '+'), avg_sim))
+    return ("text-success",
+           "%s%% vs. this assignment's class-average similarity (%s%%) -- "
+           "in the range expected for independently-written work." %
+           (format(delta, '+'), avg_sim))
+
+
 @login_required
 def assignment_view(request, assignment_id):
     assignment = get_object_or_404(Assignment, pk=assignment_id)
@@ -673,6 +705,7 @@ def assignment_view(request, assignment_id):
             repo_url = user[3] or ''
             issues_url = _repo_url_to_issues_url(repo_url, _get_owner_gitlab_host(assignment)) if assignment.output_method == 'gitlab_issues' else ''
             repo_web_url = _repo_url_to_web_url(repo_url)
+            plagiarism_class, plagiarism_title = _plagiarism_flag(user[8], user[9])
             # user[4] is commit_date: the commit the last grading run tested. Show it
             # as "last graded" so an instructor can tell which submission a grade came
             # from (it is refreshed before each test, so it tracks the graded commit).
@@ -685,7 +718,7 @@ def assignment_view(request, assignment_id):
                           user[8], user[9], user[11] or '',
                           repo_url, issues_url,
                           _sentinel_to_none(user[4]), _sentinel_to_none(user[5]),
-                          repo_web_url))
+                          repo_web_url, plagiarism_class, plagiarism_title))
     finally:
         conn.close()
 
@@ -781,11 +814,23 @@ def assignment_report(request, assignment_id, user_id, report_type):
             row = cur.fetchone()
             conn.close()
             if row and row[0]:
-                from django.utils.http import url_has_allowed_host_and_scheme
-                report_url = row[0]
-                if url_has_allowed_host_and_scheme(report_url, allowed_hosts={request.get_host()}):
-                    return redirect(report_url)
-                return HttpResponse("Invalid report URL", status=400)
+                # The grading daemon stores a filesystem path here (where it
+                # wrote copydetect's own self-contained HTML report), not a
+                # URL -- nginx has no route that serves it, so redirecting
+                # the browser to it 404s. Read and serve the file directly,
+                # confined to this assignment's own directory.
+                assignment_root = os.path.realpath(
+                    os.path.join(settings.BASE_DIR, assignment.absolute_path))
+                report_path = os.path.realpath(row[0])
+                if os.path.commonpath([assignment_root, report_path]) != assignment_root:
+                    return HttpResponse("Invalid report path", status=400)
+                try:
+                    with open(report_path, 'r', encoding='utf-8', errors='replace') as f:
+                        return HttpResponse(f.read(), content_type='text/html')
+                except OSError:
+                    return render(request, 'assignments/assignment_empty.html',
+                                  {"assignment": assignment,
+                                   "message": "Plagiarism report file is missing on disk."})
             return render(request, 'assignments/assignment_empty.html',
                           {"assignment": assignment,
                            "message": "No plagiarism report available for this assignment."})
