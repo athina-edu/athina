@@ -15,6 +15,8 @@ the local CopyDetect implementation. The ``plagiarism_max`` /
 import glob
 import os
 import re
+import shutil
+import tempfile
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -64,6 +66,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
         disable_filtering=getattr(configuration, 'copydetect_disable_filtering', False),
         same_name_only=getattr(configuration, 'copydetect_same_name_only', False),
         boilerplate_dir=getattr(configuration, 'copydetect_boilerplate_dir', None),
+        max_file_size=getattr(configuration, 'copydetect_max_file_size', 1024 * 1024),
     )
 
     directory_list = _collect_submission_directories(configuration)
@@ -146,6 +149,7 @@ class Plagiarism:
     disable_filtering = False
     same_name_only = False
     boilerplate_dir = None
+    max_file_size = 1024 * 1024  # bytes; see _stage_filtered_dirs
 
     def __init__(self, logger, **kwargs):
         self.logger = logger
@@ -161,6 +165,7 @@ class Plagiarism:
             self.disable_filtering = kwargs.get("disable_filtering", False)
             self.same_name_only = kwargs.get("same_name_only", False)
             self.boilerplate_dir = kwargs.get("boilerplate_dir", None)
+            self.max_file_size = kwargs.get("max_file_size", 1024 * 1024)
         else:
             self.service_type = None
 
@@ -183,17 +188,69 @@ class Plagiarism:
             return dict()
 
         ext_list = list(extensions) if extensions else None
-        self.logger.logger.info("CopyDetect: comparing %d student directories (extensions: %s)" % (
-            len(student_dirs), ext_list or "auto"))
+        staged_dirs, stage_root = self._stage_filtered_dirs(student_dirs, ext_list)
+        try:
+            if not staged_dirs:
+                self.logger.logger.warning(
+                    "CopyDetect: every submission was filtered out (no file under %d bytes)." %
+                    self.max_file_size)
+                return dict()
 
-        report_path = os.path.join(os.path.dirname(student_dirs[0]), "..", "copydetect_report.html")
-        detector = self._run_detector(student_dirs, ext_list, report_path=report_path)
-        if detector is None:
-            return dict()
+            self.logger.logger.info("CopyDetect: comparing %d student directories (extensions: %s)" % (
+                len(staged_dirs), ext_list or "auto"))
 
-        self._save_html_report(detector, student_dirs, course_id, assignment_id)
+            report_path = os.path.join(os.path.dirname(student_dirs[0]), "..", "copydetect_report.html")
+            detector = self._run_detector(staged_dirs, ext_list, report_path=report_path)
+            if detector is None:
+                return dict()
 
-        return self._map_results(detector)
+            self._save_html_report(detector, student_dirs, course_id, assignment_id)
+
+            return self._map_results(detector)
+        finally:
+            shutil.rmtree(stage_root, ignore_errors=True)
+
+    def _stage_filtered_dirs(self, student_dirs, ext_list):
+        """Symlink each submission file under ``max_file_size`` into a scratch
+        staging tree, so CopyDetector never reads an oversized file.
+
+        Students occasionally commit a large file unrelated to their actual
+        answers alongside them (a data dump, a build artifact) that happens to
+        match the plagiarism glob extension -- e.g. a multi-hundred-MB SQL data
+        dump matching a ``*.sql`` pattern meant for five short query answers.
+        copydetect has no size cutoff of its own, and winnowing a file that
+        size as though it were source code has driven this process to tens of
+        GB of memory before it could be killed. Filtering file-by-file (rather
+        than dropping the whole student directory on one oversized file) keeps
+        every other, legitimately-sized submission from that student in the
+        comparison.
+        """
+        stage_root = tempfile.mkdtemp(prefix="athina_copydetect_")
+        staged_dirs = []
+        patterns = ["*." + ext for ext in ext_list] if ext_list else ["*"]
+
+        for directory in student_dirs:
+            staged = os.path.join(stage_root, os.path.basename(directory.rstrip(os.sep)))
+            kept_any = False
+            for pattern in patterns:
+                for filepath in glob.glob(os.path.join(directory, pattern)):
+                    try:
+                        size = os.path.getsize(filepath)
+                    except OSError:
+                        continue
+                    if size > self.max_file_size:
+                        self.logger.logger.warning(
+                            "CopyDetect: skipping %s (%d bytes > max_file_size %d bytes)" % (
+                                filepath, size, self.max_file_size))
+                        continue
+                    if not kept_any:
+                        os.makedirs(staged, exist_ok=True)
+                        kept_any = True
+                    os.symlink(os.path.abspath(filepath), os.path.join(staged, os.path.basename(filepath)))
+            if kept_any:
+                staged_dirs.append(staged)
+
+        return staged_dirs, stage_root
 
     @staticmethod
     def _parse_patterns(folder_list):

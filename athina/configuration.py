@@ -54,6 +54,16 @@ class Configuration:
     # Defaults to the assignment config repo's own "assignments" directory
     # (the student-facing half of athina-assignments-style repos) when present.
     copydetect_boilerplate_dir = None
+    # Upper bound, in bytes, on any single file handed to CopyDetect. Students
+    # occasionally commit something large and unrelated to their actual answer
+    # alongside it (a data dump, a build artifact) that still matches the
+    # plagiarism glob pattern; copydetect has no size cutoff of its own, and
+    # winnowing a multi-hundred-MB file as though it were source code has
+    # driven the plagiarism check to tens of GB of memory before it could be
+    # killed. Files over this limit are skipped (not compared), everything
+    # else in that submission is still checked. Default is 1 MiB, far above any
+    # genuine source file for a course assignment.
+    copydetect_max_file_size = 1024 * 1024
     check_plagiarism_hour = 1
     git_username = "test"
     git_password = "test"
@@ -301,6 +311,7 @@ class Configuration:
             default_boilerplate = os.path.join(self.config_dir, 'assignments')
             if os.path.isdir(default_boilerplate):
                 self.copydetect_boilerplate_dir = default_boilerplate
+        self.load_value(config, 'copydetect_max_file_size', self.copydetect_max_file_size)
 
         self.load_value(config, 'git_username', self.git_username)
         self.load_value(config, 'git_password', self.git_password)

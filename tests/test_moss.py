@@ -3,6 +3,9 @@
 The implementation lives in ``athina.moss``; ``athina.plagiarism`` is a
 backwards-compatibility shim that re-exports from it (asserted below).
 """
+import os
+import shutil
+import tempfile
 from datetime import datetime
 from unittest import mock, TestCase
 
@@ -273,6 +276,106 @@ class TestRunDetector(TestCase):
             cd.CopyDetector.return_value.run.side_effect = Exception("boom")
             self.assertIsNone(p._run_detector(["/tmp/u1"], ["py"]))
             mock_err.assert_called_once()
+
+
+class TestStageFilteredDirs(TestCase):
+    """The oversized-file guard that keeps CopyDetect from reading, e.g., a
+    multi-hundred-MB data dump a student committed alongside their actual
+    answers (see the memory blow-up this was written to fix)."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="test_stage_")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _student_dir(self, name):
+        path = os.path.join(self.root, name)
+        os.makedirs(path)
+        return path
+
+    def _write(self, directory, filename, size_bytes):
+        with open(os.path.join(directory, filename), "wb") as f:
+            f.write(b"x" * size_bytes)
+
+    def test_small_files_are_symlinked_through(self):
+        u1 = self._student_dir("u1")
+        self._write(u1, "q1.sql", 10)
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       max_file_size=1024)
+        staged_dirs, stage_root = p._stage_filtered_dirs([u1], ["sql"])
+        try:
+            self.assertEqual(len(staged_dirs), 1)
+            self.assertEqual(os.path.basename(staged_dirs[0]), "u1")
+            staged_file = os.path.join(staged_dirs[0], "q1.sql")
+            self.assertTrue(os.path.islink(staged_file))
+            self.assertEqual(os.path.getsize(staged_file), 10)
+        finally:
+            shutil.rmtree(stage_root, ignore_errors=True)
+
+    def test_oversized_file_is_excluded_and_logged(self):
+        u1 = self._student_dir("u1")
+        self._write(u1, "emp_employees.sql", 2048)  # over the 1024-byte cap
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       max_file_size=1024)
+        with mock.patch.object(p.logger.logger, 'warning') as mock_warn:
+            staged_dirs, stage_root = p._stage_filtered_dirs([u1], ["sql"])
+        try:
+            self.assertEqual(staged_dirs, [])
+            mock_warn.assert_called_once()
+            self.assertIn("emp_employees.sql", mock_warn.call_args[0][0])
+        finally:
+            shutil.rmtree(stage_root, ignore_errors=True)
+
+    def test_mixed_directory_keeps_small_files_drops_large_one(self):
+        """One oversized file must not take the rest of that student's
+        legitimate submission down with it."""
+        u1 = self._student_dir("u1")
+        self._write(u1, "q1.sql", 10)
+        self._write(u1, "emp_employees.sql", 2048)
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       max_file_size=1024)
+        staged_dirs, stage_root = p._stage_filtered_dirs([u1], ["sql"])
+        try:
+            self.assertEqual(len(staged_dirs), 1)
+            kept = os.listdir(staged_dirs[0])
+            self.assertEqual(kept, ["q1.sql"])
+        finally:
+            shutil.rmtree(stage_root, ignore_errors=True)
+
+    def test_default_cap_is_one_mebibyte(self):
+        p = Plagiarism(logger=create_logger(), service_type="copydetect")
+        self.assertEqual(p.max_file_size, 1024 * 1024)
+
+
+class TestCheckCopydetect(TestCase):
+    def test_oversized_file_never_reaches_copydetector(self):
+        """End-to-end: _check_copydetect must hand the detector a staged,
+        filtered directory, never the raw student directory holding the
+        oversized file, and must clean up the staging tree afterward."""
+        root = tempfile.mkdtemp(prefix="test_check_")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        u1 = os.path.join(root, "u1")
+        os.makedirs(u1)
+        with open(os.path.join(u1, "q1.sql"), "w") as f:
+            f.write("select 1;")
+        with open(os.path.join(u1, "emp_employees.sql"), "wb") as f:
+            f.write(b"x" * 2048)
+
+        p = Plagiarism(logger=create_logger(), service_type="copydetect",
+                       max_file_size=1024)
+        with mock.patch('athina.moss._copydetect') as cd, \
+                mock.patch('athina.moss.update_key_in_assignment_data'):
+            cd.CopyDetector.return_value.test_files = []
+            cd.CopyDetector.return_value.similarity_matrix = np.zeros((0, 0, 2))
+            p._check_copydetect(["%s/*.sql" % u1], 1, 2)
+
+        _, kwargs = cd.CopyDetector.call_args
+        called_dirs = kwargs["test_dirs"]
+        self.assertNotIn(u1, called_dirs)
+        self.assertFalse(os.path.isdir(called_dirs[0]) and
+                         os.path.exists(os.path.join(called_dirs[0], "emp_employees.sql")))
+        # Staging directory must be cleaned up once the check is done.
+        for staged_dir in called_dirs:
+            self.assertFalse(os.path.isdir(staged_dir))
 
 
 class TestSaveHtmlReport(TestCase):
