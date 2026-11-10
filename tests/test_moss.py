@@ -4,6 +4,7 @@ The implementation lives in ``athina.moss``; ``athina.plagiarism`` is a
 backwards-compatibility shim that re-exports from it (asserted below).
 """
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime
@@ -12,6 +13,7 @@ from unittest import mock, TestCase
 import numpy as np
 
 from athina.moss import (Plagiarism, _collect_submission_directories,
+                         _expand_group_comparisons, _group_representatives,
                          _max_similarity_for, _mean_similarity,
                          plagiarism_checks_on_users)
 from athina.users import *
@@ -109,6 +111,68 @@ class TestHelpers(TestCase):
                 mock.patch('athina.moss.os.path.isdir', return_value=True), \
                 mock.patch('athina.moss.glob.glob', return_value=[]):
             self.assertEqual(_collect_submission_directories(configuration), [])
+
+    def test_collect_submission_directories_restricts_to_representatives(self):
+        """Group assignments: only the representative's directory is used,
+        even though every group member has their own repodata directory."""
+        configuration, _ = make_config()
+        configuration.assignment_id = 1
+        configuration.course_id = 1
+        configuration.config_dir = "/tmp"
+        configuration.plagiarism_pattern = "*.py"
+        students = [mock.Mock(user_id=17), mock.Mock(user_id=18)]
+
+        with mock.patch('athina.moss.return_all_students', return_value=students), \
+                mock.patch('athina.moss.os.path.isdir', return_value=True), \
+                mock.patch('athina.moss.glob.glob', return_value=["x"]):
+            dirs = _collect_submission_directories(configuration, representative_ids={17})
+
+        self.assertEqual(dirs, ["/tmp/repodata1/u17/*.py"])
+
+
+class TestGroupRepresentatives(TestCase):
+    """Group assignments share one repository per group -- comparing every
+    member individually would only ever report each group matching its own
+    identical copy of itself. One representative per group must be picked
+    instead, with the rest of the group mapped to it."""
+
+    def test_groupmates_sharing_a_url_become_one_group(self):
+        students = [
+            mock.Mock(user_id=1, repository_url="https://x/group-a.git"),
+            mock.Mock(user_id=2, repository_url="https://x/group-a.git"),
+            mock.Mock(user_id=3, repository_url="https://x/group-b.git"),
+        ]
+        with mock.patch('athina.moss.return_all_students', return_value=students):
+            groups = _group_representatives(1, 1)
+
+        # Student 1 is the first-seen representative of group A.
+        self.assertEqual(groups, {1: [1, 2], 3: [3]})
+
+    def test_students_without_a_repo_url_are_their_own_group(self):
+        students = [mock.Mock(user_id=1, repository_url=""),
+                   mock.Mock(user_id=2, repository_url=None)]
+        with mock.patch('athina.moss.return_all_students', return_value=students):
+            groups = _group_representatives(1, 1)
+        self.assertEqual(groups, {1: [1], 2: [2]})
+
+
+class TestExpandGroupComparisons(TestCase):
+    def test_representatives_result_is_copied_to_every_member(self):
+        comparison_data = {1: [90]}
+        groups = {1: [1, 2, 3]}
+        expanded = _expand_group_comparisons(comparison_data, groups)
+        self.assertEqual(expanded, {1: [90], 2: [90], 3: [90]})
+
+    def test_representative_never_compared_is_left_out_for_everyone(self):
+        """A group with no real submission gets nothing to copy -- its
+        members must not show a fabricated score."""
+        groups = {1: [1, 2]}
+        self.assertEqual(_expand_group_comparisons({}, groups), {})
+
+    def test_singleton_groups_are_unaffected(self):
+        comparison_data = {5: [40], 6: [60]}
+        groups = {5: [5], 6: [6]}
+        self.assertEqual(_expand_group_comparisons(comparison_data, groups), comparison_data)
 
 
 class TestPlagiarism(TestCase):
@@ -476,6 +540,42 @@ class TestPlagiarismChecksOnUsers(TestCase):
             self.assertFalse(refreshed.plagiarism_to_grade)
         finally:
             Users.delete().where(Users.user_id == 555).execute()
+
+    def test_group_assignment_shares_result_across_members(self):
+        """Two group-mates sharing one repository_url must both end up
+        with the same score -- whichever of them CopyDetect happened to
+        treat as the representative, since their repodata is identical."""
+        configuration = self._config()
+        configuration.group_assignment = True
+        _, logger = make_config()
+        shared_url = "https://gitlab.example.edu/group-x/project.git"
+        Users.create(user_id=601, course_id=1, assignment_id=1,
+                     repository_url=shared_url, plagiarism_to_grade=True,
+                     last_plagiarism_check=datetime(2000, 1, 1, 0, 0))
+        Users.create(user_id=602, course_id=1, assignment_id=1,
+                     repository_url=shared_url, plagiarism_to_grade=True,
+                     last_plagiarism_check=datetime(2000, 1, 1, 0, 0))
+
+        def fake_check_plagiarism(directory_list, course_id, assignment_id):
+            # Only one directory (the representative's) should ever be
+            # handed to CopyDetect -- never both group-mates' identical copies.
+            self.assertEqual(len(directory_list), 1)
+            rep_id = int(re.search(r'u(\d+)/', directory_list[0]).group(1))
+            return {rep_id: [85]}
+
+        try:
+            with self._fresh_each_call(), \
+                    mock.patch('athina.moss.os.path.isdir', return_value=True), \
+                    mock.patch('athina.moss.glob.glob', return_value=["x"]), \
+                    mock.patch('athina.moss.Plagiarism') as mock_plag:
+                mock_plag.return_value.check_plagiarism.side_effect = fake_check_plagiarism
+                results = plagiarism_checks_on_users(logger, configuration, mock.Mock())
+
+            self.assertEqual(sorted(r[1] for r in results), [85, 85])
+            self.assertEqual(Users.get(Users.user_id == 601).plagiarism_max, 85)
+            self.assertEqual(Users.get(Users.user_id == 602).plagiarism_max, 85)
+        finally:
+            Users.delete().where(Users.user_id.in_([601, 602])).execute()
 
     def test_publishes_comment_when_configured(self):
         configuration = self._config()

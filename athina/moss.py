@@ -69,10 +69,23 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
         max_file_size=getattr(configuration, 'copydetect_max_file_size', 1024 * 1024),
     )
 
-    directory_list = _collect_submission_directories(configuration)
+    # Group assignments share one repository per group -- every member's
+    # repodata directory is a byte-for-byte copy of the same submission, so
+    # comparing them individually would only ever report each group
+    # "matching itself" at 100%. Compare one representative per group
+    # instead, then copy that result to every member (see
+    # _expand_group_comparisons).
+    groups = (_group_representatives(configuration.course_id, configuration.assignment_id)
+             if getattr(configuration, 'group_assignment', False) else None)
+
+    directory_list = _collect_submission_directories(
+        configuration, representative_ids=set(groups) if groups else None)
 
     comparison_data = plagiarism.check_plagiarism(
         directory_list, configuration.course_id, configuration.assignment_id)
+
+    if groups:
+        comparison_data = _expand_group_comparisons(comparison_data, groups)
 
     mean_similarity = _mean_similarity(comparison_data)
     publish = getattr(configuration, 'plagiarism_publish', False)
@@ -102,16 +115,62 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
     return results
 
 
-def _collect_submission_directories(configuration):
-    """Return glob patterns for every student's submission directory."""
+def _collect_submission_directories(configuration, representative_ids=None):
+    """Return glob patterns for every student's submission directory.
+
+    ``representative_ids``, when given (group assignments), restricts this
+    to one representative student per group -- every other member shares
+    the same repository and would otherwise just be compared against their
+    own groupmates' identical copy of it.
+    """
     pattern = getattr(configuration, 'plagiarism_pattern', '*.py')
     directory_list = []
     for value in return_all_students(configuration.course_id, configuration.assignment_id):
+        if representative_ids is not None and value.user_id not in representative_ids:
+            continue
         base_dir = "%s/repodata%s/u%s/" % (configuration.config_dir, configuration.assignment_id,
                                            value.user_id)
         if os.path.isdir(base_dir) and glob.glob("%s%s" % (base_dir, pattern)):
             directory_list.append("%s%s" % (base_dir, pattern))
     return directory_list
+
+
+def _group_representatives(course_id, assignment_id):
+    """Map each group's one representative student to every member
+    sharing their repository_url (including the representative).
+
+    Students with no repository_url (or one not shared with anyone else)
+    are their own singleton group, so this is safe to compute even when
+    most of the roster isn't actually grouped.
+    """
+    groups = {}
+    url_to_rep = {}
+    for student in return_all_students(course_id, assignment_id):
+        url = (student.repository_url or "").strip()
+        if not url:
+            groups[student.user_id] = [student.user_id]
+            continue
+        rep_id = url_to_rep.get(url)
+        if rep_id is None:
+            url_to_rep[url] = student.user_id
+            groups[student.user_id] = [student.user_id]
+        else:
+            groups[rep_id].append(student.user_id)
+    return groups
+
+
+def _expand_group_comparisons(comparison_data, groups):
+    """Copy each group representative's result to every member of their
+    group, so a group's one compared submission is reflected for every
+    member, not just whichever one happened to be the representative."""
+    expanded = dict(comparison_data)
+    for rep_id, member_ids in groups.items():
+        if rep_id not in comparison_data:
+            continue
+        for member_id in member_ids:
+            if member_id != rep_id:
+                expanded[member_id] = comparison_data[rep_id]
+    return expanded
 
 
 def _mean_similarity(comparison_data):
