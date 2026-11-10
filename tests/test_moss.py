@@ -55,16 +55,23 @@ class TestModuleLayout(TestCase):
 
 
 class TestHelpers(TestCase):
-    def test_mean_similarity_pads_missing_students_with_zero(self):
-        # One student scored 50; two others had no matches at all.
-        self.assertEqual(_mean_similarity({1: [50]}, 3), 50 / 3)
+    def test_mean_similarity_averages_each_students_own_max(self):
+        # Student 1's own best match is 80 (not 20); student 2's is 40.
+        self.assertEqual(_mean_similarity({1: [80, 20], 2: [40]}), (80 + 40) / 2)
+
+    def test_mean_similarity_excludes_students_with_no_submission(self):
+        """A student who never submitted anything (absent from
+        comparison_data entirely) must not pull the baseline down -- unlike
+        the old padding-by-roster-size behavior this replaces."""
+        with_one_nonsubmitter = _mean_similarity({1: [50], 2: [60]})
+        without_nonsubmitter_info = _mean_similarity({1: [50], 2: [60]})
+        # A third, unsubmitted student is simply never a key here; the mean
+        # over the two real submitters must be unaffected either way.
+        self.assertEqual(with_one_nonsubmitter, without_nonsubmitter_info)
+        self.assertEqual(with_one_nonsubmitter, (50 + 60) / 2)
 
     def test_mean_similarity_no_data_returns_zero(self):
-        self.assertEqual(_mean_similarity({}, 0), 0)
-        self.assertEqual(_mean_similarity({}, 5), 0)
-
-    def test_mean_similarity_averages_all_values(self):
-        self.assertEqual(_mean_similarity({1: [80, 20], 2: [40]}, 2), (80 + 20 + 40) / 3)
+        self.assertEqual(_mean_similarity({}), 0)
 
     def test_max_similarity_for_known_user(self):
         self.assertEqual(_max_similarity_for({1: [30, 90], 2: [10]}, 1), 90)

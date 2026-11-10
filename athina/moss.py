@@ -74,7 +74,7 @@ def plagiarism_checks_on_users(logger, configuration, e_learning):
     comparison_data = plagiarism.check_plagiarism(
         directory_list, configuration.course_id, configuration.assignment_id)
 
-    mean_similarity = _mean_similarity(comparison_data, len(all_students))
+    mean_similarity = _mean_similarity(comparison_data)
     publish = getattr(configuration, 'plagiarism_publish', False)
 
     for user_id in users_graded:
@@ -114,19 +114,29 @@ def _collect_submission_directories(configuration):
     return directory_list
 
 
-def _mean_similarity(comparison_data, student_count):
-    """Mean similarity across all students.
+def _mean_similarity(comparison_data):
+    """Class-wide average of each compared student's own highest match.
 
-    Students with no matching code are absent from ``comparison_data``, so we
-    pad with zeros to keep the mean representative of the whole cohort.
+    This averages each student's own max similarity (one value per
+    student), not every raw pairwise comparison value -- a raw pairwise
+    mean is always lower than any individual's max by construction (a max
+    over N values is virtually never below the mean of those same N
+    values), which made the previous "class average" an apples-to-oranges
+    baseline: it made every student look anomalously elevated relative to
+    it, regardless of whether anything was actually unusual.
+
+    A student with no real submission is never a key in
+    ``comparison_data`` and is correctly excluded here. The previous
+    implementation instead padded the raw-value list with a zero per
+    student "missing" from a flattened value count -- two unrelated units
+    (students vs. individual match values) -- which, depending on how many
+    raw matches existed relative to roster size, could silently pull the
+    baseline down using students who were never evaluated at all, exactly
+    backwards from what a baseline should do.
     """
-    values = []
-    for val in comparison_data.values():
-        values.extend(val)
-    values.extend([0] * (student_count - len(values)))
-    if not values:
+    if not comparison_data:
         return 0
-    return np.mean(np.array(values).astype(float))
+    return np.mean(np.array([max(v) for v in comparison_data.values()]).astype(float))
 
 
 def _max_similarity_for(comparison_data, user_id):

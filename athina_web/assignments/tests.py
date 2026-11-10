@@ -2163,34 +2163,80 @@ class TestSentinelToNone(TestCase):
         self.assertIsNone(assignment_views._sentinel_to_none(None))
 
 
+class TestPlagiarismBaseline(TestCase):
+    """The class-wide baseline every student's Max is read against must
+    come only from students who were actually checked -- a student with
+    no real submission (max_sim == 0, i.e. never compared) must not pull
+    it down, mirroring the fix to athina.moss._mean_similarity."""
+
+    def test_excludes_unchecked_students(self):
+        # Two unsubmitted students (0) alongside two real scores.
+        mean, std = assignment_views._plagiarism_baseline([0, 0, 50, 60])
+        self.assertEqual(mean, 55)
+        self.assertEqual(std, 5)
+
+    def test_needs_at_least_two_checked_students(self):
+        self.assertEqual(assignment_views._plagiarism_baseline([50]), (None, None))
+        self.assertEqual(assignment_views._plagiarism_baseline([0, 0]), (None, None))
+        self.assertEqual(assignment_views._plagiarism_baseline([]), (None, None))
+
+
 class TestPlagiarismFlag(TestCase):
-    """How a student's max similarity is classified against the class
-    baseline for the "Plagiarism Max/Avg" column -- CopyDetect's raw
-    percentage has no fixed good/bad meaning on its own."""
+    """How a student's max similarity is classified for the "Plagiarism
+    Max/Avg" column -- CopyDetect's raw percentage has no fixed good/bad
+    meaning on its own, and a flat percentage-point gap from a raw
+    pairwise average flags nearly everyone (a max is, by construction,
+    almost always above the mean of the values it was drawn from). A
+    z-score against how this assignment's *other* students' own max
+    scores are distributed asks the right question instead."""
+
+    MEAN, STD = 75.3, 6.1  # roughly this term's real SQL2 baseline
 
     def test_not_yet_checked(self):
-        css, title = assignment_views._plagiarism_flag(None, None)
+        css, title = assignment_views._plagiarism_flag(None, self.MEAN, self.STD)
         self.assertEqual(css, "text-muted")
         self.assertIn("Not yet checked", title)
 
-    def test_no_baseline_yet(self):
-        css, title = assignment_views._plagiarism_flag(85, 0)
+        css, title = assignment_views._plagiarism_flag(0, self.MEAN, self.STD)
         self.assertEqual(css, "text-muted")
-        self.assertIn("No class baseline", title)
+
+    def test_no_baseline_yet(self):
+        css, title = assignment_views._plagiarism_flag(85, None, None)
+        self.assertEqual(css, "text-muted")
+        self.assertIn("Not enough class data", title)
+
+    def test_zero_stdev_is_treated_as_no_baseline(self):
+        css, title = assignment_views._plagiarism_flag(85, 75, 0)
+        self.assertEqual(css, "text-muted")
 
     def test_near_baseline_is_not_flagged(self):
-        css, title = assignment_views._plagiarism_flag(52, 48)
+        """z < 1: 76% is barely above a 75.3% class mean."""
+        css, title = assignment_views._plagiarism_flag(76, self.MEAN, self.STD)
         self.assertEqual(css, "text-success")
-        self.assertIn("independently-written", title)
+        self.assertIn("normal range", title)
 
     def test_moderately_above_baseline_is_a_soft_warning(self):
-        css, title = assignment_views._plagiarism_flag(60, 48)
+        """z ~= 1.26: one-ish standard deviation above peers."""
+        css, title = assignment_views._plagiarism_flag(83, self.MEAN, self.STD)
         self.assertEqual(css, "text-warning font-weight-bold")
 
     def test_well_above_baseline_is_flagged(self):
-        css, title = assignment_views._plagiarism_flag(85, 48)
+        """z >= 2: a genuine outlier relative to peers, not just above a
+        raw average that every max would clear anyway."""
+        css, title = assignment_views._plagiarism_flag(90, self.MEAN, self.STD)
         self.assertEqual(css, "text-danger font-weight-bold")
         self.assertIn("worth a closer look", title)
+
+    def test_real_sql2_maxes_mostly_do_not_flag(self):
+        """Regression check against this term's real SQL2 distribution:
+        before this fix, comparing Max to the raw pairwise average (48%)
+        flagged nearly every one of these as "well above average" even
+        though none of them are actual outliers among their peers."""
+        real_maxes = [85, 85, 84, 84, 83, 83, 80, 78, 78, 76, 76, 75, 75,
+                     74, 74, 74, 74, 74, 74, 69, 69, 69, 68, 68, 66, 63]
+        mean, std = assignment_views._plagiarism_baseline(real_maxes)
+        flags = [assignment_views._plagiarism_flag(m, mean, std)[0] for m in real_maxes]
+        self.assertNotIn("text-danger font-weight-bold", flags)
 
 
 class TestPlagiarismReportView(TestCase):

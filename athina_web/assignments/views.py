@@ -20,6 +20,7 @@ from athina_web.accounts.models import UserProfile
 import os
 import random
 import shutil
+import statistics
 import logging
 import time
 from rest_framework import generics
@@ -598,36 +599,57 @@ def assignment_log(request, assignment_id):
         return redirect('filemanager:view_file', inner_path="%s%s%s" % (assignment.name, "|", latest_file))
 
 
-def _plagiarism_flag(max_sim, avg_sim):
-    """Classify a student's max similarity relative to the class baseline.
+def _plagiarism_baseline(max_values):
+    """Mean/stdev of this assignment's own students' max-similarity scores.
+
+    Only students who were actually checked (a nonzero max_sim) count --
+    a student with no real submission was never compared against anyone
+    and must not pull the baseline down, the same fix now applied
+    engine-side in athina.moss._mean_similarity.
+    """
+    valid = [m for m in max_values if m]
+    if len(valid) < 2:
+        return None, None
+    mean_sim = statistics.mean(valid)
+    std_sim = statistics.pstdev(valid)
+    return mean_sim, std_sim
+
+
+def _plagiarism_flag(max_sim, mean_sim, std_sim):
+    """Classify a student's max similarity against how THIS assignment's
+    other students' own max-similarity scores are distributed (a z-score),
+    rather than a fixed percentage-point gap from a single average.
 
     CopyDetect's raw percentage has no fixed good/bad meaning by itself --
-    a terse, schema-constrained assignment can put *every* honestly,
-    independently-written submission's baseline similarity in the same
-    range (shared boilerplate, few ways to phrase a correct short answer).
-    What's actually informative is how far a student's highest match sits
-    above moss_average, the class-wide mean similarity for this assignment
-    (computed once per run and stored on every student row) -- that
-    average *is* the "normal for this assignment" baseline to read the max
-    against, not an absolute threshold.
+    a terse, schema-constrained assignment can cluster *every* honestly,
+    independently-written submission's top match in the same elevated,
+    narrow band (shared boilerplate, few ways to phrase a correct short
+    answer). Comparing a max against the class's raw pairwise-average
+    similarity doesn't work either: a max is, by construction, almost
+    always higher than the mean of the same values it was drawn from, so
+    that comparison flags nearly everyone regardless of whether anything
+    is actually unusual. Comparing instead to the spread of everyone
+    else's own max (z-score) asks the right question: is this student's
+    best match unusual *relative to their peers*, not relative to a
+    statistic that is guaranteed to sit below it either way.
     """
-    if max_sim is None:
+    if not max_sim:
         return "text-muted", "Not yet checked for plagiarism."
-    if not avg_sim:
-        return "text-muted", "No class baseline yet (average not computed)."
-    delta = max_sim - avg_sim
-    if delta >= 20:
+    if mean_sim is None or std_sim is None or std_sim == 0:
+        return "text-muted", "Not enough class data yet to compare against (need 2+ checked students)."
+    z = (max_sim - mean_sim) / std_sim
+    if z >= 2:
         return ("text-danger font-weight-bold",
-               "%s%% above this assignment's class-average similarity (%s%%) -- "
-               "worth a closer look." % (format(delta, '+'), avg_sim))
-    if delta >= 10:
+               "%s%% -- %.1f standard deviations above this assignment's typical "
+               "top match (class mean %.0f%%) -- a real outlier among peers, "
+               "worth a closer look." % (max_sim, z, mean_sim))
+    if z >= 1:
         return ("text-warning font-weight-bold",
-               "%s%% above this assignment's class-average similarity (%s%%)." %
-               (format(delta, '+'), avg_sim))
+               "%s%% -- %.1f standard deviations above this assignment's typical "
+               "top match (class mean %.0f%%)." % (max_sim, z, mean_sim))
     return ("text-success",
-           "%s%% vs. this assignment's class-average similarity (%s%%) -- "
-           "in the range expected for independently-written work." %
-           (format(delta, '+'), avg_sim))
+           "%s%% -- within the normal range of top matches for this assignment "
+           "(class mean %.0f%%)." % (max_sim, mean_sim))
 
 
 @login_required
@@ -682,14 +704,19 @@ def assignment_view(request, assignment_id):
         cur.execute('SELECT user_id, user_fullname, secondary_id, repository_url, commit_date, last_graded,'
                     'last_grade, last_report, moss_max, moss_average, force_test, llm_guidance FROM users WHERE '
                     '`course_id` = %s AND `assignment_id` = %s', (course_id_val, assignment_id_val,))
-        users = []
-        for user in cur.fetchall():
-            # Cross-reference: skip MySQL users not in the Django course roster
-            if enrolled_emails is not None:
-                user_email = (user[2] or '').lower()
-                if user_email not in enrolled_emails:
-                    continue
 
+        # Cross-reference: skip MySQL users not in the Django course roster
+        rows = [user for user in cur.fetchall()
+               if enrolled_emails is None or (user[2] or '').lower() in enrolled_emails]
+
+        # The baseline every student's Max is read against: how THIS
+        # assignment's own other students' max-similarity scores are
+        # distributed (see _plagiarism_flag). Computed from the roster
+        # actually being displayed, excluding students never checked.
+        mean_sim, std_sim = _plagiarism_baseline([row[8] for row in rows])
+
+        users = []
+        for user in rows:
             if user[3] is None and user[6] is None:
                 color = "table-danger"
                 info = "No repository url submitted"
@@ -705,7 +732,11 @@ def assignment_view(request, assignment_id):
             repo_url = user[3] or ''
             issues_url = _repo_url_to_issues_url(repo_url, _get_owner_gitlab_host(assignment)) if assignment.output_method == 'gitlab_issues' else ''
             repo_web_url = _repo_url_to_web_url(repo_url)
-            plagiarism_class, plagiarism_title = _plagiarism_flag(user[8], user[9])
+            plagiarism_class, plagiarism_title = _plagiarism_flag(user[8], mean_sim, std_sim)
+            # Show the same live baseline the flag/banner use, not the
+            # engine's last-stored moss_average, so the two numbers next
+            # to each other can never quietly disagree.
+            plagiarism_avg_display = round(mean_sim) if mean_sim is not None else '—'
             # user[4] is commit_date: the commit the last grading run tested. Show it
             # as "last graded" so an instructor can tell which submission a grade came
             # from (it is refreshed before each test, so it tracks the graded commit).
@@ -715,7 +746,7 @@ def assignment_view(request, assignment_id):
             users.append((user[0], user[1], user[2], color, info, user[6],
                           base64.b64encode(user[7] if user[7] is not None else b"").decode("ascii"),
                           None, None,
-                          user[8], user[9], user[11] or '',
+                          user[8], plagiarism_avg_display, user[11] or '',
                           repo_url, issues_url,
                           _sentinel_to_none(user[4]), _sentinel_to_none(user[5]),
                           repo_web_url, plagiarism_class, plagiarism_title))
@@ -739,6 +770,10 @@ def assignment_view(request, assignment_id):
 
     return render(request, 'assignments/assignment_view.html', {"users": users, "users_len": len(users),
                                                                 "assignment": assignment, "plagiarism_report": plagiarism_report,
+                                                                "plagiarism_mean": mean_sim,
+                                                                "plagiarism_std": std_sim,
+                                                                "plagiarism_checked_count": len(
+                                                                    [row for row in rows if row[8]]),
                                                                 "gitlab_project_id": assignment.gitlab_project_id,
                                                                 "gitlab_output": assignment.output_method == 'gitlab_issues',
                                                                 "gitlab_host": _get_owner_gitlab_host(assignment),

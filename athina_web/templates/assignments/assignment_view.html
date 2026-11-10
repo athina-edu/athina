@@ -54,6 +54,16 @@
 
 
     {% if users_len > 0 %}
+    {% if plagiarism_mean %}
+    <div class="alert alert-light border small mb-2">
+        <strong>Plagiarism baseline for this assignment:</strong>
+        the typical student's single highest match is <strong>{{ plagiarism_mean|floatformat:0 }}%</strong>
+        (σ={{ plagiarism_std|floatformat:0 }}%) across {{ plagiarism_checked_count }} checked students.
+        That number is often not low on a short or heavily-templated assignment -- read each
+        row's color below relative to <em>this</em> baseline, not as an absolute score. A student
+        never checked (no submission to compare) does not count toward it.
+    </div>
+    {% endif %}
     <div class="table-responsive">
         <table class="table table-striped">
             <tr>
@@ -62,7 +72,7 @@
                 <th>Info</th>
                 <th>Grade</th>
                 <th>Last Graded</th>
-                <th title="Max: this student's highest similarity with any other student's submission. Avg: this assignment's class-wide mean similarity -- the expected baseline for honest, independently-written work (often not low, on a short/constrained assignment). Read Max relative to Avg, not as an absolute score: the row is colored by how far Max sits above Avg.">Plagiarism Max/Avg ⓘ</th>
+                <th title="Max: this student's highest similarity with any other student's submission. Avg: the mean top-match across this assignment's checked students (see the baseline note above). The row is colored by how many standard deviations Max sits above that class baseline, not by a fixed percentage gap.">Plagiarism Max/Avg ⓘ</th>
                 <th>Reports</th>
                 <th>Actions</th>
             </tr>
