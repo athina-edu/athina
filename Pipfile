@@ -16,6 +16,9 @@ gitpython = ">=3.2.1"
 filelock = ">=4.2.1"
 urllib3 = ">=2.8.0"
 certifi = ">=2026.10.18"
+# soupsieve <4 is vulnerable to several ReDoS/DoS CVEs reachable through
+# BeautifulSoup selectors; 4.1 is the first release that clears all of them.
+soupsieve = ">=4.1"
 
 [requires]
 python_version = "3.14"
