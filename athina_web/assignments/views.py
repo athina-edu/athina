@@ -559,13 +559,13 @@ def assignment_create(request, **kwargs):
                                             _local_to_utc(due_local)):
                 messages.error(request, "The assignment was saved, but the due date "
                                         "could not be stored in the grading database.")
-            # Owner+group only. These directories hold student submissions, so
-            # 0o755 (world-readable and world-traversable) let any other account
-            # on the host read them directly off the filesystem, around the web
-            # app's permission checks. 0o750 keeps them readable if the process
-            # runs as non-root with a matching group, while nothing outside the
-            # container/host user can browse them.
-            os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o750)
+            # Owner-only. These directories hold student submissions, so
+            # anything wider (0o755 in particular) lets another account on the
+            # host read them straight off the filesystem, around the web app's
+            # permission checks. Both the web app and the grading daemon run as
+            # the same user in this deployment, and nginx serves its static
+            # files from elsewhere, so owner-only is sufficient.
+            os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o700)
             return redirect('filemanager:index', inner_path="%s" % assignment.name)
     else:
         assignment_id = kwargs.get('assignment_id', None)
@@ -1170,13 +1170,14 @@ def push_event(request):
             # The push did not match a known repository/token. Do not start a
             # course-wide pass for it — there is nothing to grade.
             #
-            # student_git_url comes straight from the request body, so a
-            # newline in it would forge extra log lines; %r quotes and escapes
-            # it, and the value is truncated so a huge body cannot bloat the
-            # log either.
+            # student_git_url comes straight from the request body, so strip
+            # control characters (notably newlines) explicitly before logging:
+            # an embedded newline would otherwise forge extra log lines. The
+            # value is truncated too, so a large body cannot bloat the log.
+            safe_url = re.sub(r'[\x00-\x1f\x7f]', '', str(student_git_url))[:200]
             logging.getLogger('athina_web').info(
-                "Webhook for %r matched no student repository; ignoring.",
-                student_git_url[:200])
+                "Webhook for %s matched no student repository; ignoring.",
+                safe_url)
     return HttpResponse('ok')
 
 

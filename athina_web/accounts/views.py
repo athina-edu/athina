@@ -258,9 +258,16 @@ def test_resend(request):
         )
         return JsonResponse({"ok": True, "id": message_id, "to": to_email})
     except ResendError as e:
-        # ResendError carries a vetted message (HTTP status + Resend's own
-        # error text) and never a traceback, so it is safe to show.
-        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+        # The message can quote Resend's own response body, so it is logged
+        # rather than echoed to the browser. Faculty only need to know the
+        # request was rejected, and the log has the detail.
+        logging.getLogger('athina_web').warning(
+            "Resend test email failed: %s", e)
+        return JsonResponse({
+            "ok": False,
+            "error": "Resend rejected the test email. "
+                     "Check the API key and sender address.",
+        }, status=400)
     except Exception:
         logging.getLogger('athina_web').exception(
             "Unexpected error while sending a test email")
