@@ -1170,11 +1170,15 @@ def push_event(request):
             # The push did not match a known repository/token. Do not start a
             # course-wide pass for it — there is nothing to grade.
             #
-            # student_git_url comes straight from the request body, so strip
-            # control characters (notably newlines) explicitly before logging:
-            # an embedded newline would otherwise forge extra log lines. The
-            # value is truncated too, so a large body cannot bloat the log.
-            safe_url = re.sub(r'[\x00-\x1f\x7f]', '', str(student_git_url))[:200]
+            # student_git_url comes straight from the request body, so it must
+            # not be logged verbatim: an embedded newline would forge extra log
+            # lines. Rather than filtering bad characters out, only a value that
+            # is entirely URL-shaped is logged, so there is nothing left to
+            # escape. The length cap keeps a large body out of the log too.
+            candidate = str(student_git_url)
+            safe_url = (candidate[:200]
+                        if re.fullmatch(r'[A-Za-z0-9_.~:/@+\-]*', candidate[:200])
+                        else '<unparseable url>')
             logging.getLogger('athina_web').info(
                 "Webhook for %s matched no student repository; ignoring.",
                 safe_url)
