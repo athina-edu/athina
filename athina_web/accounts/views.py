@@ -10,10 +10,13 @@ from .models import UserProfile
 from .forms import FacultyCreateForm, TACreateForm, TAAssignForm
 from .resend_email import send_email_safe
 import requests as http_requests
+import ipaddress
 import logging
 import re
 import secrets
+import socket
 import string
+from urllib.parse import urlparse
 
 
 def _generate_password(length=16):
@@ -25,6 +28,60 @@ def _generate_password(length=16):
         if (any(c.islower() for c in pw) and any(c.isupper() for c in pw)
                 and any(c.isdigit() for c in pw) and any(c in "!@#$%^&*" for c in pw)):
             return pw
+
+
+def _is_public_ip(ip):
+    """True when `ip` is a globally routable address.
+
+    ``ipaddress``'s own predicates cover the cases that matter here and, unlike
+    a hand-written regex, cannot be fooled by alternate notations of the same
+    address (``2130706433``, ``[::1]``, ``0x7f.0.0.1``) because they are parsed
+    into an address object first.
+    """
+    return not (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_multicast or ip.is_reserved or ip.is_unspecified)
+
+
+def _check_outbound_url(url):
+    """Validate a user-supplied URL against SSRF.
+
+    Returns ``(error, resolved_host)``. ``error`` is a message suitable for the
+    browser, or ``None`` when the URL is acceptable. ``resolved_host`` is the
+    first address the hostname resolved to.
+
+    Hostnames are resolved and every address they map to is checked, not just
+    the literal the caller typed: ``localhost`` is an obvious block, but a
+    name such as ``attacker.example`` that resolves to ``127.0.0.1`` or
+    ``169.254.169.254`` is the attack this is guarding against.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return "Invalid URL format.", None
+
+    if parsed.scheme not in ('https', 'http'):
+        return "Only http/https URLs are allowed.", None
+
+    hostname = parsed.hostname or ''
+    if not hostname:
+        return "Invalid URL format.", None
+
+    try:
+        addresses = {info[4][0] for info in socket.getaddrinfo(hostname, None)}
+    except (socket.gaierror, UnicodeError):
+        return "Could not resolve that hostname.", None
+    if not addresses:
+        return "Could not resolve that hostname.", None
+
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return "Invalid URL format.", None
+        if not _is_public_ip(ip):
+            return "Internal/private URLs are not allowed.", None
+
+    return None, addresses.pop()
 
 
 def _get_user_role(user):
@@ -115,34 +172,35 @@ def profile(request):
 @login_required
 def llm_models(request):
     """Fetch available models from the user's LLM endpoint."""
-    import re as _re
-    from urllib.parse import urlparse
-
     endpoint_url = request.GET.get('endpoint_url', '').strip().rstrip('/')
     api_key = request.GET.get('api_key', '').strip()
 
     if not endpoint_url or not api_key:
         return JsonResponse({"models": [], "error": "Enter endpoint URL and API key first."})
 
-    # SSRF protection: reject private/internal URLs
-    try:
-        parsed = urlparse(endpoint_url)
-        if parsed.scheme not in ('https', 'http'):
-            return JsonResponse({"models": [], "error": "Only http/https URLs are allowed."}, status=400)
-        hostname = parsed.hostname or ''
-        BLOCKED = {'169.254.169.254', 'metadata.google.internal', '127.0.0.1', 'localhost', '0.0.0.0',
-                    '169.254.170.2', 'fd00::ec2:internal'}
-        if hostname in BLOCKED or _re.match(r'^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)', hostname):
-            return JsonResponse({"models": [], "error": "Internal/private URLs are not allowed."}, status=400)
-    except Exception:
-        return JsonResponse({"models": [], "error": "Invalid URL format."}, status=400)
+    # SSRF protection. Checking the hostname against a list of literal strings
+    # is not enough: a name that resolves to a private/loopback/link-local
+    # address, or an encoded form such as 2130706433 / [::1], slips straight
+    # past it. Resolve the name and validate every address it maps to, and do
+    # the same again on the URL that is actually requested so a redirect chain
+    # cannot land somewhere internal after the first check passed.
+    error, _resolved = _check_outbound_url(endpoint_url)
+    if error:
+        return JsonResponse({"models": [], "error": error}, status=400)
 
     try:
         url = "%s/models" % endpoint_url
+        error, _ = _check_outbound_url(url)
+        if error:
+            return JsonResponse({"models": [], "error": error}, status=400)
         headers = {
             "Authorization": "Bearer %s" % api_key,
         }
-        resp = http_requests.get(url, headers=headers, timeout=15)
+        # Redirects are disabled: following one would re-introduce the SSRF
+        # that the checks above just closed (it would go straight to
+        # urllib3's connection layer, bypassing our validation).
+        resp = http_requests.get(url, headers=headers, timeout=15,
+                                 allow_redirects=False)
         if resp.status_code != 200:
             return JsonResponse({"models": [], "error": "API returned status %d" % resp.status_code})
 
@@ -156,8 +214,13 @@ def llm_models(request):
         # Sort by id
         models.sort(key=lambda x: x['id'])
         return JsonResponse({"models": models, "error": None})
-    except Exception as e:
-        return JsonResponse({"models": [], "error": str(e)})
+    except Exception:
+        # Never echo the exception: it can carry the endpoint URL (with the
+        # API key in the query string) or internal hostnames back to the
+        # browser. Log it instead and return a generic message.
+        logging.getLogger('athina_web').exception(
+            "Error listing LLM models")
+        return JsonResponse({"models": [], "error": "Could not reach the LLM endpoint."})
 
 
 @login_required
@@ -195,9 +258,13 @@ def test_resend(request):
         )
         return JsonResponse({"ok": True, "id": message_id, "to": to_email})
     except ResendError as e:
+        # ResendError carries a vetted message (HTTP status + Resend's own
+        # error text) and never a traceback, so it is safe to show.
         return JsonResponse({"ok": False, "error": str(e)}, status=400)
-    except Exception as e:
-        return JsonResponse({"ok": False, "error": str(e)}, status=400)
+    except Exception:
+        logging.getLogger('athina_web').exception(
+            "Unexpected error while sending a test email")
+        return JsonResponse({"ok": False, "error": "Could not send the test email."}, status=400)
 
 
 @login_required
@@ -247,8 +314,10 @@ def gitlab_repos(request):
             result = {"repos": repos, "error": None}
             cache.set(cache_key, result, 300)  # cache 5 minutes
             return JsonResponse(result)
-        except Exception as e:
-            return JsonResponse({"repos": [], "error": str(e)})
+        except Exception:
+            logging.getLogger('athina_web').exception(
+                "Error listing GitLab repositories")
+            return JsonResponse({"repos": [], "error": "Could not reach the GitLab API."})
 
     elif provider == 'github':
         if not user_profile.github_enabled or not user_profile.github_token:
@@ -285,8 +354,10 @@ def gitlab_repos(request):
             result = {"repos": repos, "error": None}
             cache.set(cache_key, result, 300)
             return JsonResponse(result)
-        except Exception as e:
-            return JsonResponse({"repos": [], "error": str(e)})
+        except Exception:
+            logging.getLogger('athina_web').exception(
+                "Error listing GitHub repositories")
+            return JsonResponse({"repos": [], "error": "Could not reach the GitHub API."})
 
     return JsonResponse({"repos": [], "error": "Unknown provider: %s" % provider})
 

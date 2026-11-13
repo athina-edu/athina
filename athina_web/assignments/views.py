@@ -128,6 +128,32 @@ def _get_visible_courses(user):
     return Course.objects.none()
 
 
+def _write_private_file(path, content):
+    """Write `content` to `path` with owner-only permissions from the start.
+
+    Opening the file with the default umask and calling ``os.chmod`` afterwards
+    leaves a window in which a file full of git tokens and API keys exists
+    world-readable. Creating it through ``os.open`` with ``0o600`` means the
+    permissions are right before any byte is written.
+
+    Best-effort: an unwritable directory is logged and skipped, exactly as the
+    previous open()+chmod() version did, so a missing .env never breaks saving
+    an assignment. O_EXCL also means a symlink planted at this path is not
+    written through.
+    """
+    try:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+    except OSError:
+        logging.getLogger('athina_web').warning(
+            "Could not write %s", path, exc_info=True)
+
+
 def _read_yaml_ids(assignment):
     """Read course_id and assignment_id for an assignment.
     
@@ -191,12 +217,7 @@ def _write_group_settings(assignment, has_groups):
     lines.append("GROUP_ASSIGNMENT=%s" % ('true' if has_groups else 'false'))
     lines.append("SAME_URL_LIMIT=%d" % max(largest, 1))
 
-    try:
-        with open(env_path, 'w') as f:
-            f.write('\n'.join(lines) + '\n')
-        os.chmod(env_path, 0o600)
-    except OSError:
-        pass
+    _write_private_file(env_path, '\n'.join(lines) + '\n')
 
 
 def _repo_url_for(student, assignment):
@@ -339,12 +360,7 @@ def _write_assignment_env(assignment, user_profile=None):
     # assignment's own YAML instead of the vestigial model default.
     lines.append("OUTPUT_METHOD=%s" % _resolve_output_method(assignment))
 
-    try:
-        with open(env_path, 'w') as f:
-            f.write('\n'.join(lines) + '\n')
-        os.chmod(env_path, 0o600)
-    except OSError:
-        pass
+    _write_private_file(env_path, '\n'.join(lines) + '\n')
 
 
 def _read_assignment_yaml(assignment):
@@ -543,7 +559,13 @@ def assignment_create(request, **kwargs):
                                             _local_to_utc(due_local)):
                 messages.error(request, "The assignment was saved, but the due date "
                                         "could not be stored in the grading database.")
-            os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o755)
+            # Owner+group only. These directories hold student submissions, so
+            # 0o755 (world-readable and world-traversable) let any other account
+            # on the host read them directly off the filesystem, around the web
+            # app's permission checks. 0o750 keeps them readable if the process
+            # runs as non-root with a matching group, while nothing outside the
+            # container/host user can browse them.
+            os.chmod("%s/%s" % (settings.BASE_DIR, assignment.absolute_path), 0o750)
             return redirect('filemanager:index', inner_path="%s" % assignment.name)
     else:
         assignment_id = kwargs.get('assignment_id', None)
@@ -1147,8 +1169,14 @@ def push_event(request):
         else:
             # The push did not match a known repository/token. Do not start a
             # course-wide pass for it — there is nothing to grade.
+            #
+            # student_git_url comes straight from the request body, so a
+            # newline in it would forge extra log lines; %r quotes and escapes
+            # it, and the value is truncated so a huge body cannot bloat the
+            # log either.
             logging.getLogger('athina_web').info(
-                "Webhook for %s matched no student repository; ignoring.", student_git_url)
+                "Webhook for %r matched no student repository; ignoring.",
+                student_git_url[:200])
     return HttpResponse('ok')
 
 
