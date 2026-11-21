@@ -22,6 +22,7 @@
         <div class="mt-4">
             {% if assignment.course %}
             <a class="btn btn-info" href="{% url 'assignments:course_detail' course_id=assignment.course.pk %}">Back to Course</a>
+            <a class="btn btn-primary" href="{% url 'assignments:assignment_students' assignment_id=assignment.pk %}">Repositories</a>
             {% else %}
             <a class="btn btn-info" href="{% url 'assignments:assignments' %}">Back to Courses</a>
             {% endif %}
