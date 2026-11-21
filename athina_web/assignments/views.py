@@ -799,11 +799,9 @@ def assignment_view(request, assignment_id):
                                                                 "gitlab_project_id": assignment.gitlab_project_id,
                                                                 "gitlab_output": assignment.output_method == 'gitlab_issues',
                                                                 "gitlab_host": _get_owner_gitlab_host(assignment),
-                                                                # Force Rerun writes to the grading DB and is
-                                                                # owner/superuser-only; hide it otherwise so TAs
-                                                                # are not shown a button that 404s.
-                                                                "can_force": (assignment.owner == request.user.id
-                                                                              or request.user.is_superuser),
+                                                                # Force Rerun is grading work, so anyone who
+                                                                # may override scores (incl. TAs) may use it.
+                                                                "can_force": _can_override_scores(request.user, assignment),
                                                                 # Same actions as the home page so this page is
                                                                 # self-sufficient rather than a dead end.
                                                                 "can_manage": _user_can_manage_courses(request.user),
@@ -1058,7 +1056,7 @@ def get_course_assignment_id(request, absolute_path):
 @login_required
 def assignment_force(request, assignment_id, user_id):
     assignment = get_object_or_404(Assignment, pk=assignment_id)
-    if assignment.owner != request.user.id and not request.user.is_superuser:
+    if not _can_override_scores(request.user, assignment):
         raise Http404
     else:
         # Read course_id/assignment_id from YAML (ground truth in repo)
